@@ -13,15 +13,15 @@ load_dotenv()
 class OpenAIClient:
     """Client for OpenAI Responses API."""
 
-    # Model registry: pricing ($/1M tokens), tiktoken encoding, reasoning flag
+    # Model registry: pricing ($/1M tokens), tiktoken encoding, reasoning flag, context window (tokens)
     MODELS = {
-        "gpt-3.5-turbo":      {"input": 0.50,  "output": 1.50,  "encoding": "cl100k_base", "reasoning": False},
-        "gpt-4-turbo":        {"input": 10.0,  "output": 30.0,  "encoding": "cl100k_base", "reasoning": False},
-        "gpt-4o-mini":        {"input": 0.15,  "output": 0.60,  "encoding": "o200k_base",  "reasoning": False},
-        "o3-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True},
-        "o3":                 {"input": 10.0,  "output": 40.0,  "encoding": "o200k_base",  "reasoning": True},
-        "o4-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True},
-        "o4-mini-2025-04-16": {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True},
+        "gpt-3.5-turbo":      {"input": 0.50,  "output": 1.50,  "encoding": "cl100k_base", "reasoning": False, "context_window":  16_385},
+        "gpt-4-turbo":        {"input": 10.0,  "output": 30.0,  "encoding": "cl100k_base", "reasoning": False, "context_window": 128_000},
+        "gpt-4o-mini":        {"input": 0.15,  "output": 0.60,  "encoding": "o200k_base",  "reasoning": False, "context_window": 128_000},
+        "o3-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
+        "o3":                 {"input": 10.0,  "output": 40.0,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
+        "o4-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
+        "o4-mini-2025-04-16": {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
     }
     
     DEFAULT_MODEL = "gpt-3.5-turbo"
@@ -539,10 +539,36 @@ ORDER BY revenue DESC;''',
     print(f"  Overhead:     {overhead_tokens:+d} extra tokens ({overhead_pct:.0f}% more)")
 
 
+def demo_context_windows() -> None:
+    """Demo 5 — context window sizes across models in the registry."""
+    print("\n" + "=" * 60)
+    print("Context window sizes (OpenAI models)")
+    print("=" * 60)
+
+    # Rough estimate: 1 page ≈ 500 words ≈ 670 tokens
+    TOKENS_PER_PAGE = 670
+
+    print(f"\n{'Model':25s} {'Context window':>15s} {'~Pages of text':>15s} {'Reasoning':>10s}")
+    print("-" * 68)
+
+    for model, cfg in OpenAIClient.MODELS.items():
+        tokens = cfg.get("context_window", 0)
+        pages = tokens / TOKENS_PER_PAGE
+        reasoning = "yes" if cfg["reasoning"] else "no"
+        print(f"{model:25s} {tokens:>15,} {pages:>14,.0f} {reasoning:>10s}")
+
+    print()
+    # Summary: largest context window in the registry
+    best_model = max(OpenAIClient.MODELS, key=lambda m: OpenAIClient.MODELS[m].get("context_window", 0))
+    best_tokens = OpenAIClient.MODELS[best_model]["context_window"]
+    print(f"Largest context: {best_model} ({best_tokens:,} tokens ≈ {best_tokens / TOKENS_PER_PAGE:,.0f} pages)")
+
+
 if __name__ == "__main__":
     client = OpenAIClient()
 
     #demo_single_query(client)
     #demo_multi_turn(client)
     #demo_reasoning(client)
-    demo_tokenization()
+    #demo_tokenization()
+    demo_context_windows()
