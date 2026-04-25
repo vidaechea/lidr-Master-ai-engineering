@@ -4,6 +4,7 @@ import os
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
 from openai import OpenAI
+import tiktoken
 
 load_dotenv()
 
@@ -294,10 +295,12 @@ class OpenAIClient:
             return {"error": f"{type(e).__name__}: {str(e)}"}
 
 
-if __name__ == "__main__":
-    # ----------------------------------------------------------------
-    # Demo 1 — single query (original behaviour)
-    # ----------------------------------------------------------------
+# ----------------------------------------------------------------
+# Demo functions
+# ----------------------------------------------------------------
+
+def demo_single_query(client: "OpenAIClient") -> None:
+    """Demo 1 — single query."""
     SYSTEM_PROMPT = """You are a senior software project estimation consultant with 20 years of experience.
 
 Rules:
@@ -307,11 +310,8 @@ Rules:
 - If you lack sufficient information to estimate, ask before guessing
 - Write in prose, no unnecessary bullet points"""
 
-    USER_MESSAGE = "How long would it take to migrate a Rails monolith to microservices?"
-
-    client = OpenAIClient()
     result = client.query(
-        message=USER_MESSAGE,
+        message="How long would it take to migrate a Rails monolith to microservices?",
         instructions=SYSTEM_PROMPT,
         model="gpt-4o-mini",
         temperature=0.3,
@@ -328,9 +328,9 @@ Rules:
         print(f"\nTokens: {result['input_tokens']} in, {result['output_tokens']} out")
         print(f"Cost: ${result['cost_usd']:.6f}")
 
-    # ----------------------------------------------------------------
-    # Demo 2 — multi-turn conversation via previous_response_id
-    # ----------------------------------------------------------------
+
+def demo_multi_turn(client: "OpenAIClient") -> None:
+    """Demo 2 — multi-turn conversation via previous_response_id."""
     print("\n" + "=" * 60)
     print("Multi-turn demo")
     print("=" * 60)
@@ -367,9 +367,9 @@ Rules:
     client.reset()
     print("\n[reset] Conversation context cleared.")
 
-    # ----------------------------------------------------------------
-    # Demo 3 — reasoning model (nuevo estilo con reasoning + verbosity)
-    # ----------------------------------------------------------------
+
+def demo_reasoning(client: "OpenAIClient") -> None:
+    """Demo 3 — reasoning model with reasoning + verbosity controls."""
     print("\n" + "=" * 60)
     print("Reasoning demo (o4-mini)")
     print("=" * 60)
@@ -394,3 +394,73 @@ Rules:
         if r_result["reasoning_tokens"] is not None:
             print(f"Reasoning tokens: {r_result['reasoning_tokens']}")
         print(f"Cost            : ${r_result['cost_usd']:.6f}")
+
+
+def demo_tokenization() -> None:
+    """Demo 4 — tokenization and BPE with tiktoken."""
+    print("\n" + "=" * 60)
+    print("Tokenization and BPE (tiktoken)")
+    print("=" * 60)
+
+    enc = tiktoken.encoding_for_model("gpt-4o-mini")
+    print(f"Encoding: {enc.name}  (used by gpt-4o-mini)")
+
+    # --- Basic example ---
+    text = "PostgreSQL migration"
+    tokens = enc.encode(text)
+
+    print(f"\nText:      '{text}'")
+    print(f"Token IDs: {tokens}")
+    print(f"Count:     {len(tokens)} tokens")
+    print()
+
+    for token_id in tokens:
+        decoded = enc.decode([token_id])
+        print(f"  ID {token_id:>6d} → '{decoded}'")
+
+    # --- Text comparison: how BPE handles subwords ---
+    print("\n" + "-" * 40)
+    print("Tokenization comparison (BPE subwords)")
+    print("-" * 40)
+
+    examples = [
+        "tokenization",
+        "tokenizations",
+        "tokenizer",
+        "untokenizable",
+        "hello world",
+        "Hola mundo",
+        "こんにちは",          # Japanese — more tokens per character
+    ]
+
+    for t in examples:
+        ids = enc.encode(t)
+        parts = [enc.decode([i]) for i in ids]
+        print(f"  {len(ids):>2d} tokens | {str(parts):<45s} | '{t}'")
+
+    # --- Cost impact: tokens vs characters ---
+    print("\n" + "-" * 40)
+    print("Cost estimate by token count (gpt-4o-mini input: $0.15/1M)")
+    print("-" * 40)
+
+    price_per_million = 0.15
+    sample_texts = [
+        "Explain BPE in one sentence.",
+        "Explica BPE en una oracion.",
+        "Explain Byte Pair Encoding (BPE) tokenization in detail, " * 5,
+    ]
+
+    for st in sample_texts:
+        n = len(enc.encode(st))
+        cost = (n / 1_000_000) * price_per_million
+        preview = st[:50] + "..." if len(st) > 50 else st
+        print(f"  {n:>4d} tokens | ${cost:.8f} | '{preview}'")
+
+
+if __name__ == "__main__":
+    client = OpenAIClient()
+
+    #demo_single_query(client)
+    #demo_multi_turn(client)
+    #demo_reasoning(client)
+    demo_tokenization()
