@@ -1,7 +1,7 @@
 [project]
 name = "estimator-cag"
 version = "0.1.0"
-description = "Add your description here"
+description = "Cost estimation service for CAG workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
