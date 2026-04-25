@@ -12,15 +12,15 @@ load_dotenv()
 class OpenAIClient:
     """Client for OpenAI Responses API."""
 
-    # Available models with pricing (input/output per 1M tokens)
+    # Model registry: pricing ($/1M tokens), tiktoken encoding, reasoning flag
     MODELS = {
-        "gpt-4o-mini": {"input": 0.15, "output": 0.60},
-        "gpt-4-turbo": {"input": 10.0, "output": 30.0},
-        "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
-        "o4-mini": {"input": 1.10, "output": 4.40},
-        "o4-mini-2025-04-16": {"input": 1.10, "output": 4.40},
-        "o3-mini": {"input": 1.10, "output": 4.40},
-        "o3": {"input": 10.0, "output": 40.0},
+        "gpt-3.5-turbo":      {"input": 0.50,  "output": 1.50,  "encoding": "cl100k_base", "reasoning": False},
+        "gpt-4-turbo":        {"input": 10.0,  "output": 30.0,  "encoding": "cl100k_base", "reasoning": False},
+        "gpt-4o-mini":        {"input": 0.15,  "output": 0.60,  "encoding": "o200k_base",  "reasoning": False},
+        "o3-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True},
+        "o3":                 {"input": 10.0,  "output": 40.0,  "encoding": "o200k_base",  "reasoning": True},
+        "o4-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True},
+        "o4-mini-2025-04-16": {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True},
     }
     
     DEFAULT_MODEL = "gpt-3.5-turbo"
@@ -402,8 +402,9 @@ def demo_tokenization() -> None:
     print("Tokenization and BPE (tiktoken)")
     print("=" * 60)
 
-    enc = tiktoken.encoding_for_model("gpt-4o-mini")
-    print(f"Encoding: {enc.name}  (used by gpt-4o-mini)")
+    DEMO_MODEL = "gpt-4o-mini"
+    enc = tiktoken.get_encoding(OpenAIClient.MODELS[DEMO_MODEL]["encoding"])
+    print(f"Encoding: {enc.name}  (used by {DEMO_MODEL})")
 
     # --- Basic example ---
     text = "PostgreSQL migration"
@@ -440,10 +441,9 @@ def demo_tokenization() -> None:
 
     # --- Cost impact: tokens vs characters ---
     print("\n" + "-" * 40)
-    print("Cost estimate by token count (gpt-4o-mini input: $0.15/1M)")
+    price_per_million = OpenAIClient.MODELS[DEMO_MODEL]["input"]
+    print(f"Cost estimate by token count ({DEMO_MODEL} input: ${price_per_million}/1M)")
     print("-" * 40)
-
-    price_per_million = 0.15
     sample_texts = [
         "Explain BPE in one sentence.",
         "Explica BPE en una oracion.",
@@ -456,11 +456,32 @@ def demo_tokenization() -> None:
         preview = st[:50] + "..." if len(st) > 50 else st
         print(f"  {n:>4d} tokens | ${cost:.8f} | '{preview}'")
 
+    # --- Vocabulary size across tokenizer generations ---
+    print("\n" + "-" * 40)
+    print("Vocabulary size by encoding (derived from MODELS registry)")
+    print("-" * 40)
+
+    # gpt2 is not in MODELS but included for historical comparison
+    extra = {"gpt2": "gpt-2 (2019, legacy)"}
+
+    # Collect unique encodings from MODELS and which models use them
+    seen: Dict[str, list] = {}
+    for model_name, cfg in OpenAIClient.MODELS.items():
+        seen.setdefault(cfg["encoding"], []).append(model_name)
+
+    for enc_name, label in extra.items():
+        enc_v = tiktoken.get_encoding(enc_name)
+        print(f"  {enc_name:15s} → {enc_v.n_vocab:>7,} tokens  ({label})")
+
+    for enc_name, models in seen.items():
+        enc_v = tiktoken.get_encoding(enc_name)
+        print(f"  {enc_name:15s} → {enc_v.n_vocab:>7,} tokens  (used by: {', '.join(models)})")
+
 
 if __name__ == "__main__":
     client = OpenAIClient()
 
-    #demo_single_query(client)
-    #demo_multi_turn(client)
-    #demo_reasoning(client)
+    demo_single_query(client)
+    demo_multi_turn(client)
+    demo_reasoning(client)
     demo_tokenization()
