@@ -113,7 +113,8 @@ result = client.query(
     instructions="System instructions", # Optional
     model="gpt-4o-mini",              # Optional, default: gpt-4o-mini
     temperature=0.3,                  # Optional, range: 0-1 (default: 0.3)
-    max_tokens=1000                   # Optional (default: 1000)
+    max_tokens=1000,                  # Optional (default: 1000)
+    top_p=0.95                        # Optional, nucleus sampling (0-1)
 )
 ```
 
@@ -195,9 +196,43 @@ result = client.query(
     "input_tokens": 10,
     "output_tokens": 50,
     "stop_reason": "end_turn",
-    "cost_usd": 0.000038
+    "cost_usd": 0.000038,
+    "temperature": 0.3,
+    "top_p": None,
+    "top_k": None,
+    "stop_sequences": None,
+    "tools_used": False
 }
 ```
+
+#### Available Parameters
+
+Anthropic client supports **comprehensive parameters** for fine-tuned control:
+
+```python
+result = client.query(
+    message="Your question",                    # Required
+    instructions="System instructions",         # Optional
+    model="claude-sonnet-4-6",                 # Optional, default: claude-sonnet-4-6
+    temperature=0.3,                           # Optional, range: 0-1 (default: 0.3)
+    max_tokens=1000,                           # Optional (default: 1000)
+    top_p=0.95,                                # Optional, nucleus sampling (0-1)
+    top_k=None,                                # Optional, limit to top k tokens
+    stop_sequences=["\n\n"],                   # Optional, list of stop strings
+    metadata={"session_id": "123"},            # Optional, custom tracking data
+    tools=[...],                               # Optional, tools for function calling
+    tool_choice={"type": "auto"}               # Optional, control tool usage
+)
+```
+
+**Parameter Guide:**
+- `temperature`: 0.0 (deterministic) → 1.0+ (creative)
+- `top_p`: Nucleus sampling - 0.9 (conservative) → 1.0 (all tokens)
+- `top_k`: Only sample from top k tokens (e.g., 1 for deterministic)
+- `stop_sequences`: Generate stops when encountering these strings
+- `metadata`: Custom data for tracking/debugging (returned in response)
+- `tools`: Define tools for Claude to use (function calling)
+- `tool_choice`: Control how/when tools are used
 
 #### Running the Client Directly
 
@@ -322,8 +357,12 @@ session01/
 ├── README.md                                      # This file
 ├── session_01_1_api_openai_client.py             # OpenAI client class
 ├── session_01_1_api_openai.ipynb                 # OpenAI Colab notebook
-├── session_01_2_api_anthropic_client.py          # Anthropic client class
-└── session_01_2_api_anthropic.ipynb              # Anthropic Colab notebook
+├── session_01_2_api_anthropic_client.py          # Anthropic client class (with all parameters)
+├── session_01_2_api_anthropic.ipynb              # Anthropic Colab notebook
+├── session_01_3_api_anthropic_tools.py           # Anthropic Tool Use / Function Calling demo
+├── session_01_4_anthropic_params_notebook.ipynb  # Interactive Jupyter notebook for all Anthropic parameters
+├── ANTHROPIC_API_PARAMS.md                       # Complete reference documentation
+└── README_ANTHROPIC_PARAMS.md                    # Quick start guide for Anthropic parameters
 ```
 
 ## Environment Variables
@@ -360,6 +399,85 @@ ANTHROPIC_API_KEY=sk-ant-your-anthropic-key-here
 - Add delays between requests
 - **OpenAI**: Check usage at [platform.openai.com/usage](https://platform.openai.com/usage)
 - **Anthropic**: Check usage at [console.anthropic.com/usage](https://console.anthropic.com/usage)
+
+---
+
+## 🆕 Advanced Features - Anthropic API
+
+### Tool Use / Function Calling
+
+Enable Claude to call functions or access tools. See [session_01_3_api_anthropic_tools.py](session_01_3_api_anthropic_tools.py) for a complete example.
+
+```python
+result = client.query(
+    message="What's the weather in Madrid?",
+    tools=[{
+        "name": "get_weather",
+        "description": "Get current weather for a city",
+        "input_schema": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+        }
+    }],
+    tool_choice={"type": "auto"}
+)
+# Claude will call the tool automatically if needed
+```
+
+### Parameter Combinations for Different Use Cases
+
+**Deterministic (Coding/Analysis):**
+```python
+result = client.query(
+    message="Review this code...",
+    temperature=0.0,
+    top_k=1,
+    max_tokens=1500
+)
+```
+
+**Creative (Writing/Brainstorming):**
+```python
+result = client.query(
+    message="Write a poem about AI",
+    temperature=0.8,
+    top_p=0.95,
+    max_tokens=500
+)
+```
+
+**Limited Output:**
+```python
+result = client.query(
+    message="List 3 benefits",
+    stop_sequences=["\n4."],  # Stop after item 3
+    max_tokens=300
+)
+```
+
+### Interactive Jupyter Notebook
+
+Explore all parameters interactively:
+```bash
+jupyter notebook session01/session_01_4_anthropic_params_notebook.ipynb
+```
+
+Includes examples of:
+- Temperature variations
+- Nucleus sampling (top_p)
+- Token limiting (top_k)
+- Stop sequences
+- Multi-turn conversations
+- Token usage and cost comparison
+
+### Complete Parameter Reference
+
+For exhaustive documentation of all parameters, see:
+- **[ANTHROPIC_API_PARAMS.md](ANTHROPIC_API_PARAMS.md)** - Detailed reference with all options
+- **[README_ANTHROPIC_PARAMS.md](README_ANTHROPIC_PARAMS.md)** - Quick start guide
+
+---
 
 ## Examples
 
@@ -438,17 +556,30 @@ Send a query to OpenAI.
 #### `__init__(api_key: Optional[str] = None)`
 Initialize the client. If no API key is provided, loads from environment.
 
-#### `query(message, instructions=None, model=None, temperature=0.3, max_tokens=1000)`
-Send a query to Anthropic Claude.
+#### `query(message, instructions=None, model=None, temperature=0.3, max_tokens=1000, top_p=None, top_k=None, stop_sequences=None, metadata=None, tools=None, tool_choice=None)`
+Send a query to Anthropic Claude with comprehensive parameter support.
 
-**Parameters:**
+**Core Parameters:**
 - `message` (str): The user message
 - `instructions` (str, optional): System instructions for the model
 - `model` (str, optional): Model name. Defaults to `DEFAULT_MODEL`
 - `temperature` (float): Sampling temperature (0-1). Default: 0.3
 - `max_tokens` (int): Max output tokens. Default: 1000
 
-**Returns:** Dict with response data or error (includes `stop_reason` field)
+**Advanced Parameters:**
+- `top_p` (float, optional): Nucleus sampling (0-1). Overrides temperature if set.
+- `top_k` (int, optional): Only sample from top k most likely tokens
+- `stop_sequences` (list, optional): Strings that trigger generation stop
+- `metadata` (dict, optional): Custom metadata for tracking/debugging
+- `tools` (list, optional): Tools/functions available for Claude to use
+- `tool_choice` (dict, optional): Control tool usage {"type": "auto"|"any"|"tool"}
+
+**Returns:** Dict with response data or error (includes `stop_reason` and parameter echoes)
+
+**See Also:**
+- [ANTHROPIC_API_PARAMS.md](ANTHROPIC_API_PARAMS.md) - Complete parameter reference
+- [session_01_4_anthropic_params_notebook.ipynb](session_01_4_anthropic_params_notebook.ipynb) - Interactive examples
+- [session_01_3_api_anthropic_tools.py](session_01_3_api_anthropic_tools.py) - Tool Use/Function Calling demo
 
 ## License
 
