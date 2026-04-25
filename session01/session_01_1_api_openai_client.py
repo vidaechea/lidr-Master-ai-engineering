@@ -1,5 +1,6 @@
 """OpenAI Responses API client."""
 
+import json
 import os
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
@@ -477,11 +478,71 @@ def demo_tokenization() -> None:
         enc_v = tiktoken.get_encoding(enc_name)
         print(f"  {enc_name:15s} → {enc_v.n_vocab:>7,} tokens  (used by: {', '.join(models)})")
 
+    # --- Token density of real source code ---
+    print("\n" + "-" * 40)
+    print("Token density: source code vs structured text")
+    print("-" * 40)
+
+    code_samples = {
+        "Python function": '''def calculate_total(items, tax_rate=0.21):
+    subtotal = sum(item.price for item in items)
+    return subtotal * (1 + tax_rate)''',
+
+        "JSON payload": '''{
+    "project": "payment-migration",
+    "team_size": 5,
+    "estimated_weeks": 12,
+    "confidence": "medium",
+    "risks": ["data-loss", "downtime", "integration-failures"]
+}''',
+
+        "SQL query": '''SELECT u.name, COUNT(o.id) as order_count, SUM(o.total) as revenue
+FROM users u
+JOIN orders o ON u.id = o.user_id
+WHERE o.created_at >= '2024-01-01'
+GROUP BY u.name
+HAVING SUM(o.total) > 1000
+ORDER BY revenue DESC;''',
+    }
+
+    for label, code in code_samples.items():
+        tokens = enc.encode(code)
+        words = len(code.split())
+        chars = len(code)
+        ratio = chars / len(tokens) if tokens else 0
+        print(f"  {label:20s}: {len(tokens):>4d} tokens  {chars:>4d} chars  {words:>3d} words  ({ratio:.1f} chars/token)")
+
+    # --- Indentation overhead: compact vs pretty-print JSON ---
+    print("\n" + "-" * 40)
+    print("Indentation overhead: compact vs pretty-print JSON")
+    print("-" * 40)
+
+    data = {
+        "project": "migration",
+        "tasks": [
+            {"name": "schema-analysis", "hours": 40},
+            {"name": "data-transfer",   "hours": 80},
+            {"name": "testing",         "hours": 60},
+        ],
+    }
+
+    compact = json.dumps(data)
+    pretty  = json.dumps(data, indent=2)
+
+    compact_tokens = enc.encode(compact)
+    pretty_tokens  = enc.encode(pretty)
+
+    print(f"  Compact JSON: {len(compact):>4d} chars → {len(compact_tokens):>3d} tokens")
+    print(f"  Pretty JSON:  {len(pretty):>4d} chars → {len(pretty_tokens):>3d} tokens")
+    overhead_tokens = len(pretty_tokens) - len(compact_tokens)
+    overhead_pct    = (len(pretty_tokens) / len(compact_tokens) - 1) * 100
+    print(f"  Overhead:     {overhead_tokens:+d} extra tokens ({overhead_pct:.0f}% more)")
+
 
 if __name__ == "__main__":
     client = OpenAIClient()
 
-    demo_single_query(client)
-    demo_multi_turn(client)
-    demo_reasoning(client)
+    #demo_single_query(client)
+    #demo_multi_turn(client)
+    #demo_reasoning(client)
     demo_tokenization()
