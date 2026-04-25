@@ -297,6 +297,31 @@ class OpenAIClient:
 
 
 # ----------------------------------------------------------------
+# Token estimation
+# ----------------------------------------------------------------
+
+def estimate_call_tokens(
+    instructions: str,
+    messages: list,
+    model: str = "gpt-4o-mini",
+) -> int:
+    """
+    Estimate the number of input tokens for a Responses API call.
+    This is an approximation — the actual count includes special tokens
+    added by the API that we can't perfectly replicate locally.
+    Uses the correct tiktoken encoding for each model from the registry.
+    """
+    model_cfg = OpenAIClient.MODELS.get(model, {"encoding": "o200k_base"})
+    enc = tiktoken.get_encoding(model_cfg["encoding"])
+
+    total = len(enc.encode(instructions or "")) + 4  # overhead for system message formatting
+    for msg in messages:
+        total += len(enc.encode(msg["content"])) + 4  # overhead per message (role tokens, delimiters)
+    total += 2  # priming tokens for the assistant's response
+    return total
+
+
+# ----------------------------------------------------------------
 # Demo functions
 # ----------------------------------------------------------------
 
@@ -311,8 +336,16 @@ Rules:
 - If you lack sufficient information to estimate, ask before guessing
 - Write in prose, no unnecessary bullet points"""
 
+    user_msg = "How long would it take to migrate a Rails monolith to microservices?"
+    model = "gpt-4o-mini"
+
+    estimated = estimate_call_tokens(SYSTEM_PROMPT, [{"role": "user", "content": user_msg}], model)
+    prices = OpenAIClient.MODELS[model]
+    print(f"Estimated input tokens : {estimated}")
+    print(f"Estimated input cost   : ${(estimated / 1_000_000) * prices['input']:.6f}\n")
+
     result = client.query(
-        message="How long would it take to migrate a Rails monolith to microservices?",
+        message=user_msg,
         instructions=SYSTEM_PROMPT,
         model="gpt-4o-mini",
         temperature=0.3,
@@ -326,7 +359,9 @@ Rules:
         print(f"Error: {result['error']}")
     else:
         print(result["content"])
-        print(f"\nTokens: {result['input_tokens']} in, {result['output_tokens']} out")
+        print(f"\nEstimated input tokens : {estimated}")
+        print(f"Actual input tokens    : {result['input_tokens']}  (delta: {result['input_tokens'] - estimated:+d})")
+        print(f"Output tokens          : {result['output_tokens']}")
         print(f"Cost: ${result['cost_usd']:.6f}")
 
 
@@ -339,17 +374,20 @@ def demo_multi_turn(client: "OpenAIClient") -> None:
     TECH_SYSTEM = "You are a technical assistant. Always answer in Spanish."
 
     # Turn 1 — no previous context yet
+    t1_msg = "What is a REST API?"
+    t1_estimated = estimate_call_tokens(TECH_SYSTEM, [{"role": "user", "content": t1_msg}], "gpt-4o-mini")
+    print(f"[Turn 1] Estimated input tokens: {t1_estimated}")
     r1 = client.chat(
-        message="What is a REST API?",
+        message=t1_msg,
         instructions=TECH_SYSTEM,
         model="gpt-4o-mini",
     )
     if "error" in r1:
         print(f"Error: {r1['error']}")
     else:
-        print(f"\n[Turn {r1['turn']}] response_id: {r1['response_id']}")
+        print(f"[Turn {r1['turn']}] response_id: {r1['response_id']}")
         print(r1["content"])
-        print(f"Tokens: {r1['input_tokens']} in / {r1['output_tokens']} out | cost: ${r1['turn_cost_usd']:.6f}")
+        print(f"Actual input tokens: {r1['input_tokens']} (delta: {r1['input_tokens'] - t1_estimated:+d}) | out: {r1['output_tokens']} | cost: ${r1['turn_cost_usd']:.6f}")
 
     # Turn 2 — OpenAI recovers context automatically via previous_response_id
     r2 = client.chat(
@@ -567,8 +605,8 @@ def demo_context_windows() -> None:
 if __name__ == "__main__":
     client = OpenAIClient()
 
-    #demo_single_query(client)
+    demo_single_query(client)
     #demo_multi_turn(client)
     #demo_reasoning(client)
     #demo_tokenization()
-    demo_context_windows()
+    #demo_context_windows()
