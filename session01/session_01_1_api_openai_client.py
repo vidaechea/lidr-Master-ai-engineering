@@ -639,6 +639,45 @@ def demo_context_windows() -> None:
     print(f"Largest context: {best_model} ({best_tokens:,} tokens ≈ {best_tokens / TOKENS_PER_PAGE:,.0f} pages)")
 
 
+def demo_cost_at_scale() -> None:
+    """Demo 7 — production cost model at scale for a SaaS AI assistant feature."""
+    print("\n" + "=" * 60)
+    print("Cost at scale: SaaS AI assistant (monthly estimate)")
+    print("=" * 60)
+
+    # Scenario parameters
+    USERS = 10_000
+    SESSIONS_PER_USER_DAY = 2
+    TURNS_PER_SESSION = 5
+    DAYS_PER_MONTH = 30
+
+    # Token consumption per turn (realistic estimates)
+    SYSTEM_PROMPT_TOKENS = 300    # A production-grade prompt
+    AVG_USER_MESSAGE = 50         # Typical user input
+    AVG_HISTORY_GROWTH = 100      # Accumulated history per turn
+    AVG_OUTPUT_TOKENS = 200       # Model response
+
+    # Average input tokens per turn (grows with conversation history)
+    avg_input_per_turn = SYSTEM_PROMPT_TOKENS + AVG_USER_MESSAGE + (AVG_HISTORY_GROWTH * 2.5)
+
+    total_turns_month = USERS * SESSIONS_PER_USER_DAY * TURNS_PER_SESSION * DAYS_PER_MONTH
+    total_input_tokens = total_turns_month * avg_input_per_turn
+    total_output_tokens = total_turns_month * AVG_OUTPUT_TOKENS
+
+    print(f"\nScenario: {USERS:,} users × {SESSIONS_PER_USER_DAY} sessions/day × {TURNS_PER_SESSION} turns/session")
+    print(f"Total turns/month:        {total_turns_month:,}")
+    print(f"Total input tokens/month: {total_input_tokens:,.0f}")
+    print(f"Total output tokens/month:{total_output_tokens:,.0f}")
+    print(f"\n{'Model':25s} {'Input cost':>12s} {'Output cost':>12s} {'Total/month':>12s}")
+    print("-" * 65)
+
+    for model, prices in OpenAIClient.MODELS.items():
+        input_cost = (total_input_tokens / 1_000_000) * prices["input"]
+        output_cost = (total_output_tokens / 1_000_000) * prices["output"]
+        total = input_cost + output_cost
+        print(f"{model:25s} ${input_cost:>10.2f} ${output_cost:>10.2f} ${total:>10.2f}")
+
+
 if __name__ == "__main__":
     client = OpenAIClient()
 
@@ -647,4 +686,5 @@ if __name__ == "__main__":
     #demo_reasoning(client)
     #demo_tokenization()
     #demo_context_windows()
-    demo_pricing()
+    #demo_pricing()
+    demo_cost_at_scale()
