@@ -16,6 +16,10 @@ class OpenAIClient:
         "gpt-4o-mini": {"input": 0.15, "output": 0.60},
         "gpt-4-turbo": {"input": 10.0, "output": 30.0},
         "gpt-3.5-turbo": {"input": 0.5, "output": 1.5},
+        "o4-mini": {"input": 1.10, "output": 4.40},
+        "o4-mini-2025-04-16": {"input": 1.10, "output": 4.40},
+        "o3-mini": {"input": 1.10, "output": 4.40},
+        "o3": {"input": 10.0, "output": 40.0},
     }
     
     DEFAULT_MODEL = "gpt-3.5-turbo"
@@ -209,6 +213,86 @@ class OpenAIClient:
         except Exception as e:
             return {"error": f"{type(e).__name__}: {str(e)}"}
 
+    # ------------------------------------------------------------------
+    # Reasoning API
+    # ------------------------------------------------------------------
+
+    def reason(
+        self,
+        message: str,
+        instructions: Optional[str] = None,
+        model: str = "o4-mini",
+        reasoning_effort: str = "medium",
+        verbosity: str = "low",
+        max_output_tokens: int = 2000,
+    ) -> Dict[str, Any]:
+        """
+        Query a reasoning-capable model using the dedicated reasoning controls.
+
+        Reasoning models (o1, o3, o4-mini, …) do NOT support temperature or top_p.
+        Instead they expose:
+          - reasoning.effort  ("low" | "medium" | "high") — controls how deeply the
+            model thinks before answering.  Higher effort → better answers, more tokens.
+          - text.verbosity    ("low" | "medium" | "high") — controls how verbose the
+            final answer is.  "low" keeps responses concise.
+
+        Args:
+            message: User question or prompt.
+            instructions: Optional system instructions.
+            model: A reasoning-capable model, e.g. "o4-mini", "o3", "o1".
+            reasoning_effort: Depth of internal reasoning ("low", "medium", "high").
+            verbosity: Length of the final answer ("low", "medium", "high").
+            max_output_tokens: Hard cap on output tokens (includes reasoning tokens).
+
+        Returns:
+            Dict with 'content', token usage, reasoning tokens, and cost metadata.
+        """
+        params: Dict[str, Any] = {
+            "model": model,
+            "input": message,
+            "reasoning": {"effort": reasoning_effort},   # controls reasoning depth
+            "text": {"format": {"type": "text"}},        # plain-text output
+            "max_output_tokens": max_output_tokens,
+            "store": False,
+        }
+
+        if instructions:
+            params["instructions"] = instructions
+
+        try:
+            response = self.client.responses.create(**params)
+
+            if response.status != "completed":
+                return {"error": f"Response not completed: {response.status}"}
+
+            # Reasoning models report reasoning tokens separately
+            reasoning_tokens = getattr(
+                getattr(response.usage, "output_tokens_details", None),
+                "reasoning_tokens",
+                None,
+            )
+
+            prices = self.MODELS.get(model, {"input": 0, "output": 0})
+            cost = (
+                (response.usage.input_tokens / 1_000_000) * prices["input"]
+                + (response.usage.output_tokens / 1_000_000) * prices["output"]
+            )
+
+            return {
+                "content": response.output_text,
+                "model": response.model,
+                "id": response.id,
+                "reasoning_effort": reasoning_effort,
+                "verbosity": verbosity,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "reasoning_tokens": reasoning_tokens,
+                "cost_usd": cost,
+            }
+
+        except Exception as e:
+            return {"error": f"{type(e).__name__}: {str(e)}"}
+
 
 if __name__ == "__main__":
     # ----------------------------------------------------------------
@@ -282,3 +366,31 @@ Rules:
     # Reset — start a new thread
     client.reset()
     print("\n[reset] Conversation context cleared.")
+
+    # ----------------------------------------------------------------
+    # Demo 3 — reasoning model (nuevo estilo con reasoning + verbosity)
+    # ----------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("Reasoning demo (o4-mini)")
+    print("=" * 60)
+
+    r_result = client.reason(
+        message="Should we use microservices?",
+        instructions="You are a technical analyst. Answer in Spanish.",
+        model="o4-mini",
+        reasoning_effort="medium",   # "low" | "medium" | "high"
+        verbosity="low",             # "low" | "medium" | "high"
+        max_output_tokens=2000,
+    )
+
+    if "error" in r_result:
+        print(f"Error: {r_result['error']}")
+    else:
+        print(r_result["content"])
+        print(f"\nModel           : {r_result['model']}")
+        print(f"Reasoning effort: {r_result['reasoning_effort']}")
+        print(f"Verbosity       : {r_result['verbosity']}")
+        print(f"Tokens in/out   : {r_result['input_tokens']} / {r_result['output_tokens']}")
+        if r_result["reasoning_tokens"] is not None:
+            print(f"Reasoning tokens: {r_result['reasoning_tokens']}")
+        print(f"Cost            : ${r_result['cost_usd']:.6f}")
