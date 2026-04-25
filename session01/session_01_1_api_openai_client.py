@@ -13,15 +13,18 @@ load_dotenv()
 class OpenAIClient:
     """Client for OpenAI Responses API."""
 
-    # Model registry: pricing ($/1M tokens), tiktoken encoding, reasoning flag, context window (tokens)
+    # Model registry: pricing ($/1M tokens), input/output ratio, tiktoken encoding, reasoning flag, context window (tokens)
+    # ratio = output_price / input_price — captures output cost asymmetry (higher ratio → output is proportionally more expensive)
     MODELS = {
-        "gpt-3.5-turbo":      {"input": 0.50,  "output": 1.50,  "encoding": "cl100k_base", "reasoning": False, "context_window":  16_385},
-        "gpt-4-turbo":        {"input": 10.0,  "output": 30.0,  "encoding": "cl100k_base", "reasoning": False, "context_window": 128_000},
-        "gpt-4o-mini":        {"input": 0.15,  "output": 0.60,  "encoding": "o200k_base",  "reasoning": False, "context_window": 128_000},
-        "o3-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
-        "o3":                 {"input": 10.0,  "output": 40.0,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
-        "o4-mini":            {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
-        "o4-mini-2025-04-16": {"input": 1.10,  "output": 4.40,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
+        "gpt-3.5-turbo":      {"input": 0.50,  "output": 1.50,  "ratio": 1.50 / 0.50,  "encoding": "cl100k_base", "reasoning": False, "context_window":  16_385},
+        "gpt-4-turbo":        {"input": 10.0,  "output": 30.0,  "ratio": 30.0 / 10.0,  "encoding": "cl100k_base", "reasoning": False, "context_window": 128_000},
+        "gpt-4o-mini":        {"input": 0.15,  "output": 0.60,  "ratio": 0.60 / 0.15,  "encoding": "o200k_base",  "reasoning": False, "context_window": 128_000},
+        "gpt-5.4-mini":       {"input": 0.75,  "output": 4.50,  "ratio": 4.50 / 0.75,  "encoding": "o200k_base",  "reasoning": False, "context_window": 128_000},
+        "gpt-5.4":            {"input": 2.50,  "output": 15.00, "ratio": 15.00 / 2.50, "encoding": "o200k_base",  "reasoning": False, "context_window": 128_000},
+        "o3-mini":            {"input": 1.10,  "output": 4.40,  "ratio": 4.40 / 1.10,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
+        "o3":                 {"input": 10.0,  "output": 40.0,  "ratio": 40.0 / 10.0,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
+        "o4-mini":            {"input": 1.10,  "output": 4.40,  "ratio": 4.40 / 1.10,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
+        "o4-mini-2025-04-16": {"input": 1.10,  "output": 4.40,  "ratio": 4.40 / 1.10,  "encoding": "o200k_base",  "reasoning": True,  "context_window": 200_000},
     }
     
     DEFAULT_MODEL = "gpt-3.5-turbo"
@@ -577,6 +580,40 @@ ORDER BY revenue DESC;''',
     print(f"  Overhead:     {overhead_tokens:+d} extra tokens ({overhead_pct:.0f}% more)")
 
 
+def demo_pricing() -> None:
+    """Demo 6 — input/output pricing asymmetry across models (USD per 1M tokens)."""
+    print("\n" + "=" * 60)
+    print("Pricing asymmetry (USD / 1M tokens, April 2026)")
+    print("=" * 60)
+
+    print(f"\n{'Model':25s} {'Input':>10s} {'Output':>10s} {'Ratio':>8s} {'Reasoning':>10s}")
+    print("-" * 68)
+
+    for model, cfg in OpenAIClient.MODELS.items():
+        reasoning = "yes" if cfg["reasoning"] else "no"
+        print(
+            f"{model:25s}"
+            f" ${cfg['input']:>8.2f}"
+            f" ${cfg['output']:>8.2f}"
+            f" {cfg['ratio']:>7.1f}x"
+            f" {reasoning:>10s}"
+        )
+
+    print()
+    # Highlight the model with the highest output/input asymmetry
+    most_asymmetric = max(OpenAIClient.MODELS, key=lambda m: OpenAIClient.MODELS[m]["ratio"])
+    r = OpenAIClient.MODELS[most_asymmetric]["ratio"]
+    print(f"Most asymmetric model: {most_asymmetric} (output is {r:.1f}x more expensive than input)")
+
+    # Show cost impact for a realistic workload: 10k input tokens, 1k output tokens
+    print("\n" + "-" * 68)
+    print("Estimated cost: 10,000 input tokens + 1,000 output tokens")
+    print("-" * 68)
+    for model, cfg in OpenAIClient.MODELS.items():
+        cost = (10_000 / 1_000_000) * cfg["input"] + (1_000 / 1_000_000) * cfg["output"]
+        print(f"  {model:25s} ${cost:.6f}")
+
+
 def demo_context_windows() -> None:
     """Demo 5 — context window sizes across models in the registry."""
     print("\n" + "=" * 60)
@@ -605,8 +642,9 @@ def demo_context_windows() -> None:
 if __name__ == "__main__":
     client = OpenAIClient()
 
-    demo_single_query(client)
+    #demo_single_query(client)
     #demo_multi_turn(client)
     #demo_reasoning(client)
     #demo_tokenization()
     #demo_context_windows()
+    demo_pricing()
