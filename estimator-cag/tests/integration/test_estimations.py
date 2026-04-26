@@ -89,7 +89,7 @@ class TestCreateEstimation:
         response = client.post("/estimations/", json={})
         assert response.status_code == 422
 
-    def test_returns_422_when_payload_is_empty_string(self, client: TestClient):
+    def test_returns_200_when_payload_is_empty_string(self, client: TestClient):
         """FastAPI validates the field exists; an empty string is technically valid — 
         this test documents the current contract."""
         with patch(
