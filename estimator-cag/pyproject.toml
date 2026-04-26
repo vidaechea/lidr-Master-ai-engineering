@@ -5,6 +5,7 @@ description = "Cost estimation service for CAG workflows"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "anthropic>=0.97.0",
     "fastapi>=0.136.1",
     "openai>=2.32.0",
     "pydantic-settings>=2.14.0",

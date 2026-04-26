@@ -122,6 +122,7 @@ class BaseLLMService(ABC):
         model_info: dict[str, Any],
         temperature: Optional[float],
         top_p: Optional[float],
+        top_k: Optional[int],
         reasoning_effort: str,
         max_output_tokens: int,
         continue_conversation: bool,
@@ -159,6 +160,7 @@ class BaseLLMService(ABC):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
         reasoning_effort: str = "medium",
         max_output_tokens: int = 2_048,
         continue_conversation: bool = False,
@@ -228,6 +230,7 @@ class BaseLLMService(ABC):
                     f"meets or exceeds the context window for model "
                     f"'{resolved_model}' ({context_window} tokens)."
                 ),
+                "status_code": 413,
             }
 
         cost_est = input_tokens_est * price_in / 1_000_000
@@ -239,6 +242,7 @@ class BaseLLMService(ABC):
             model_info=model_info,
             temperature=temperature,
             top_p=top_p,
+            top_k=top_k,
             reasoning_effort=reasoning_effort,
             max_output_tokens=max_output_tokens,
             continue_conversation=continue_conversation,
@@ -246,6 +250,10 @@ class BaseLLMService(ABC):
 
         # ② CALL
         response = await self._call_provider(api_params)
+
+        # Provider may return an error dict directly (e.g. caught API exception)
+        if isinstance(response, dict) and response.get("error"):
+            return response
 
         # ③ POST-CALL — cost accounting & session state
         partial = self._parse_provider_response(response, is_reasoning=is_reasoning)
@@ -272,6 +280,7 @@ class BaseLLMService(ABC):
             "input_tokens": actual_input_tokens,
             "output_tokens": actual_output_tokens,
             "reasoning_tokens": partial.get("reasoning_tokens"),
+            "truncated": partial.get("truncated", False),
             "turn_cost_usd": round(turn_cost, 8),
             "total_cost_usd": round(total_cost, 8),
             "response_id": partial["response_id"],
