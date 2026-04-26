@@ -216,10 +216,19 @@ class BaseLLMService(ABC):
 
         system_prompt = self._build_system_prompt()
         input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
+        total_tokens_est = input_tokens_est + max_output_tokens
 
-        overflow = self._check_context_overflow(input_tokens_est, context_window, resolved_model)
-        if overflow:
-            return overflow
+        if total_tokens_est >= context_window:
+            return {
+                "error": True,
+                "type": "context_window_overflow",
+                "message": (
+                    f"Estimated request size ({input_tokens_est} input tokens + "
+                    f"{max_output_tokens} max output tokens = {total_tokens_est} total) "
+                    f"meets or exceeds the context window for model "
+                    f"'{resolved_model}' ({context_window} tokens)."
+                ),
+            }
 
         cost_est = input_tokens_est * price_in / 1_000_000
 
