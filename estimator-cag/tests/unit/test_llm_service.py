@@ -350,7 +350,7 @@ class TestEstimateReasoningModel:
         assert "temperature" not in create_mock.call_args.kwargs
 
     async def test_reasoning_tokens_extracted_from_usage(self):
-        mock_response = _make_responses_mock(model="o4-mini", reasoning_tokens=80)
+        mock_response = _make_responses_mock(reasoning_tokens=80)
         mock_response.usage.output_tokens_details = MagicMock(reasoning_tokens=80)
         with patch("app.services.llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
