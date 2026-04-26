@@ -27,7 +27,8 @@ estimator-cag/
 │   ├── routers/
 │   │   └── estimations.py    # POST /estimations/ and GET /estimations/examples
 │   └── services/
-│       └── llm_service.py    # OpenAI Responses API client, token estimation, cost tracking
+│       ├── base_llm_service.py   # Abstract base class with shared estimation pipeline
+│       └── llm_service.py        # OpenAI implementation, model registry, cost tracking
 ├── tests/
 │   ├── integration/          # HTTP-level tests via FastAPI TestClient
 │   └── unit/                 # Unit tests for the LLM service and examples module
@@ -85,8 +86,15 @@ estimator-cag/
 
 | Model | Input ($/1M tokens) | Output ($/1M tokens) | Context window | Reasoning |
 |-------|--------------------|--------------------|----------------|-----------|
+| `gpt-3.5-turbo` | $0.50 | $1.50 | 16 385 | No |
+| `gpt-4-turbo` | $10.00 | $30.00 | 128 000 | No |
 | `gpt-4o-mini` | $0.15 | $0.60 | 128 000 | No |
+| `gpt-5.4-mini` | $0.75 | $4.50 | 128 000 | No |
+| `gpt-5.4` | $2.50 | $15.00 | 128 000 | No |
+| `o3-mini` | $1.10 | $4.40 | 200 000 | Yes |
+| `o3` | $10.00 | $40.00 | 200 000 | Yes |
 | `o4-mini` | $1.10 | $4.40 | 200 000 | Yes |
+| `o4-mini-2025-04-16` | $1.10 | $4.40 | 200 000 | Yes |
 
 ---
 

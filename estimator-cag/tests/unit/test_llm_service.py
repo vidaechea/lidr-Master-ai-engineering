@@ -44,11 +44,11 @@ def _make_responses_mock(
 
 @pytest.fixture(autouse=True)
 def reset_module_state():
-    """Reset module-level session state before every test."""
+    """Reset OpenAI client and singleton session state before every test."""
     svc._client = None
-    svc._last_response_id = None
-    svc._turn_count = 0
-    svc._total_cost = 0.0
+    svc._openai_service._last_response_id = None
+    svc._openai_service._turn_count = 0
+    svc._openai_service._total_cost = 0.0
     yield
 
 
@@ -211,7 +211,7 @@ class TestEstimateValidation:
             await estimate("test", model="nonexistent-model")
 
     async def test_returns_error_dict_on_context_overflow(self):
-        with patch("app.services.llm_service.estimate_call_tokens", return_value=999_999_999):
+        with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
             result = await estimate("test")
         assert result.get("error") is True
         assert result.get("status_code") == 413

@@ -170,7 +170,7 @@ class TestCreateEstimationErrors:
     def test_returns_413_on_context_overflow(self, client: TestClient):
         import app.services.llm_service as svc
 
-        with patch.object(svc, "estimate_call_tokens", return_value=999_999_999):
+        with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
             response = client.post(
                 "/estimations/",
                 json={"description": "Build something very long"},
@@ -180,7 +180,7 @@ class TestCreateEstimationErrors:
     def test_error_detail_mentions_overflow(self, client: TestClient):
         import app.services.llm_service as svc
 
-        with patch.object(svc, "estimate_call_tokens", return_value=999_999_999):
+        with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
             response = client.post(
                 "/estimations/",
                 json={"description": "Build something very long"},
