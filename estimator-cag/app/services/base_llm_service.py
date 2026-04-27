@@ -50,6 +50,12 @@ class BaseLLMService(ABC):
         self._turn_count: int = 0
         self._total_cost: float = 0.0
 
+    def reset(self) -> None:
+        """Reset multi-turn session state (start a new conversation thread)."""
+        self._last_response_id = None
+        self._turn_count = 0
+        self._total_cost = 0.0
+
     # ------------------------------------------------------------------ #
     # Concrete shared helpers
     # ------------------------------------------------------------------ #
@@ -92,6 +98,13 @@ class BaseLLMService(ABC):
     # Abstract provider-specific methods
     # ------------------------------------------------------------------ #
 
+    def _on_turn_complete(
+        self,
+        transcription: str,
+        assistant_content: str,
+    ) -> None:
+        """Hook called after each successful multi-turn call. No-op by default."""
+
     @abstractmethod
     def _get_model_info(
         self, model: Optional[str]
@@ -124,6 +137,7 @@ class BaseLLMService(ABC):
         top_p: Optional[float],
         top_k: Optional[int],
         reasoning_effort: str,
+        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
@@ -162,6 +176,7 @@ class BaseLLMService(ABC):
         top_p: Optional[float] = None,
         top_k: Optional[int] = None,
         reasoning_effort: str = "medium",
+        verbosity: str = "low",
         max_output_tokens: int = 2_048,
         continue_conversation: bool = False,
     ) -> dict[str, Any]:
@@ -244,6 +259,7 @@ class BaseLLMService(ABC):
             top_p=top_p,
             top_k=top_k,
             reasoning_effort=reasoning_effort,
+            verbosity=verbosity,
             max_output_tokens=max_output_tokens,
             continue_conversation=continue_conversation,
         )
@@ -271,6 +287,7 @@ class BaseLLMService(ABC):
             self._turn_count += 1
             self._total_cost += turn_cost
             total_cost = self._total_cost
+            self._on_turn_complete(transcription, partial["content"])
         else:
             total_cost = turn_cost
 

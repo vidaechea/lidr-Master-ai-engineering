@@ -7,11 +7,11 @@ A REST API service that generates software effort estimates from meeting transcr
 ## Features
 
 - **CAG pipeline** — curated estimation examples are embedded in the system prompt so the model always produces structured, consistent estimates.
-- **Pre-call token forecasting** — uses `tiktoken` to estimate input tokens before calling the API; returns HTTP 413 if the context window would be exceeded.
+- **Pre-call token forecasting** — estimates input tokens before calling the API; returns HTTP 413 if the context window would be exceeded.
 - **Cost accounting** — tracks input/output token counts and computes per-turn and cumulative USD cost.
-- **Multi-model support** — `gpt-4o-mini` (default) and `o4-mini` (reasoning model); the routing layer handles parameter differences automatically.
-- **Multi-turn sessions** — optional conversation continuation via `previous_response_id`.
-- **OpenAI Responses API** — uses the modern `responses.create` endpoint instead of Chat Completions.
+- **Multi-provider support** — OpenAI (Responses API) and Anthropic (Messages API); the routing layer handles each provider's differences automatically.
+- **Multi-turn sessions** — optional conversation continuation. OpenAI uses server-side `previous_response_id`; Anthropic replays the full history on every call (stateless).
+- **Provider-specific multi-turn** — Anthropic history is stored client-side and grows turn-by-turn; `reset()` starts a new thread.
 
 ---
 
@@ -27,8 +27,9 @@ estimator-cag/
 │   ├── routers/
 │   │   └── estimations.py    # POST /estimations/ and GET /estimations/examples
 │   └── services/
-│       ├── base_llm_service.py   # Abstract base class with shared estimation pipeline
-│       └── llm_service.py        # OpenAI implementation, model registry, cost tracking
+│       ├── base_llm_service.py        # Abstract base with shared estimation pipeline
+│       ├── openai_llm_service.py      # OpenAI implementation (Responses API)
+│       └── anthropic_llm_service.py   # Anthropic implementation (Messages API, stateless multi-turn)
 ├── tests/
 │   ├── integration/          # HTTP-level tests via FastAPI TestClient
 │   └── unit/                 # Unit tests for the LLM service and examples module
@@ -147,4 +148,4 @@ UVICORN_RELOAD=true
 uv run pytest tests/ -v
 ```
 
-The test suite covers 61 cases across unit and integration layers. All external API calls are mocked.
+The test suite covers 115 cases across unit and integration layers. All external API calls are mocked.

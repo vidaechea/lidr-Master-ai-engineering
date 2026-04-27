@@ -62,6 +62,17 @@ def _get_client() -> AsyncAnthropic:
 class AnthropicLLMService(BaseLLMService):
     """LLM service implementation backed by the Anthropic Messages API."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        # Full conversation history for stateless multi-turn sessions.
+        # Anthropic does not store history server-side; we send it on every call.
+        self._conversation_history: list[dict[str, str]] = []
+
+    def reset(self) -> None:
+        """Reset session state and clear conversation history."""
+        super().reset()
+        self._conversation_history = []
+
     def _get_model_info(
         self, model: Optional[str]
     ) -> tuple[str, dict[str, Any]]:
@@ -84,8 +95,12 @@ class AnthropicLLMService(BaseLLMService):
         Anthropic does not provide an offline tokenizer. The approximation
         (total_chars / 3.5) is conservative enough to avoid underestimating
         context usage in the pre-call overflow check.
+
+        When a conversation is in progress, history characters are included so
+        the overflow guard accounts for the full messages array sent to the API.
         """
-        total_chars = len(system_prompt) + len(user_message)
+        history_chars = sum(len(m["content"]) for m in self._conversation_history)
+        total_chars = len(system_prompt) + history_chars + len(user_message)
         return int(total_chars / _CHARS_PER_TOKEN)
 
     def _build_api_params(
@@ -99,13 +114,22 @@ class AnthropicLLMService(BaseLLMService):
         top_p: Optional[float],
         top_k: Optional[int],
         reasoning_effort: str,
+        verbosity: str,  # not supported by Anthropic — ignored
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
+        # Anthropic is stateless — the full history must be sent on every call.
+        # For a fresh single-turn call, send only the current user message.
+        if continue_conversation:
+            messages: list[dict[str, str]] = list(self._conversation_history)
+            messages.append({"role": "user", "content": transcription})
+        else:
+            messages = [{"role": "user", "content": transcription}]
+
         params: dict[str, Any] = {
             "model": resolved_model,
             "system": system_prompt,
-            "messages": [{"role": "user", "content": transcription}],
+            "messages": messages,
             "max_tokens": max_output_tokens,
         }
 
@@ -177,3 +201,12 @@ class AnthropicLLMService(BaseLLMService):
             "reasoning_tokens": None,  # Anthropic does not expose reasoning tokens
             "truncated": response.stop_reason == "max_tokens",
         }
+
+    def _on_turn_complete(
+        self,
+        transcription: str,
+        assistant_content: str,
+    ) -> None:
+        """Append the completed user/assistant turn to the local history."""
+        self._conversation_history.append({"role": "user", "content": transcription})
+        self._conversation_history.append({"role": "assistant", "content": assistant_content})

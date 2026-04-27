@@ -336,3 +336,137 @@ class TestEstimateValidation:
         assert result.get("error") is True
         assert result.get("status_code") == 413
         assert "overflow" in result.get("type", "")
+
+
+# --------------------------------------------------------------------------- #
+# Multi-turn stateless history
+# --------------------------------------------------------------------------- #
+
+class TestMultiTurn:
+    async def test_single_turn_sends_only_current_message(self, service):
+        """continue_conversation=False → messages contains only the new user message."""
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("First call", continue_conversation=False)
+        messages = create_mock.call_args.kwargs["messages"]
+        assert messages == [{"role": "user", "content": "First call"}]
+
+    async def test_first_continue_true_sends_single_message(self, service):
+        """First call with continue_conversation=True — history empty, single message sent."""
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("Turn one", continue_conversation=True)
+        messages = create_mock.call_args.kwargs["messages"]
+        assert messages == [{"role": "user", "content": "Turn one"}]
+
+    async def test_second_turn_includes_full_history(self, service):
+        """Second call with continue_conversation=True includes [user, assistant, user]."""
+        resp1 = _make_response_mock(output_text="Answer one", response_id="id1")
+        resp2 = _make_response_mock(output_text="Answer two", response_id="id2")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(side_effect=[resp1, resp2])
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("Turn one", continue_conversation=True)
+            await service.estimate("Turn two", continue_conversation=True)
+        messages = create_mock.call_args.kwargs["messages"]
+        assert len(messages) == 3
+        assert messages[0] == {"role": "user", "content": "Turn one"}
+        assert messages[1] == {"role": "assistant", "content": "Answer one"}
+        assert messages[2] == {"role": "user", "content": "Turn two"}
+
+    async def test_history_strictly_alternates_user_assistant(self, service):
+        """After N turns, history must strictly alternate user → assistant."""
+        responses = [
+            _make_response_mock(output_text=f"Answer {i}", response_id=f"id{i}")
+            for i in range(3)
+        ]
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(side_effect=responses)
+            mock_client.return_value.messages.create = create_mock
+            for i in range(3):
+                await service.estimate(f"Turn {i}", continue_conversation=True)
+        for idx, msg in enumerate(service._conversation_history):
+            expected_role = "user" if idx % 2 == 0 else "assistant"
+            assert msg["role"] == expected_role, (
+                f"Expected role '{expected_role}' at index {idx}, got '{msg['role']}'"
+            )
+
+    async def test_reset_clears_conversation_history(self, service):
+        """reset() must wipe the history so the next turn starts from scratch."""
+        resp1 = _make_response_mock(output_text="Answer one")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=resp1)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("Turn one", continue_conversation=True)
+        assert len(service._conversation_history) == 2
+        service.reset()
+        assert service._conversation_history == []
+        resp2 = _make_response_mock(output_text="Fresh start")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=resp2)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("After reset", continue_conversation=True)
+        messages = create_mock.call_args.kwargs["messages"]
+        assert messages == [{"role": "user", "content": "After reset"}]
+
+    async def test_history_not_updated_on_api_error(self, service):
+        """If the API call fails, conversation history must remain unchanged."""
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(
+                side_effect=RateLimitError(
+                    message="Rate limit", response=MagicMock(), body={}
+                )
+            )
+            await service.estimate("Turn one", continue_conversation=True)
+        assert service._conversation_history == []
+
+    async def test_continue_false_does_not_append_to_history(self, service):
+        """continue_conversation=False must not update conversation history."""
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("Single shot", continue_conversation=False)
+        assert service._conversation_history == []
+
+    async def test_continue_false_ignores_existing_history(self, service):
+        """Even if history exists, continue_conversation=False sends only the new message."""
+        resp1 = _make_response_mock(output_text="Answer one")
+        resp2 = _make_response_mock(output_text="Answer two")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(side_effect=[resp1, resp2])
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("Turn one", continue_conversation=True)
+            await service.estimate("Single shot", continue_conversation=False)
+        messages = create_mock.call_args.kwargs["messages"]
+        assert messages == [{"role": "user", "content": "Single shot"}]
+
+    async def test_token_estimate_includes_history_chars(self, service):
+        """_count_tokens must account for conversation history in the estimate."""
+        service._conversation_history = [
+            {"role": "user", "content": "a" * 700},
+            {"role": "assistant", "content": "b" * 700},
+        ]
+        history_chars = 1400
+        sys_chars = 10
+        user_chars = 10
+        expected = int((sys_chars + history_chars + user_chars) / _CHARS_PER_TOKEN)
+        result = service._count_tokens("a" * sys_chars, "b" * user_chars, DEFAULT_MODEL)
+        assert result == expected
+
+    async def test_history_grows_with_each_turn(self, service):
+        """Each successful turn appends exactly 2 items (user + assistant) to history."""
+        responses = [
+            _make_response_mock(output_text=f"A{i}", response_id=f"id{i}")
+            for i in range(3)
+        ]
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(side_effect=responses)
+            mock_client.return_value.messages.create = create_mock
+            for i in range(3):
+                await service.estimate(f"Q{i}", continue_conversation=True)
+                assert len(service._conversation_history) == (i + 1) * 2
