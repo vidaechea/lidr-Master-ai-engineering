@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
-from app.context.examples import get_examples_context
+from app.context.examples import ESTIMATION_EXAMPLES
 
 # --------------------------------------------------------------------------- #
 # Shared prompt template  —  CAG: role definition + injected examples
@@ -20,11 +20,6 @@ of detail:
 Now estimate the new project based on the meeting transcription provided \
 by the user.
 """
-
-
-def _build_system_prompt() -> str:
-    """Build the system prompt injecting all CAG context examples."""
-    return _SYSTEM_PROMPT_TEMPLATE.format(examples=get_examples_context())
 
 
 # --------------------------------------------------------------------------- #
@@ -56,27 +51,21 @@ class BaseLLMService(ABC):
 
     def _build_system_prompt(self) -> str:
         """Build the CAG system prompt with injected examples."""
-        return _build_system_prompt()
+        return _SYSTEM_PROMPT_TEMPLATE.format(examples=ESTIMATION_EXAMPLES.as_context())
 
-    def _check_context_overflow(
-        self,
-        input_tokens_est: int,
-        context_window: int,
-        model: str,
-    ) -> Optional[dict[str, Any]]:
-        """Return an error dict when estimated tokens exceed the context window."""
-        if input_tokens_est > context_window:
-            return {
-                "error": True,
-                "type": "context_overflow",
-                "message": (
-                    f"Estimated input tokens ({input_tokens_est:,}) exceed the "
-                    f"model's context window ({context_window:,}). "
-                    "Reduce the prompt or split the transcription."
-                ),
-                "status_code": 413,
-            }
-        return None
+    @staticmethod
+    def _build_error_dict(
+        error_type: str,
+        message: str,
+        status_code: int,
+    ) -> dict[str, Any]:
+        """Build a standardised error response dict."""
+        return {
+            "error": True,
+            "type": error_type,
+            "message": message,
+            "status_code": status_code,
+        }
 
     def _compute_cost(
         self,
@@ -221,13 +210,14 @@ class BaseLLMService(ABC):
         if total_tokens_est >= context_window:
             return {
                 "error": True,
-                "type": "context_window_overflow",
+                "type": "context_overflow",
                 "message": (
                     f"Estimated request size ({input_tokens_est} input tokens + "
                     f"{max_output_tokens} max output tokens = {total_tokens_est} total) "
                     f"meets or exceeds the context window for model "
                     f"'{resolved_model}' ({context_window} tokens)."
                 ),
+                "status_code": 413,
             }
 
         cost_est = input_tokens_est * price_in / 1_000_000

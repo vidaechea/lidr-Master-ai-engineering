@@ -75,7 +75,11 @@ MODELS: dict[str, dict[str, Any]] = {
     },
 }
 
-DEFAULT_MODEL: str = settings.llm_model  # "gpt-4o-mini"
+DEFAULT_MODEL: str = (
+    settings.llm_model
+    if settings.llm_provider.lower() == "openai" and settings.llm_model in MODELS
+    else "gpt-4o-mini"
+)
 
 # Tokens added by the API per message (role overhead) and response priming
 _MSG_OVERHEAD: int = 4

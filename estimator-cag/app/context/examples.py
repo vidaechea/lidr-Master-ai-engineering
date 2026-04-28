@@ -34,7 +34,7 @@ class EstimationExamplesCollection:
         )
 
 
-ESTIMATION_EXAMPLES = EstimationExamplesCollection([
+ESTIMATION_EXAMPLES: EstimationExamplesCollection = EstimationExamplesCollection([
     EstimationExample(
         meeting_summary=(
             "The client needs a web platform for inventory management. "
@@ -92,7 +92,3 @@ ESTIMATION_EXAMPLES = EstimationExamplesCollection([
 """,
     ),
 ])
-
-
-def get_examples_context() -> str:
-    return ESTIMATION_EXAMPLES.as_context()

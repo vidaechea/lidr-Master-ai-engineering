@@ -3,7 +3,6 @@ from app.context.examples import (
     ESTIMATION_LABEL,
     EXAMPLE_HEADER_TEMPLATE,
     MEETING_SUMMARY_LABEL,
-    get_examples_context,
 )
 
 
@@ -27,29 +26,28 @@ class TestEstimationExamples:
             assert len(example.estimation.strip()) > 0
 
     def test_returns_string(self):
-        result = get_examples_context()
+        result = ESTIMATION_EXAMPLES.as_context()
         assert isinstance(result, str)
 
     def test_output_contains_all_example_markers(self):
-        result = get_examples_context()
+        result = ESTIMATION_EXAMPLES.as_context()
         for i in range(1, len(ESTIMATION_EXAMPLES) + 1):
             assert EXAMPLE_HEADER_TEMPLATE.format(index=i) in result
 
     def test_output_contains_meeting_summary_label(self):
-        result = get_examples_context()
+        result = ESTIMATION_EXAMPLES.as_context()
         assert MEETING_SUMMARY_LABEL in result
 
     def test_output_contains_estimation_label(self):
-        result = get_examples_context()
+        result = ESTIMATION_EXAMPLES.as_context()
         assert ESTIMATION_LABEL in result
 
     def test_output_contains_each_meeting_summary_text(self):
-        result = get_examples_context()
+        result = ESTIMATION_EXAMPLES.as_context()
         for example in ESTIMATION_EXAMPLES:
-            # Check a distinctive fragment of each summary is present
             fragment = example.meeting_summary[:40]
             assert fragment in result
 
     def test_output_is_not_empty(self):
-        result = get_examples_context()
+        result = ESTIMATION_EXAMPLES.as_context()
         assert len(result.strip()) > 0
