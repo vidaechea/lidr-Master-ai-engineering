@@ -278,7 +278,7 @@ class TestEstimateParamRouting:
         with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
-            await service.estimate("test", temperature=0.7)
+            await service.estimate("test", model="gpt-4o-mini", temperature=0.7)
         assert create_mock.call_args.kwargs.get("temperature") == 0.7
 
     async def test_top_p_sent_when_provided(self, service):
@@ -286,7 +286,7 @@ class TestEstimateParamRouting:
         with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
-            await service.estimate("test", top_p=0.9)
+            await service.estimate("test", model="gpt-4o-mini", top_p=0.9)
         assert create_mock.call_args.kwargs.get("top_p") == 0.9
 
     async def test_temperature_not_sent_when_omitted(self, service):
@@ -351,6 +351,34 @@ class TestEstimateMultiTurn:
             result = await service.estimate("test", continue_conversation=False)
         assert result["total_cost_usd"] == result["turn_cost_usd"]
 
+    async def test_reset_clears_session_state(self, service):
+        mock_response = _make_response_mock(response_id="resp_turn1")
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
+            await service.estimate("turn 1", continue_conversation=True)
+
+        assert service._last_response_id == "resp_turn1"
+        assert service._turn_count == 1
+        assert service._total_cost > 0
+
+        service.reset()
+
+        assert service._last_response_id is None
+        assert service._turn_count == 0
+        assert service._total_cost == 0.0
+
+    async def test_after_reset_no_previous_response_id_sent(self, service):
+        mock_response = _make_response_mock(response_id="resp_turn1")
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("turn 1", continue_conversation=True)
+            service.reset()
+            await service.estimate("new start", continue_conversation=True)
+
+        second_call_kwargs = create_mock.call_args_list[1].kwargs
+        assert "previous_response_id" not in second_call_kwargs
+
 
 # --------------------------------------------------------------------------- #
 # estimate — reasoning model (o4-mini)
@@ -380,6 +408,23 @@ class TestEstimateReasoningModel:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model="o4-mini")
         assert result["reasoning_tokens"] == 80
+
+    async def test_text_format_sent_for_reasoning_model(self, service):
+        mock_response = _make_response_mock(reasoning_tokens=50)
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("test", model="o4-mini")
+        text_param = create_mock.call_args.kwargs.get("text")
+        assert text_param == {"format": {"type": "text"}}
+
+    async def test_text_param_not_sent_for_non_reasoning_model(self, service):
+        mock_response = _make_response_mock()
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("test", model="gpt-4o-mini")
+        assert "text" not in create_mock.call_args.kwargs
 
 
 # --------------------------------------------------------------------------- #

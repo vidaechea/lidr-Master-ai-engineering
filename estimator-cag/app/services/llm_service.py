@@ -53,6 +53,7 @@ async def estimate(
     top_p: Optional[float] = None,
     top_k: Optional[int] = None,
     reasoning_effort: str = "medium",
+    verbosity: str = "low",
     max_output_tokens: int = 2_048,
     continue_conversation: bool = False,
 ) -> dict[str, Any]:
@@ -64,7 +65,13 @@ async def estimate(
         top_p=top_p,
         top_k=top_k,
         reasoning_effort=reasoning_effort,
+        verbosity=verbosity,
         max_output_tokens=max_output_tokens,
         continue_conversation=continue_conversation,
     )
+
+
+def reset() -> None:
+    """Reset the active service's multi-turn session state."""
+    _active_service.reset()
 

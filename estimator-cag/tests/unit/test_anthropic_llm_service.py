@@ -15,6 +15,7 @@ from app.services.anthropic_llm_service import (
     DEFAULT_MODEL,
     MODELS,
     _CHARS_PER_TOKEN,
+    _THINKING_BUDGET,
     AnthropicLLMService,
 )
 
@@ -32,18 +33,34 @@ def _make_response_mock(
     input_tokens: int = 500,
     output_tokens: int = 200,
     response_id: str = FAKE_RESPONSE_ID,
+    thinking_text: str | None = None,
+    thinking_tokens: int | None = None,
 ) -> MagicMock:
-    """Build a minimal mock that mimics an Anthropic Messages API response object."""
-    usage = MagicMock()
+    """Build a minimal mock that mimics an Anthropic Messages API response object.
+
+    When *thinking_text* is provided, the content list starts with a thinking
+    block followed by the text block, mirroring Extended Thinking responses.
+    """
+    usage = MagicMock(spec=["input_tokens", "output_tokens", "thinking_tokens"])
     usage.input_tokens = input_tokens
     usage.output_tokens = output_tokens
+    usage.thinking_tokens = thinking_tokens
 
-    content_block = MagicMock()
-    content_block.text = output_text
+    text_block = MagicMock()
+    text_block.type = "text"
+    text_block.text = output_text
+
+    if thinking_text is not None:
+        thinking_block = MagicMock()
+        thinking_block.type = "thinking"
+        thinking_block.thinking = thinking_text
+        content = [thinking_block, text_block]
+    else:
+        content = [text_block]
 
     response = MagicMock()
     response.stop_reason = stop_reason
-    response.content = [content_block]
+    response.content = content
     response.usage = usage
     response.id = response_id
     return response
@@ -59,6 +76,21 @@ def reset_client():
     anthropic_svc._client = None
     yield
     anthropic_svc._client = None
+
+
+@pytest.fixture(autouse=True)
+def clear_env_model():
+    """Prevent LLM_MODEL from the .env file from polluting unit tests.
+
+    Unit tests pass model=None to let the service fall back to DEFAULT_MODEL.
+    Without this fixture, a locally set LLM_MODEL (e.g. claude-opus-4-7) would
+    override DEFAULT_MODEL and break assertions that expect the default.
+    """
+    import app.services.anthropic_llm_service as svc_mod
+    original = svc_mod.settings.llm_model
+    svc_mod.settings.llm_model = ""
+    yield
+    svc_mod.settings.llm_model = original
 
 
 @pytest.fixture
@@ -136,8 +168,8 @@ class TestEstimateSuccess:
         assert result["input_tokens"] == mock_response.usage.input_tokens
         assert result["output_tokens"] == mock_response.usage.output_tokens
 
-    async def test_reasoning_tokens_is_always_none(self, service, mock_response):
-        """Anthropic does not expose reasoning tokens."""
+    async def test_reasoning_tokens_none_for_non_reasoning_model(self, service, mock_response):
+        """Non-reasoning models never expose reasoning tokens."""
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
@@ -470,3 +502,112 @@ class TestMultiTurn:
             for i in range(3):
                 await service.estimate(f"Q{i}", continue_conversation=True)
                 assert len(service._conversation_history) == (i + 1) * 2
+
+
+# --------------------------------------------------------------------------- #
+# Extended Thinking (claude-opus-4-7 and future reasoning models)
+# --------------------------------------------------------------------------- #
+
+class TestExtendedThinking:
+    REASONING_MODEL = "claude-opus-4-7"
+
+    def test_reasoning_model_is_flagged_in_registry(self):
+        assert MODELS[self.REASONING_MODEL]["reasoning"] is True
+
+    def test_non_reasoning_models_not_flagged(self):
+        for name, info in MODELS.items():
+            if name != self.REASONING_MODEL:
+                assert info["reasoning"] is False, f"{name} should have reasoning=False"
+
+    async def test_thinking_param_sent_for_reasoning_model(self, service):
+        """_build_api_params must include thinking block for reasoning models."""
+        mock_response = _make_response_mock(thinking_text="I reason...")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("test", model=self.REASONING_MODEL)
+        params = create_mock.call_args.kwargs
+        assert "thinking" in params
+        # claude-opus-4-7 uses adaptive API
+        assert params["thinking"]["type"] == "adaptive"
+        assert "output_config" in params
+
+    async def test_thinking_always_uses_high_effort(self, service):
+        """Reasoning models always force effort=high regardless of reasoning_effort arg."""
+        mock_response = _make_response_mock(thinking_text="I reason...")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("test", model=self.REASONING_MODEL, reasoning_effort="low")
+        assert create_mock.call_args.kwargs["output_config"]["effort"] == "high"
+
+    async def test_max_tokens_forced_to_8000_for_reasoning_model(self, service):
+        """Reasoning models always use max_tokens=8000 regardless of caller value."""
+        mock_response = _make_response_mock(thinking_text="I reason...")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("test", model=self.REASONING_MODEL, max_output_tokens=1024)
+        assert create_mock.call_args.kwargs["max_tokens"] == 8_000
+
+    async def test_temperature_not_sent_for_reasoning_model(self, service):
+        """Extended Thinking is incompatible with custom temperature."""
+        mock_response = _make_response_mock(thinking_text="I reason...")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("test", model=self.REASONING_MODEL, temperature=0.7)
+        params = create_mock.call_args.kwargs
+        assert "temperature" not in params
+        assert "top_p" not in params
+        assert "top_k" not in params
+
+    async def test_text_extracted_from_mixed_content_blocks(self, service):
+        """When content has [thinking, text] blocks, content key holds the text block."""
+        mock_response = _make_response_mock(
+            output_text="Final answer here.",
+            thinking_text="Let me think step by step...",
+        )
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("test", model=self.REASONING_MODEL)
+        assert result["content"] == "Final answer here."
+
+    async def test_reasoning_tokens_read_from_usage_when_present(self, service):
+        """reasoning_tokens is populated from usage.thinking_tokens when the API exposes it."""
+        mock_response = _make_response_mock(
+            thinking_text="Some reasoning...",
+            thinking_tokens=312,
+        )
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("test", model=self.REASONING_MODEL)
+        assert result["reasoning_tokens"] == 312
+
+    async def test_reasoning_tokens_none_when_usage_field_absent_and_no_thinking_blocks(self, service):
+        """reasoning_tokens is None when usage.thinking_tokens is absent and no thinking blocks."""
+        mock_response = _make_response_mock()  # no thinking_text
+        mock_response.usage.thinking_tokens = None
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("test", model=self.REASONING_MODEL)
+        assert result["reasoning_tokens"] is None
+
+    async def test_reasoning_tokens_estimated_from_thinking_blocks_when_usage_absent(self, service):
+        """When usage.thinking_tokens is None, estimate from thinking block char length."""
+        thinking_text = "a" * 350  # 350 chars / 3.5 = 100 tokens
+        mock_response = _make_response_mock(thinking_text=thinking_text)
+        mock_response.usage.thinking_tokens = None
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("test", model=self.REASONING_MODEL)
+        assert result["reasoning_tokens"] == int(350 / _CHARS_PER_TOKEN)
+
+    async def test_non_reasoning_model_has_no_thinking_param(self, service):
+        """Non-reasoning models must NOT receive the thinking parameter."""
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("test", model="claude-sonnet-4-6")
+        assert "thinking" not in create_mock.call_args.kwargs

@@ -32,7 +32,8 @@ MODELS: dict[str, dict[str, Any]] = {
         "input_price": 15.00,
         "output_price": 75.00,
         "context_window": 200_000,
-        "reasoning": False,
+        "reasoning": True,   # Supports Extended Thinking
+        "thinking_api": "adaptive",  # Uses thinking.type=adaptive + output_config.effort
     },
 }
 
@@ -42,6 +43,14 @@ DEFAULT_MODEL: str = "claude-sonnet-4-6"
 # Anthropic's tokenizer is not available offline; 3.5 chars/token is a
 # conservative estimate that avoids underestimating context usage.
 _CHARS_PER_TOKEN: float = 3.5
+
+# Extended Thinking budget_tokens per reasoning_effort level.
+# Minimum allowed by Anthropic is 1 024 tokens.
+_THINKING_BUDGET: dict[str, int] = {
+    "low": 1_024,
+    "medium": 5_000,
+    "high": 10_000,
+}
 
 # --------------------------------------------------------------------------- #
 # Lazy client factory
@@ -76,7 +85,9 @@ class AnthropicLLMService(BaseLLMService):
     def _get_model_info(
         self, model: Optional[str]
     ) -> tuple[str, dict[str, Any]]:
-        resolved = model or DEFAULT_MODEL
+        # Priority: caller arg > LLM_MODEL env var (if valid for Anthropic) > DEFAULT_MODEL
+        env_model = settings.llm_model if settings.llm_model in MODELS else None
+        resolved = model or env_model or DEFAULT_MODEL
         info = MODELS.get(resolved)
         if info is None:
             raise ValueError(
@@ -133,14 +144,26 @@ class AnthropicLLMService(BaseLLMService):
             "max_tokens": max_output_tokens,
         }
 
-        # Anthropic API: temperature is mutually exclusive with top_p AND top_k
-        if top_p is not None:
-            params["top_p"] = top_p
-        elif top_k is not None:
-            params["top_k"] = top_k
+        if model_info.get("reasoning"):
+            # Reasoning models: force high effort and enough token budget.
+            # These values are non-negotiable for Extended Thinking to activate.
+            params["max_tokens"] = 8_000
+            thinking_api = model_info.get("thinking_api", "enabled")
+            if thinking_api == "adaptive":
+                params["thinking"] = {"type": "adaptive"}
+                params["output_config"] = {"effort": "high"}
+            else:
+                budget = _THINKING_BUDGET["high"]
+                params["thinking"] = {"type": "enabled", "budget_tokens": budget}
         else:
-            if temperature is not None:
-                params["temperature"] = temperature
+            # Anthropic API: temperature is mutually exclusive with top_p AND top_k
+            if top_p is not None:
+                params["top_p"] = top_p
+            elif top_k is not None:
+                params["top_k"] = top_k
+            else:
+                if temperature is not None:
+                    params["temperature"] = temperature
 
         return params
 
@@ -193,12 +216,45 @@ class AnthropicLLMService(BaseLLMService):
                 ),
             }
 
+        # Extended Thinking responses contain a list of typed content blocks:
+        #   [{"type": "thinking", ...}, {"type": "text", ...}]
+        # We must iterate to find the text block instead of assuming index 0.
+        # NOTE: claude-opus-4-7 with thinking.type=adaptive does NOT expose
+        # thinking blocks in content nor thinking_tokens in usage — the
+        # reasoning is internal only. Future models or "enabled" API may differ.
+        text_content: str = ""
+        thinking_chars: int = 0
+        for block in response.content:
+            block_type = getattr(block, "type", None)
+            if block_type == "text":
+                text_content = block.text
+            elif block_type == "thinking":
+                # The SDK may expose the thinking text via different attributes
+                # depending on the API variant (enabled vs adaptive).
+                # Try all known attribute names in order of preference.
+                raw = (
+                    getattr(block, "thinking", None)
+                    or getattr(block, "text", None)
+                    or ""
+                )
+                thinking_chars += len(raw)
+
+        # Reasoning tokens: prefer SDK field (future-proof), fall back to
+        # char-based estimate from thinking block content.
+        reasoning_tokens: Optional[int] = None
+        if is_reasoning:
+            sdk_thinking = getattr(response.usage, "thinking_tokens", None)
+            if sdk_thinking is not None:
+                reasoning_tokens = sdk_thinking
+            elif thinking_chars > 0:
+                reasoning_tokens = int(thinking_chars / _CHARS_PER_TOKEN)
+
         return {
-            "content": response.content[0].text,
+            "content": text_content,
             "response_id": response.id,
             "input_tokens": response.usage.input_tokens,
             "output_tokens": response.usage.output_tokens,
-            "reasoning_tokens": None,  # Anthropic does not expose reasoning tokens
+            "reasoning_tokens": reasoning_tokens,
             "truncated": response.stop_reason == "max_tokens",
         }
 

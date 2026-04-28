@@ -154,6 +154,7 @@ class OpenAILLMService(BaseLLMService):
         top_p: Optional[float],
         top_k: Optional[int],  # not supported by OpenAI — ignored
         reasoning_effort: str,
+        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
@@ -167,6 +168,7 @@ class OpenAILLMService(BaseLLMService):
 
         if model_info["reasoning"]:
             params["reasoning"] = {"effort": reasoning_effort}
+            params["text"] = {"format": {"type": "text"}}
         else:
             if temperature is not None:
                 params["temperature"] = temperature
