@@ -1,4 +1,5 @@
 """Unit tests for AnthropicLLMService — no facade, no OpenAI dependency."""
+import math
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -131,8 +132,8 @@ class TestCountTokens:
     def test_estimate_based_on_char_ratio(self, service):
         system = "a" * 350
         user = "b" * 350
-        # total_chars = 700, 700 / 3.5 = 200
-        expected = int(700 / _CHARS_PER_TOKEN)
+        # total_chars = 700, ceil(700 / 3.5) = 200
+        expected = max(1, math.ceil(700 / _CHARS_PER_TOKEN))
         assert service._count_tokens(system, user, DEFAULT_MODEL) == expected
 
     def test_model_argument_ignored_for_heuristic(self, service):
@@ -501,7 +502,7 @@ class TestMultiTurn:
         history_chars = 1400
         sys_chars = 10
         user_chars = 10
-        expected = int((sys_chars + history_chars + user_chars) / _CHARS_PER_TOKEN)
+        expected = max(1, math.ceil((sys_chars + history_chars + user_chars) / _CHARS_PER_TOKEN))
         result = service._count_tokens("a" * sys_chars, "b" * user_chars, DEFAULT_MODEL)
         assert result == expected
 
@@ -616,7 +617,7 @@ class TestExtendedThinking:
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
-        assert result["reasoning_tokens"] == int(350 / _CHARS_PER_TOKEN)
+        assert result["reasoning_tokens"] == max(1, math.ceil(350 / _CHARS_PER_TOKEN))
 
     async def test_non_reasoning_model_has_no_thinking_param(self, service):
         """Non-reasoning models must NOT receive the thinking parameter."""

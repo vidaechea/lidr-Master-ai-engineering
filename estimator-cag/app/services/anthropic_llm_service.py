@@ -1,3 +1,4 @@
+import math
 from typing import Any, Optional
 
 from anthropic import (
@@ -125,7 +126,7 @@ class AnthropicLLMService(BaseLLMService):
         """
         history_chars = sum(len(m["content"]) for m in self._conversation_history)
         total_chars = len(system_prompt) + history_chars + len(user_message)
-        return int(total_chars / _CHARS_PER_TOKEN)
+        return max(1, math.ceil(total_chars / _CHARS_PER_TOKEN))
 
     def _build_api_params(
         self,
@@ -261,7 +262,7 @@ class AnthropicLLMService(BaseLLMService):
             if sdk_thinking is not None:
                 reasoning_tokens = sdk_thinking
             elif thinking_chars > 0:
-                reasoning_tokens = int(thinking_chars / _CHARS_PER_TOKEN)
+                reasoning_tokens = max(1, math.ceil(thinking_chars / _CHARS_PER_TOKEN))
 
         return {
             "content": text_content,

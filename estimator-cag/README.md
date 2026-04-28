@@ -105,7 +105,7 @@ estimator-cag/
 
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- An OpenAI API key
+- An OpenAI or Anthropic API key (depending on which provider you use)
 
 ### Install dependencies
 
@@ -117,12 +117,27 @@ uv sync
 
 Create a `.env` file in the `estimator-cag/` directory:
 
+**OpenAI (default)**
+
 ```env
+LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 LLM_MODEL=gpt-4o-mini   # optional, this is the default
 APP_ENV=development
 LOG_LEVEL=DEBUG
 ```
+
+**Anthropic**
+
+```env
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-...
+LLM_MODEL=claude-sonnet-4-6   # optional, this is the Anthropic default
+APP_ENV=development
+LOG_LEVEL=DEBUG
+```
+
+Set `LLM_PROVIDER` to `openai` or `anthropic` to switch between providers. When using OpenAI, `OPENAI_API_KEY` is required; when using Anthropic, `ANTHROPIC_API_KEY` is required.
 
 ### Run the server
 
