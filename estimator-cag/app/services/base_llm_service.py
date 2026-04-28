@@ -214,9 +214,19 @@ class BaseLLMService(ABC):
         top_p:
             Nucleus sampling probability (non-reasoning models only; mutually
             exclusive with ``temperature``).
+        top_k:
+            Limits the token sampling pool to the top-K candidates.  Only
+            honoured by the **Anthropic** provider; silently ignored by the
+            OpenAI provider.
         reasoning_effort:
             Effort level for reasoning models — ``"low"``, ``"medium"``, or
-            ``"high"``.
+            ``"high"``.  Only honoured by the **OpenAI** provider; silently
+            ignored by the Anthropic provider.
+        verbosity:
+            Controls how much reasoning-chain text is returned by the model —
+            ``"low"``, ``"medium"``, or ``"high"``.  Only honoured by the
+            **OpenAI** provider (reasoning models); silently ignored by the
+            Anthropic provider.
         max_output_tokens:
             Upper bound on tokens in the model's response.
         continue_conversation:
