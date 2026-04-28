@@ -38,3 +38,10 @@ wheels/
 
 # OS
 .DS_Store
+
+# Coverage
+.coverage
+htmlcov/
+
+# uv
+uv.lock
