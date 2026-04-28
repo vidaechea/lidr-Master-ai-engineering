@@ -15,18 +15,31 @@ from app.services.base_llm_service import BaseLLMService
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
 # --------------------------------------------------------------------------- #
+
+DEFAULT_MODEL: str = "claude-sonnet-4-6"
+
+# Prompt caching price multipliers (relative to input_price per 1 M tokens).
+# Anthropic charges 1.25× for writing to cache and 0.10× for reading from cache.
+# Reference: https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching
+_CACHE_WRITE_PRICE_MULTIPLIER: float = 1.25
+_CACHE_READ_PRICE_MULTIPLIER: float = 0.10
+
 MODELS: dict[str, dict[str, Any]] = {
     "claude-haiku-4-5-20251001": {
         "input_price": 1.00,
         "output_price": 5.00,
         "context_window": 200_000,
         "reasoning": False,
+        "cache_write_price_multiplier": _CACHE_WRITE_PRICE_MULTIPLIER,
+        "cache_read_price_multiplier": _CACHE_READ_PRICE_MULTIPLIER,
     },
     "claude-sonnet-4-6": {
         "input_price": 3.00,
         "output_price": 15.00,
         "context_window": 200_000,
         "reasoning": False,
+        "cache_write_price_multiplier": _CACHE_WRITE_PRICE_MULTIPLIER,
+        "cache_read_price_multiplier": _CACHE_READ_PRICE_MULTIPLIER,
     },
     "claude-opus-4-7": {
         "input_price": 15.00,
@@ -34,10 +47,10 @@ MODELS: dict[str, dict[str, Any]] = {
         "context_window": 200_000,
         "reasoning": True,   # Supports Extended Thinking
         "thinking_api": "adaptive",  # Only supported mode; uses thinking.type=adaptive + output_config.effort
+        "cache_write_price_multiplier": _CACHE_WRITE_PRICE_MULTIPLIER,
+        "cache_read_price_multiplier": _CACHE_READ_PRICE_MULTIPLIER,
     },
 }
-
-DEFAULT_MODEL: str = "claude-sonnet-4-6"
 
 # Approximate chars-per-token ratio used for pre-call token estimation.
 # Anthropic's tokenizer is not available offline; 3.5 chars/token is a
@@ -257,6 +270,8 @@ class AnthropicLLMService(BaseLLMService):
             "output_tokens": response.usage.output_tokens,
             "reasoning_tokens": reasoning_tokens,
             "truncated": response.stop_reason == "max_tokens",
+            "cache_creation_tokens": getattr(response.usage, "cache_creation_input_tokens", None) or 0,
+            "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", None) or 0,
         }
 
     def _on_turn_complete(

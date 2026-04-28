@@ -14,6 +14,8 @@ import app.services.anthropic_llm_service as anthropic_svc
 from app.services.anthropic_llm_service import (
     DEFAULT_MODEL,
     MODELS,
+    _CACHE_READ_PRICE_MULTIPLIER,
+    _CACHE_WRITE_PRICE_MULTIPLIER,
     _CHARS_PER_TOKEN,
     _THINKING_BUDGET,
     AnthropicLLMService,
@@ -35,16 +37,28 @@ def _make_response_mock(
     response_id: str = FAKE_RESPONSE_ID,
     thinking_text: str | None = None,
     thinking_tokens: int | None = None,
+    cache_creation_input_tokens: int = 0,
+    cache_read_input_tokens: int = 0,
 ) -> MagicMock:
     """Build a minimal mock that mimics an Anthropic Messages API response object.
 
     When *thinking_text* is provided, the content list starts with a thinking
     block followed by the text block, mirroring Extended Thinking responses.
     """
-    usage = MagicMock(spec=["input_tokens", "output_tokens", "thinking_tokens"])
+    usage = MagicMock(
+        spec=[
+            "input_tokens",
+            "output_tokens",
+            "thinking_tokens",
+            "cache_creation_input_tokens",
+            "cache_read_input_tokens",
+        ]
+    )
     usage.input_tokens = input_tokens
     usage.output_tokens = output_tokens
     usage.thinking_tokens = thinking_tokens
+    usage.cache_creation_input_tokens = cache_creation_input_tokens
+    usage.cache_read_input_tokens = cache_read_input_tokens
 
     text_block = MagicMock()
     text_block.type = "text"
@@ -188,6 +202,7 @@ class TestEstimateSuccess:
             (
                 mock_response.usage.input_tokens * info["input_price"]
                 + mock_response.usage.output_tokens * info["output_price"]
+                # cache tokens are 0 in mock_response — no adjustment expected
             )
             / 1_000_000,
             8,
@@ -611,3 +626,109 @@ class TestExtendedThinking:
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", model="claude-sonnet-4-6")
         assert "thinking" not in create_mock.call_args.kwargs
+
+
+# --------------------------------------------------------------------------- #
+# Prompt Caching — cache_creation_input_tokens / cache_read_input_tokens
+# --------------------------------------------------------------------------- #
+
+class TestPromptCaching:
+    async def test_cache_tokens_zero_when_absent_from_usage(self, service):
+        """When the API returns no cache fields, both cache token counts must be 0."""
+        mock_response = _make_response_mock()  # cache fields default to 0
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("Build a simple API")
+        assert result["cache_creation_tokens"] == 0
+        assert result["cache_read_tokens"] == 0
+
+    async def test_cache_creation_tokens_propagated_to_result(self, service):
+        """cache_creation_input_tokens from usage must be exposed in the response dict."""
+        mock_response = _make_response_mock(cache_creation_input_tokens=1_200)
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("Build a simple API")
+        assert result["cache_creation_tokens"] == 1_200
+
+    async def test_cache_read_tokens_propagated_to_result(self, service):
+        """cache_read_input_tokens from usage must be exposed in the response dict."""
+        mock_response = _make_response_mock(cache_read_input_tokens=4_500)
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("Build a simple API")
+        assert result["cache_read_tokens"] == 4_500
+
+    async def test_cache_write_cost_adds_premium(self, service):
+        """Cache write tokens are billed at 1.25× input_price — turn cost must reflect that."""
+        cache_write = 2_000
+        mock_response = _make_response_mock(
+            input_tokens=500,
+            output_tokens=200,
+            cache_creation_input_tokens=cache_write,
+        )
+        info = MODELS[DEFAULT_MODEL]
+        expected = round(
+            (
+                500 * info["input_price"]
+                + 200 * info["output_price"]
+                + cache_write * info["input_price"] * _CACHE_WRITE_PRICE_MULTIPLIER
+            )
+            / 1_000_000,
+            8,
+        )
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("Build a simple API")
+        assert result["turn_cost_usd"] == expected
+
+    async def test_cache_read_cost_applies_discount(self, service):
+        """Cache read tokens are billed at 0.10× input_price — turn cost must reflect that."""
+        cache_read = 10_000
+        mock_response = _make_response_mock(
+            input_tokens=500,
+            output_tokens=200,
+            cache_read_input_tokens=cache_read,
+        )
+        info = MODELS[DEFAULT_MODEL]
+        expected = round(
+            (
+                500 * info["input_price"]
+                + 200 * info["output_price"]
+                + cache_read * info["input_price"] * _CACHE_READ_PRICE_MULTIPLIER
+            )
+            / 1_000_000,
+            8,
+        )
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("Build a simple API")
+        assert result["turn_cost_usd"] == expected
+
+    async def test_cache_read_cheaper_than_standard_input(self, service):
+        """Reading the same number of tokens from cache must cost less than standard input."""
+        tokens = 5_000
+        mock_no_cache = _make_response_mock(input_tokens=tokens, output_tokens=0)
+        mock_cached = _make_response_mock(
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_input_tokens=tokens,
+        )
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_no_cache)
+            result_no_cache = await service.estimate("test")
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_cached)
+            result_cached = await service.estimate("test")
+        assert result_cached["turn_cost_usd"] < result_no_cache["turn_cost_usd"]
+
+    async def test_no_cache_tokens_cost_equals_standard_formula(self, service):
+        """When cache tokens are absent, cost must equal the standard input+output formula."""
+        mock_response = _make_response_mock(input_tokens=800, output_tokens=300)
+        info = MODELS[DEFAULT_MODEL]
+        expected = round(
+            (800 * info["input_price"] + 300 * info["output_price"]) / 1_000_000, 8
+        )
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("Build a simple API")
+        assert result["turn_cost_usd"] == expected

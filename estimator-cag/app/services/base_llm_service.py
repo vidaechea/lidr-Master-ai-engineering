@@ -90,9 +90,24 @@ class BaseLLMService(ABC):
         output_tokens: int,
         price_in: float,
         price_out: float,
+        *,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_write_multiplier: float = 0.0,
+        cache_read_multiplier: float = 0.0,
     ) -> float:
-        """Compute cost in USD from token counts and per-million-token prices."""
-        return (input_tokens * price_in + output_tokens * price_out) / 1_000_000
+        """Compute cost in USD from token counts and per-million-token prices.
+
+        When prompt caching is active (Anthropic), pass the cache token counts
+        and their price multipliers so that cache write and read costs are
+        included in the total. For providers that do not use caching, all cache
+        parameters default to zero and the formula reduces to the standard
+        input/output cost.
+        """
+        base = (input_tokens * price_in + output_tokens * price_out) / 1_000_000
+        cache_write_cost = (cache_creation_tokens * price_in * cache_write_multiplier) / 1_000_000
+        cache_read_cost = (cache_read_tokens * price_in * cache_read_multiplier) / 1_000_000
+        return base + cache_write_cost + cache_read_cost
 
     # ------------------------------------------------------------------ #
     # Abstract provider-specific methods
@@ -278,8 +293,17 @@ class BaseLLMService(ABC):
 
         actual_input_tokens: int = partial["input_tokens"]
         actual_output_tokens: int = partial["output_tokens"]
+        cache_creation_tokens: int = partial.get("cache_creation_tokens", 0)
+        cache_read_tokens: int = partial.get("cache_read_tokens", 0)
         turn_cost = self._compute_cost(
-            actual_input_tokens, actual_output_tokens, price_in, price_out
+            actual_input_tokens,
+            actual_output_tokens,
+            price_in,
+            price_out,
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_multiplier=model_info.get("cache_write_price_multiplier", 0.0),
+            cache_read_multiplier=model_info.get("cache_read_price_multiplier", 0.0),
         )
 
         if continue_conversation:
@@ -297,6 +321,8 @@ class BaseLLMService(ABC):
             "input_tokens": actual_input_tokens,
             "output_tokens": actual_output_tokens,
             "reasoning_tokens": partial.get("reasoning_tokens"),
+            "cache_creation_tokens": cache_creation_tokens,
+            "cache_read_tokens": cache_read_tokens,
             "truncated": partial.get("truncated", False),
             "turn_cost_usd": round(turn_cost, 8),
             "total_cost_usd": round(total_cost, 8),
