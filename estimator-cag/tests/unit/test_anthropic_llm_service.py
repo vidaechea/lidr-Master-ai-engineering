@@ -528,7 +528,7 @@ class TestExtendedThinking:
             await service.estimate("test", model=self.REASONING_MODEL)
         params = create_mock.call_args.kwargs
         assert "thinking" in params
-        # claude-opus-4-7 uses adaptive API
+        # claude-opus-4-7 only supports adaptive API
         assert params["thinking"]["type"] == "adaptive"
         assert "output_config" in params
 

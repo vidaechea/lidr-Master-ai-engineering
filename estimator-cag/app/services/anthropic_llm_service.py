@@ -33,7 +33,7 @@ MODELS: dict[str, dict[str, Any]] = {
         "output_price": 75.00,
         "context_window": 200_000,
         "reasoning": True,   # Supports Extended Thinking
-        "thinking_api": "adaptive",  # Uses thinking.type=adaptive + output_config.effort
+        "thinking_api": "adaptive",  # Only supported mode; uses thinking.type=adaptive + output_config.effort
     },
 }
 
@@ -221,7 +221,8 @@ class AnthropicLLMService(BaseLLMService):
         # We must iterate to find the text block instead of assuming index 0.
         # NOTE: claude-opus-4-7 with thinking.type=adaptive does NOT expose
         # thinking blocks in content nor thinking_tokens in usage — the
-        # reasoning is internal only. Future models or "enabled" API may differ.
+        # reasoning is internal only. Future models using the "enabled" API
+        # will return thinking blocks; the fallback below handles that case.
         text_content: str = ""
         thinking_chars: int = 0
         for block in response.content:
