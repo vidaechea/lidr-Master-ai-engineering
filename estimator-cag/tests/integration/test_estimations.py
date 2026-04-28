@@ -38,7 +38,7 @@ def _make_responses_mock(
 def _patch_responses_api(mock_response: MagicMock):
     """Context manager: patches _get_client so responses.create returns mock_response."""
     return patch(
-        "app.services.llm_service._get_client",
+        "app.services.openai_llm_service._get_client",
         return_value=MagicMock(
             responses=MagicMock(create=AsyncMock(return_value=mock_response))
         ),
