@@ -294,8 +294,8 @@ wheels = [
 ]
 
 [[package]]
-name = "estimator-cag"
-version = "0.1.0"
+name = "estimator-artificial-intelligence"
+version = "1.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "anthropic" },
