@@ -45,6 +45,12 @@ class BaseLLMService(ABC):
         self._turn_count: int = 0
         self._total_cost: float = 0.0
 
+    def reset(self) -> None:
+        """Reset multi-turn session state (start a new conversation thread)."""
+        self._last_response_id = None
+        self._turn_count = 0
+        self._total_cost = 0.0
+
     # ------------------------------------------------------------------ #
     # Concrete shared helpers
     # ------------------------------------------------------------------ #
@@ -73,13 +79,35 @@ class BaseLLMService(ABC):
         output_tokens: int,
         price_in: float,
         price_out: float,
+        *,
+        cache_creation_tokens: int = 0,
+        cache_read_tokens: int = 0,
+        cache_write_multiplier: float = 0.0,
+        cache_read_multiplier: float = 0.0,
     ) -> float:
-        """Compute cost in USD from token counts and per-million-token prices."""
-        return (input_tokens * price_in + output_tokens * price_out) / 1_000_000
+        """Compute cost in USD from token counts and per-million-token prices.
+
+        When prompt caching is active (Anthropic), pass the cache token counts
+        and their price multipliers so that cache write and read costs are
+        included in the total. For providers that do not use caching, all cache
+        parameters default to zero and the formula reduces to the standard
+        input/output cost.
+        """
+        base = (input_tokens * price_in + output_tokens * price_out) / 1_000_000
+        cache_write_cost = (cache_creation_tokens * price_in * cache_write_multiplier) / 1_000_000
+        cache_read_cost = (cache_read_tokens * price_in * cache_read_multiplier) / 1_000_000
+        return base + cache_write_cost + cache_read_cost
 
     # ------------------------------------------------------------------ #
     # Abstract provider-specific methods
     # ------------------------------------------------------------------ #
+
+    def _on_turn_complete(
+        self,
+        transcription: str,
+        assistant_content: str,
+    ) -> None:
+        """Hook called after each successful multi-turn call. No-op by default."""
 
     @abstractmethod
     def _get_model_info(
@@ -111,7 +139,9 @@ class BaseLLMService(ABC):
         model_info: dict[str, Any],
         temperature: Optional[float],
         top_p: Optional[float],
+        top_k: Optional[int],
         reasoning_effort: str,
+        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
@@ -148,7 +178,9 @@ class BaseLLMService(ABC):
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         top_p: Optional[float] = None,
+        top_k: Optional[int] = None,
         reasoning_effort: str = "medium",
+        verbosity: str = "low",
         max_output_tokens: int = 2_048,
         continue_conversation: bool = False,
     ) -> dict[str, Any]:
@@ -171,9 +203,19 @@ class BaseLLMService(ABC):
         top_p:
             Nucleus sampling probability (non-reasoning models only; mutually
             exclusive with ``temperature``).
+        top_k:
+            Limits the token sampling pool to the top-K candidates.  Only
+            honoured by the **Anthropic** provider; silently ignored by the
+            OpenAI provider.
         reasoning_effort:
             Effort level for reasoning models — ``"low"``, ``"medium"``, or
-            ``"high"``.
+            ``"high"``.  Only honoured by the **OpenAI** provider; silently
+            ignored by the Anthropic provider.
+        verbosity:
+            Controls how much reasoning-chain text is returned by the model —
+            ``"low"``, ``"medium"``, or ``"high"``.  Only honoured by the
+            **OpenAI** provider (reasoning models); silently ignored by the
+            Anthropic provider.
         max_output_tokens:
             Upper bound on tokens in the model's response.
         continue_conversation:
@@ -229,13 +271,19 @@ class BaseLLMService(ABC):
             model_info=model_info,
             temperature=temperature,
             top_p=top_p,
+            top_k=top_k,
             reasoning_effort=reasoning_effort,
+            verbosity=verbosity,
             max_output_tokens=max_output_tokens,
             continue_conversation=continue_conversation,
         )
 
         # ② CALL
         response = await self._call_provider(api_params)
+
+        # Provider may return an error dict directly (e.g. caught API exception)
+        if isinstance(response, dict) and response.get("error"):
+            return response
 
         # ③ POST-CALL — cost accounting & session state
         partial = self._parse_provider_response(response, is_reasoning=is_reasoning)
@@ -244,8 +292,17 @@ class BaseLLMService(ABC):
 
         actual_input_tokens: int = partial["input_tokens"]
         actual_output_tokens: int = partial["output_tokens"]
+        cache_creation_tokens: int = partial.get("cache_creation_tokens", 0)
+        cache_read_tokens: int = partial.get("cache_read_tokens", 0)
         turn_cost = self._compute_cost(
-            actual_input_tokens, actual_output_tokens, price_in, price_out
+            actual_input_tokens,
+            actual_output_tokens,
+            price_in,
+            price_out,
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_multiplier=model_info.get("cache_write_price_multiplier", 0.0),
+            cache_read_multiplier=model_info.get("cache_read_price_multiplier", 0.0),
         )
 
         if continue_conversation:
@@ -253,6 +310,7 @@ class BaseLLMService(ABC):
             self._turn_count += 1
             self._total_cost += turn_cost
             total_cost = self._total_cost
+            self._on_turn_complete(transcription, partial["content"])
         else:
             total_cost = turn_cost
 
@@ -262,6 +320,9 @@ class BaseLLMService(ABC):
             "input_tokens": actual_input_tokens,
             "output_tokens": actual_output_tokens,
             "reasoning_tokens": partial.get("reasoning_tokens"),
+            "cache_creation_tokens": cache_creation_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "truncated": partial.get("truncated", False),
             "turn_cost_usd": round(turn_cost, 8),
             "total_cost_usd": round(total_cost, 8),
             "response_id": partial["response_id"],

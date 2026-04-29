@@ -1,7 +1,14 @@
 from typing import Any, Optional
 
 import tiktoken
-from openai import AsyncOpenAI
+from openai import (
+    APIConnectionError,
+    AsyncOpenAI,
+    AuthenticationError,
+    BadRequestError,
+    InternalServerError,
+    RateLimitError,
+)
 
 from app.config import settings
 from app.services.base_llm_service import BaseLLMService
@@ -145,7 +152,9 @@ class OpenAILLMService(BaseLLMService):
         model_info: dict[str, Any],
         temperature: Optional[float],
         top_p: Optional[float],
+        top_k: Optional[int],  # not supported by OpenAI — ignored
         reasoning_effort: str,
+        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
@@ -159,6 +168,7 @@ class OpenAILLMService(BaseLLMService):
 
         if model_info["reasoning"]:
             params["reasoning"] = {"effort": reasoning_effort}
+            params["text"] = {"format": {"type": "text"}}
         else:
             if temperature is not None:
                 params["temperature"] = temperature
@@ -171,7 +181,32 @@ class OpenAILLMService(BaseLLMService):
         return params
 
     async def _call_provider(self, api_params: dict[str, Any]) -> Any:
-        return await _get_client().responses.create(**api_params)
+        try:
+            return await _get_client().responses.create(**api_params)
+        except AuthenticationError:
+            return self._build_error_dict(
+                "authentication_error",
+                "Invalid or missing OpenAI API key.",
+                401,
+            )
+        except RateLimitError:
+            return self._build_error_dict(
+                "rate_limit_error",
+                "Rate limit reached or insufficient credit.",
+                429,
+            )
+        except BadRequestError as exc:
+            return self._build_error_dict(
+                "bad_request_error",
+                f"Invalid request: {exc.message}",
+                400,
+            )
+        except (APIConnectionError, InternalServerError) as exc:
+            return self._build_error_dict(
+                "connection_error",
+                f"Connection or server error: {exc}",
+                503,
+            )
 
     def _parse_provider_response(
         self,
@@ -198,48 +233,3 @@ class OpenAILLMService(BaseLLMService):
             "output_tokens": usage.output_tokens,
             "reasoning_tokens": reasoning_tokens,
         }
-
-
-# --------------------------------------------------------------------------- #
-# Module-level singleton + backward-compatible public API
-# --------------------------------------------------------------------------- #
-_openai_service = OpenAILLMService()
-
-
-def estimate_call_tokens(
-    system_prompt: str,
-    user_message: str,
-    model: str = DEFAULT_MODEL,
-) -> int:
-    """Return the estimated number of input tokens for a system+user call.
-
-    Uses tiktoken to count tokens and adds per-message overhead and priming
-    tokens following OpenAI's documented formula.
-    """
-    return _openai_service._count_tokens(system_prompt, user_message, model)
-
-
-async def estimate(
-    transcription: str,
-    *,
-    model: Optional[str] = None,
-    temperature: Optional[float] = None,
-    top_p: Optional[float] = None,
-    reasoning_effort: str = "medium",
-    max_output_tokens: int = 2_048,
-    continue_conversation: bool = False,
-) -> dict[str, Any]:
-    """Generate a software effort estimate from a meeting transcription.
-
-    Delegates to :class:`OpenAILLMService`, which inherits the shared
-    PRE-CALL / CALL / POST-CALL pipeline from :class:`BaseLLMService`.
-    """
-    return await _openai_service.estimate(
-        transcription,
-        model=model,
-        temperature=temperature,
-        top_p=top_p,
-        reasoning_effort=reasoning_effort,
-        max_output_tokens=max_output_tokens,
-        continue_conversation=continue_conversation,
-    )
