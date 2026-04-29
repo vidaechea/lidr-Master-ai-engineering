@@ -1,4 +1,4 @@
-# Estimator CAG
+# Estimator AI
 
 A REST API service that generates software effort estimates from meeting transcriptions using OpenAI language models. It follows a **Context-Augmented Generation (CAG)** approach: static reference examples are injected into the system prompt at startup to guide the model's output format and level of detail.
 
@@ -25,7 +25,7 @@ estimator-cag/
 │   ├── context/
 │   │   └── examples.py       # CAG static examples injected into the system prompt
 │   ├── routers/
-│   │   └── estimations.py    # POST /estimations/ and GET /estimations/examples
+│   │   └── estimations.py    # POST /api/v1/estimate and GET /api/v1/examples
 │   └── services/
 │       ├── base_llm_service.py        # Abstract base with shared estimation pipeline
 │       ├── openai_llm_service.py      # OpenAI implementation (Responses API)
@@ -45,15 +45,15 @@ estimator-cag/
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
-| `GET` | `/estimations/examples` | Returns the CAG reference examples |
-| `POST` | `/estimations/` | Generates an effort estimate from a meeting transcription |
+| `GET` | `/api/v1/examples` | Returns the CAG reference examples |
+| `POST` | `/api/v1/estimate` | Generates an effort estimate from a meeting transcription |
 
-### `POST /estimations/`
+### `POST /api/v1/estimate`
 
 **Request body**
 ```json
 {
-  "description": "<meeting transcription or project description>"
+  "transcription": "<meeting transcription or project description>"
 }
 ```
 
@@ -78,7 +78,7 @@ estimator-cag/
 | Status | Condition |
 |--------|-----------|
 | `413` | Estimated input tokens exceed the model's context window |
-| `422` | `description` field missing from request body |
+| `422` | `transcription` field missing from request body |
 | `500` | OpenAI API returned a non-completed response status |
 
 ---
@@ -163,4 +163,4 @@ UVICORN_RELOAD=true
 uv run pytest tests/ -v
 ```
 
-The test suite covers 115 cases across unit and integration layers. All external API calls are mocked.
+The test suite covers 132 cases across unit and integration layers. All external API calls are mocked.

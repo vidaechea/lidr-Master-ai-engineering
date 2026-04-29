@@ -46,44 +46,44 @@ def _patch_responses_api(mock_response: MagicMock):
 
 
 # --------------------------------------------------------------------------- #
-# GET /estimations/examples
+# GET /api/v1/examples
 # --------------------------------------------------------------------------- #
 class TestGetExamples:
     def test_returns_200(self, client: TestClient):
-        response = client.get("/estimations/examples")
+        response = client.get("/api/v1/examples")
         assert response.status_code == 200
 
     def test_returns_list(self, client: TestClient):
-        response = client.get("/estimations/examples")
+        response = client.get("/api/v1/examples")
         assert isinstance(response.json(), list)
 
     def test_returns_all_examples(self, client: TestClient):
-        response = client.get("/estimations/examples")
+        response = client.get("/api/v1/examples")
         assert len(response.json()) == len(ESTIMATION_EXAMPLES)
 
     def test_each_item_has_required_fields(self, client: TestClient):
-        response = client.get("/estimations/examples")
+        response = client.get("/api/v1/examples")
         for item in response.json():
             assert "meeting_summary" in item
             assert "estimation" in item
 
     def test_meeting_summary_matches_source(self, client: TestClient):
-        response = client.get("/estimations/examples")
+        response = client.get("/api/v1/examples")
         items = response.json()
         for i, example in enumerate(ESTIMATION_EXAMPLES):
             assert items[i]["meeting_summary"] == example.meeting_summary
 
 
 # --------------------------------------------------------------------------- #
-# POST /estimations/ — success path
+# POST /api/v1/estimate — success path
 # --------------------------------------------------------------------------- #
 class TestCreateEstimation:
     def test_returns_200_with_valid_payload(self, client: TestClient):
         mock_response = _make_responses_mock()
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build an e-commerce platform"},
+                "/api/v1/estimate",
+                json={"transcription": "Build an e-commerce platform"},
             )
         assert response.status_code == 200
 
@@ -91,8 +91,8 @@ class TestCreateEstimation:
         mock_response = _make_responses_mock()
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build an e-commerce platform"},
+                "/api/v1/estimate",
+                json={"transcription": "Build an e-commerce platform"},
             )
         assert "estimation" in response.json()
 
@@ -100,8 +100,8 @@ class TestCreateEstimation:
         mock_response = _make_responses_mock()
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build an e-commerce platform"},
+                "/api/v1/estimate",
+                json={"transcription": "Build an e-commerce platform"},
             )
         assert response.json()["estimation"] == FAKE_OUTPUT
 
@@ -109,8 +109,8 @@ class TestCreateEstimation:
         mock_response = _make_responses_mock()
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build an e-commerce platform"},
+                "/api/v1/estimate",
+                json={"transcription": "Build an e-commerce platform"},
             )
         data = response.json()
         assert "turn_cost_usd" in data
@@ -121,8 +121,8 @@ class TestCreateEstimation:
         mock_response = _make_responses_mock()
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build an e-commerce platform"},
+                "/api/v1/estimate",
+                json={"transcription": "Build an e-commerce platform"},
             )
         data = response.json()
         assert "input_tokens" in data
@@ -133,8 +133,8 @@ class TestCreateEstimation:
         mock_response = _make_responses_mock()
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build an e-commerce platform"},
+                "/api/v1/estimate",
+                json={"transcription": "Build an e-commerce platform"},
             )
         data = response.json()
         assert "model" in data
@@ -144,46 +144,46 @@ class TestCreateEstimation:
         mock_response = _make_responses_mock(input_tokens=600, output_tokens=250)
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build an e-commerce platform"},
+                "/api/v1/estimate",
+                json={"transcription": "Build an e-commerce platform"},
             )
         data = response.json()
         assert data["input_tokens"] == 600
         assert data["output_tokens"] == 250
 
-    def test_returns_422_when_description_is_missing(self, client: TestClient):
-        response = client.post("/estimations/", json={})
+    def test_returns_422_when_transcription_is_missing(self, client: TestClient):
+        response = client.post("/api/v1/estimate", json={})
         assert response.status_code == 422
 
-    def test_returns_200_when_description_is_empty_string(self, client: TestClient):
+    def test_returns_200_when_transcription_is_empty_string(self, client: TestClient):
         """An empty string passes schema validation — documents the current contract."""
         mock_response = _make_responses_mock()
         with _patch_responses_api(mock_response):
-            response = client.post("/estimations/", json={"description": ""})
+            response = client.post("/api/v1/estimate", json={"transcription": ""})
         assert response.status_code == 200
 
 
 # --------------------------------------------------------------------------- #
-# POST /estimations/ — error propagation
+# POST /api/v1/estimate — error propagation
 # --------------------------------------------------------------------------- #
 class TestCreateEstimationErrors:
     def test_returns_413_on_context_overflow(self, client: TestClient):
-        import app.services.openai_llm_service as svc
+        from app.services.openai_llm_service import OpenAILLMService
 
-        with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
+        with patch.object(OpenAILLMService, "_count_tokens", return_value=999_999_999):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build something very long"},
+                "/api/v1/estimate",
+                json={"transcription": "Build something very long"},
             )
         assert response.status_code == 413
 
     def test_error_detail_mentions_overflow(self, client: TestClient):
-        import app.services.openai_llm_service as svc
+        from app.services.openai_llm_service import OpenAILLMService
 
-        with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
+        with patch.object(OpenAILLMService, "_count_tokens", return_value=999_999_999):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build something very long"},
+                "/api/v1/estimate",
+                json={"transcription": "Build something very long"},
             )
         assert "context" in response.json()["detail"].lower()
 
@@ -191,7 +191,7 @@ class TestCreateEstimationErrors:
         mock_response = _make_responses_mock(status="failed")
         with _patch_responses_api(mock_response):
             response = client.post(
-                "/estimations/",
-                json={"description": "Build something"},
+                "/api/v1/estimate",
+                json={"transcription": "Build something"},
             )
         assert response.status_code == 500
