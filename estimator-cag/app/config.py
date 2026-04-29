@@ -2,14 +2,33 @@ from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+LLMProvider = Literal["openai", "anthropic"]
+
+LLMModel = Literal[
+    # OpenAI
+    "gpt-3.5-turbo",
+    "gpt-4-turbo",
+    "gpt-4o-mini",
+    "gpt-5.4-mini",
+    "gpt-5.4",
+    "o3-mini",
+    "o3",
+    "o4-mini",
+    "o4-mini-2025-04-16",
+    # Anthropic
+    "claude-haiku-4-5-20251001",
+    "claude-sonnet-4-6",
+    "claude-opus-4-7",
+]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
 
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
-    llm_provider: Literal["openai", "anthropic"] = "openai"
-    llm_model: str = "gpt-4o-mini"
+    llm_provider: LLMProvider = "openai"
+    llm_model: LLMModel = "gpt-4o-mini"
     app_env: str = "development"
     log_level: str = "DEBUG"
 
