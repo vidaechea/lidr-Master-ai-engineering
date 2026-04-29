@@ -29,4 +29,3 @@ def force_openai_provider():
     svc._openai_service._total_cost = 0.0
     yield
     svc._active_service = original
-

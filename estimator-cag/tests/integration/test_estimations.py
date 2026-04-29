@@ -168,7 +168,7 @@ class TestCreateEstimation:
 # --------------------------------------------------------------------------- #
 class TestCreateEstimationErrors:
     def test_returns_413_on_context_overflow(self, client: TestClient):
-        import app.services.llm_service as svc
+        import app.services.openai_llm_service as svc
 
         with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
             response = client.post(
@@ -178,7 +178,7 @@ class TestCreateEstimationErrors:
         assert response.status_code == 413
 
     def test_error_detail_mentions_overflow(self, client: TestClient):
-        import app.services.llm_service as svc
+        import app.services.openai_llm_service as svc
 
         with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
             response = client.post(

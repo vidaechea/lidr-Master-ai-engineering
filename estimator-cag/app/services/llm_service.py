@@ -74,4 +74,3 @@ async def estimate(
 def reset() -> None:
     """Reset the active service's multi-turn session state."""
     _active_service.reset()
-

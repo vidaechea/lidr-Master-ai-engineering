@@ -184,33 +184,29 @@ class OpenAILLMService(BaseLLMService):
         try:
             return await _get_client().responses.create(**api_params)
         except AuthenticationError:
-            return {
-                "error": True,
-                "type": "authentication_error",
-                "message": "Invalid or missing OpenAI API key.",
-                "status_code": 401,
-            }
+            return self._build_error_dict(
+                "authentication_error",
+                "Invalid or missing OpenAI API key.",
+                401,
+            )
         except RateLimitError:
-            return {
-                "error": True,
-                "type": "rate_limit_error",
-                "message": "Rate limit reached or insufficient credit.",
-                "status_code": 429,
-            }
+            return self._build_error_dict(
+                "rate_limit_error",
+                "Rate limit reached or insufficient credit.",
+                429,
+            )
         except BadRequestError as exc:
-            return {
-                "error": True,
-                "type": "bad_request_error",
-                "message": f"Invalid request: {exc.message}",
-                "status_code": 400,
-            }
+            return self._build_error_dict(
+                "bad_request_error",
+                f"Invalid request: {exc.message}",
+                400,
+            )
         except (APIConnectionError, InternalServerError) as exc:
-            return {
-                "error": True,
-                "type": "connection_error",
-                "message": f"Connection or server error: {exc}",
-                "status_code": 503,
-            }
+            return self._build_error_dict(
+                "connection_error",
+                f"Connection or server error: {exc}",
+                503,
+            )
 
     def _parse_provider_response(
         self,
