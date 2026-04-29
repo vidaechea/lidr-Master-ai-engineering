@@ -2,9 +2,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import app.services.llm_service as svc
+import app.services.openai_llm_service as svc
 from app.context.examples import EXAMPLE_HEADER_TEMPLATE
-from app.services.llm_service import (
+from app.services.openai_llm_service import (
     DEFAULT_MODEL,
     MODELS,
     _MSG_OVERHEAD,
@@ -91,44 +91,44 @@ class TestEstimateSuccess:
         return _make_responses_mock()
 
     async def test_returns_dict(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert isinstance(result, dict)
 
     async def test_content_equals_output_text(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert result["content"] == FAKE_OUTPUT
 
     async def test_model_key_matches_resolved_model(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert result["model"] == DEFAULT_MODEL
 
     async def test_response_id_matches(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert result["response_id"] == FAKE_RESPONSE_ID
 
     async def test_token_counts_come_from_usage(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert result["input_tokens"] == mock_response.usage.input_tokens
         assert result["output_tokens"] == mock_response.usage.output_tokens
 
     async def test_reasoning_tokens_is_none_for_standard_model(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert result["reasoning_tokens"] is None
 
     async def test_turn_cost_is_positive_float(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert isinstance(result["turn_cost_usd"], float)
@@ -144,19 +144,19 @@ class TestEstimateSuccess:
             / 1_000_000,
             8,
         )
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert result["turn_cost_usd"] == expected
 
     async def test_estimated_precall_cost_is_positive(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert result["estimated_precall_cost_usd"] > 0
 
     async def test_estimated_input_tokens_is_positive_int(self, mock_response):
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert isinstance(result["estimated_input_tokens"], int)
@@ -169,7 +169,7 @@ class TestEstimateSuccess:
 class TestEstimateSystemPrompt:
     async def test_instructions_contain_example_header(self):
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("Build something")
@@ -180,7 +180,7 @@ class TestEstimateSystemPrompt:
     async def test_input_param_equals_transcription(self):
         transcription = "Build a real-time chat application"
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate(transcription)
@@ -190,7 +190,7 @@ class TestEstimateSystemPrompt:
 
     async def test_model_param_sent_to_api(self):
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("Build something")
@@ -219,7 +219,7 @@ class TestEstimateValidation:
 
     async def test_no_error_key_on_success(self):
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build a simple API")
         assert "error" not in result
@@ -231,7 +231,7 @@ class TestEstimateValidation:
 class TestEstimateApiErrors:
     async def test_returns_error_dict_when_status_is_not_completed(self):
         mock_response = _make_responses_mock(status="failed")
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build something")
         assert result.get("error") is True
@@ -239,7 +239,7 @@ class TestEstimateApiErrors:
 
     async def test_error_dict_contains_message(self):
         mock_response = _make_responses_mock(status="incomplete")
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("Build something")
         assert "message" in result
@@ -251,7 +251,7 @@ class TestEstimateApiErrors:
 class TestEstimateParamRouting:
     async def test_temperature_sent_when_provided(self):
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("test", temperature=0.7)
@@ -259,7 +259,7 @@ class TestEstimateParamRouting:
 
     async def test_top_p_sent_when_provided(self):
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("test", top_p=0.9)
@@ -267,7 +267,7 @@ class TestEstimateParamRouting:
 
     async def test_temperature_not_sent_when_omitted(self):
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("test")
@@ -280,7 +280,7 @@ class TestEstimateParamRouting:
 class TestEstimateMultiTurn:
     async def test_store_is_true_when_continue_conversation(self):
         mock_response = _make_responses_mock(response_id="resp_turn1")
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("test", continue_conversation=True)
@@ -288,7 +288,7 @@ class TestEstimateMultiTurn:
 
     async def test_store_is_false_for_stateless_call(self):
         mock_response = _make_responses_mock()
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("test", continue_conversation=False)
@@ -297,7 +297,7 @@ class TestEstimateMultiTurn:
     async def test_previous_response_id_attached_on_second_turn(self):
         first_id = "resp_first"
         mock_response = _make_responses_mock(response_id=first_id)
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             # First turn
@@ -313,7 +313,7 @@ class TestEstimateMultiTurn:
         info = MODELS[DEFAULT_MODEL]
         turn_cost = (100 * info["input_price"] + 50 * info["output_price"]) / 1_000_000
 
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("turn 1", continue_conversation=True)
@@ -323,7 +323,7 @@ class TestEstimateMultiTurn:
 
     async def test_stateless_total_cost_equals_turn_cost(self):
         mock_response = _make_responses_mock(input_tokens=100, output_tokens=50)
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("test", continue_conversation=False)
         assert result["total_cost_usd"] == result["turn_cost_usd"]
@@ -335,7 +335,7 @@ class TestEstimateMultiTurn:
 class TestEstimateReasoningModel:
     async def test_reasoning_param_sent_for_reasoning_model(self):
         mock_response = _make_responses_mock(reasoning_tokens=80)
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("test", model="o4-mini")
@@ -343,7 +343,7 @@ class TestEstimateReasoningModel:
 
     async def test_temperature_not_sent_for_reasoning_model(self):
         mock_response = _make_responses_mock(reasoning_tokens=80)
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.responses.create = create_mock
             await estimate("test", model="o4-mini", temperature=0.7)
@@ -352,7 +352,7 @@ class TestEstimateReasoningModel:
     async def test_reasoning_tokens_extracted_from_usage(self):
         mock_response = _make_responses_mock(reasoning_tokens=80)
         mock_response.usage.output_tokens_details = MagicMock(reasoning_tokens=80)
-        with patch("app.services.llm_service._get_client") as mock_client:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await estimate("test", model="o4-mini")
         assert result["reasoning_tokens"] == 80

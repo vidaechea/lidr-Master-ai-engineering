@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -8,7 +8,7 @@ class Settings(BaseSettings):
 
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
-    llm_provider: str = "openai"
+    llm_provider: Literal["openai", "anthropic"] = "openai"
     llm_model: str = "gpt-4o-mini"
     app_env: str = "development"
     log_level: str = "DEBUG"

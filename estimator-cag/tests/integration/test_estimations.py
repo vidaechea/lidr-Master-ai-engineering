@@ -38,7 +38,7 @@ def _make_responses_mock(
 def _patch_responses_api(mock_response: MagicMock):
     """Context manager: patches _get_client so responses.create returns mock_response."""
     return patch(
-        "app.services.llm_service._get_client",
+        "app.services.openai_llm_service._get_client",
         return_value=MagicMock(
             responses=MagicMock(create=AsyncMock(return_value=mock_response))
         ),
@@ -168,7 +168,7 @@ class TestCreateEstimation:
 # --------------------------------------------------------------------------- #
 class TestCreateEstimationErrors:
     def test_returns_413_on_context_overflow(self, client: TestClient):
-        import app.services.llm_service as svc
+        import app.services.openai_llm_service as svc
 
         with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
             response = client.post(
@@ -178,7 +178,7 @@ class TestCreateEstimationErrors:
         assert response.status_code == 413
 
     def test_error_detail_mentions_overflow(self, client: TestClient):
-        import app.services.llm_service as svc
+        import app.services.openai_llm_service as svc
 
         with patch.object(svc._openai_service, "_count_tokens", return_value=999_999_999):
             response = client.post(

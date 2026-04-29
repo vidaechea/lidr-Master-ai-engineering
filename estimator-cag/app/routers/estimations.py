@@ -1,12 +1,17 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from app.context.examples import ESTIMATION_EXAMPLES
-from app.services.llm_service import estimate
+from app.services.base_llm_service import BaseLLMService
+from app.services.factory import create_llm_service
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
+
+
+def get_llm_service() -> BaseLLMService:
+    return create_llm_service()
 
 
 class EstimationRequest(BaseModel):
@@ -40,8 +45,11 @@ def get_examples():
 
 
 @router.post("/", response_model=EstimationResponse)
-async def create_estimation(request: EstimationRequest):
-    result = await estimate(request.description)
+async def create_estimation(
+    request: EstimationRequest,
+    service: BaseLLMService = Depends(get_llm_service),
+):
+    result = await service.estimate(request.description)
     if result.get("error"):
         status_code = result.get("status_code", 500)
         raise HTTPException(status_code=status_code, detail=result["message"])
