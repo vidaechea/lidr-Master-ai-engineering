@@ -11,21 +11,17 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
-def force_openai_provider():
-    """Force OpenAI as the active facade provider for all tests.
+def force_openai_provider(monkeypatch):
+    """Force OpenAI as the active provider for all tests.
 
-    Prevents tests from hitting real provider APIs when LLM_PROVIDER is
-    set to a non-OpenAI value in the local .env file.
-    The OpenAI service singleton state is also reset so tests are isolated.
+    Patches settings.llm_provider so that create_llm_service() always
+    returns an OpenAILLMService regardless of the local .env value.
+    Also resets the lazy AsyncOpenAI client so tests remain isolated.
     """
-    import app.services.llm_service as svc
     import app.services.openai_llm_service as openai_svc
+    from app.config import settings
 
-    original = svc._active_service
-    svc._active_service = svc._openai_service
+    monkeypatch.setattr(settings, "llm_provider", "openai")
     openai_svc._client = None
-    svc._openai_service._last_response_id = None
-    svc._openai_service._turn_count = 0
-    svc._openai_service._total_cost = 0.0
     yield
-    svc._active_service = original
+    openai_svc._client = None

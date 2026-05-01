@@ -65,7 +65,7 @@ class TestGetExamples:
         response = client.get("/api/v1/examples")
         for item in response.json():
             assert "meeting_summary" in item
-            assert "estimation" in item
+            assert "estimation_markdown" in item
 
     def test_meeting_summary_matches_source(self, client: TestClient):
         response = client.get("/api/v1/examples")

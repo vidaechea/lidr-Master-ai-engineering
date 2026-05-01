@@ -1,7 +1,11 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
-from app.context.examples import ESTIMATION_EXAMPLES
+import structlog
+
+from app.context.examples import ESTIMATION_EXAMPLES, ExampleFormat, format_examples_for_prompt
+
+log = structlog.get_logger(__name__)
 
 # --------------------------------------------------------------------------- #
 # Shared prompt template  —  CAG: role definition + injected examples
@@ -57,7 +61,7 @@ class BaseLLMService(ABC):
 
     def _build_system_prompt(self) -> str:
         """Build the CAG system prompt with injected examples."""
-        return _SYSTEM_PROMPT_TEMPLATE.format(examples=ESTIMATION_EXAMPLES.as_context())
+        return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(ESTIMATION_EXAMPLES, ExampleFormat.MARKDOWN))
 
     @staticmethod
     def _build_error_dict(
@@ -250,6 +254,13 @@ class BaseLLMService(ABC):
         total_tokens_est = input_tokens_est + max_output_tokens
 
         if total_tokens_est >= context_window:
+            log.warning(
+                "context_overflow",
+                model=resolved_model,
+                estimated_input_tokens=input_tokens_est,
+                max_output_tokens=max_output_tokens,
+                context_window=context_window,
+            )
             return {
                 "error": True,
                 "type": "context_overflow",
@@ -279,10 +290,21 @@ class BaseLLMService(ABC):
         )
 
         # ② CALL
+        log.debug(
+            "calling_provider",
+            model=resolved_model,
+            estimated_input_tokens=input_tokens_est,
+            estimated_precall_cost_usd=round(cost_est, 8),
+        )
         response = await self._call_provider(api_params)
 
         # Provider may return an error dict directly (e.g. caught API exception)
         if isinstance(response, dict) and response.get("error"):
+            log.error(
+                "provider_error",
+                error_type=response.get("type"),
+                message=response.get("message"),
+            )
             return response
 
         # ③ POST-CALL — cost accounting & session state
@@ -314,6 +336,20 @@ class BaseLLMService(ABC):
         else:
             total_cost = turn_cost
 
+        log.info(
+            "estimation_succeeded",
+            model=resolved_model,
+            input_tokens=actual_input_tokens,
+            output_tokens=actual_output_tokens,
+            reasoning_tokens=partial.get("reasoning_tokens"),
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            turn_cost_usd=round(turn_cost, 8),
+            total_cost_usd=round(total_cost, 8),
+            continue_conversation=continue_conversation,
+            turn_count=self._turn_count,
+        )
+
         return {
             "content": partial["content"],
             "model": resolved_model,
@@ -329,3 +365,29 @@ class BaseLLMService(ABC):
             "estimated_input_tokens": input_tokens_est,
             "estimated_precall_cost_usd": round(cost_est, 8),
         }
+
+
+# --------------------------------------------------------------------------- #
+# Module-level facade — thin wrappers around a singleton active service
+# --------------------------------------------------------------------------- #
+
+def _make_active_service() -> "BaseLLMService":
+    from app.services.factory import create_llm_service
+    return create_llm_service()
+
+
+_active_service: BaseLLMService = _make_active_service()
+
+
+async def estimate(
+    transcription: str,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    """Delegate to the active service's estimate method."""
+    return await _active_service.estimate(transcription, **kwargs)
+
+
+def estimate_call_tokens(system_prompt: str, user_message: str) -> int:
+    """Count tokens for the given system + user message using the active service."""
+    resolved_model, _ = _active_service._get_model_info(None)
+    return _active_service._count_tokens(system_prompt, user_message, resolved_model)

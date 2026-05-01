@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import app.services.llm_service as svc
-from app.services.llm_service import estimate, estimate_call_tokens
+import app.services.base_llm_service as svc
+from app.services.base_llm_service import estimate, estimate_call_tokens
 
 
 
