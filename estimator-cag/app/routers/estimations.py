@@ -1,9 +1,8 @@
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
 
 from app.context.examples import ESTIMATION_EXAMPLES
-from app.schemas.estimation import EstimationRequest, EstimationResponse
+from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem
 from app.services.base_llm_service import BaseLLMService
 from app.services.factory import create_llm_service
 
@@ -15,13 +14,6 @@ router = APIRouter(prefix="", tags=["estimations"])
 def get_llm_service() -> BaseLLMService:
     return create_llm_service()
 
-
-class ExampleItem(BaseModel):
-    title: str
-    meeting_summary: str
-    estimation_markdown: str
-
-
 @router.get("/examples", response_model=list[ExampleItem])
 def get_examples():
     log.debug("examples_requested", count=len(ESTIMATION_EXAMPLES))
@@ -29,7 +21,6 @@ def get_examples():
         ExampleItem(title=ex.title, meeting_summary=ex.meeting_summary, estimation_markdown=ex.estimation_markdown)
         for ex in ESTIMATION_EXAMPLES
     ]
-
 
 @router.post("/estimate", response_model=EstimationResponse)
 async def create_estimation(

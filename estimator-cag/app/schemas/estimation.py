@@ -7,9 +7,13 @@ class ExampleFormat(str, Enum):
     JSON = "json"
     NARRATIVE = "narrative"
 
+class ExampleItem(BaseModel):
+    title: str
+    meeting_summary: str
+    estimation_markdown: str
+
 class EstimationRequest(BaseModel):
     transcription: str
-
 
 class EstimationResponse(BaseModel):
     estimation: str
