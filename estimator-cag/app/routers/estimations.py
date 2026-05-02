@@ -39,6 +39,7 @@ async def create_estimation(
             reasoning_effort=request.reasoning_effort,
             max_output_tokens=request.max_output_tokens,
             pre_call=request.pre_call,
+            example_format=request.example_format,
         )
     except LLMServiceError as exc:
         log.warning(

@@ -5,14 +5,56 @@ from typing import Generator
 
 import streamlit as st
 
+from app.config import settings
+from app.context.examples import ExampleFormat
 from app.services.base_llm_service import LLMServiceError
+from app.services.evaluation import evaluate_estimation_structure
 from app.services.factory import create_llm_service
+
+# ── Provider / model registry (mirrors service registries) ───────────────────
+
+_OPENAI_MODELS = [
+    "gpt-4o-mini",
+    "gpt-5.4-mini",
+    "gpt-5.4",
+    "gpt-4-turbo",
+    "gpt-3.5-turbo",
+    "o3-mini",
+    "o3",
+    "o4-mini",
+    "o4-mini-2025-04-16",
+]
+_ANTHROPIC_MODELS = [
+    "claude-sonnet-4-6",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-7",
+]
+_MODELS_BY_PROVIDER: dict[str, list[str]] = {
+    "openai": _OPENAI_MODELS,
+    "anthropic": _ANTHROPIC_MODELS,
+}
+
+# Models that support reasoning / extended thinking
+_REASONING_MODELS: set[str] = {
+    "o3-mini", "o3", "o4-mini", "o4-mini-2025-04-16",  # OpenAI
+    "claude-opus-4-7",                                   # Anthropic
+}
 
 st.set_page_config(
     page_title="Estimator CAG",
     page_icon="📋",
     layout="wide",
 )
+
+
+_CHECK_LABELS: dict[str, str] = {
+    "has_title": "H2 project title",
+    "has_breakdown_table": "Breakdown table",
+    "has_totals_section": "Totals section",
+    "has_team_section": "Team section",
+    "has_duration_section": "Duration section",
+    "finish_reason_ok": "Finish reason",
+}
 
 
 def _render_details(meta: dict) -> None:
@@ -56,6 +98,56 @@ def _render_details(meta: dict) -> None:
         col12.metric("Truncated", str(meta.get("truncated", False)))
         st.caption(f"Response ID: `{meta.get('response_id', '—')}`")
 
+        # Validation
+        if meta.get("validation"):
+            st.divider()
+            v = meta["validation"]
+            score = v.get("score", 0)
+            score_pct = int(score * 100)
+            score_color = "green" if score >= 0.8 else ("orange" if score >= 0.5 else "red")
+            st.subheader("Validation")
+            st.markdown(
+                f"**Score:** :{score_color}[{score_pct}%]  "
+                f"({sum(1 for k in _CHECK_LABELS if v.get(k, False))}/{len(_CHECK_LABELS)} checks passed)"
+            )
+
+            # Boolean structure checks
+            check_cols = st.columns(len(_CHECK_LABELS))
+            for col, (key, label) in zip(check_cols, _CHECK_LABELS.items()):
+                passed = v.get(key, False)
+                col.metric(label, "✅" if passed else "❌")
+
+            # Numeric consistency
+            num_col1, num_col2 = st.columns(2)
+            declared_h = v.get("declared_total_hours")
+            sum_h = v.get("sum_row_hours")
+            hours_match = v.get("hours_match")
+            num_col1.metric(
+                "Hours: declared vs rows",
+                f"{declared_h} / {sum_h}" if declared_h is not None else "—",
+                delta="✅ match" if hours_match else ("❌ mismatch" if hours_match is False else None),
+                delta_color="normal" if hours_match else "inverse",
+            )
+            declared_c = v.get("declared_total_cost")
+            sum_c = v.get("sum_row_cost")
+            cost_match = v.get("cost_match")
+            num_col2.metric(
+                "Cost: declared vs rows",
+                f"{declared_c:,.0f} / {sum_c:,.0f}" if declared_c is not None else "—",
+                delta="✅ match" if cost_match else ("❌ mismatch" if cost_match is False else None),
+                delta_color="normal" if cost_match else "inverse",
+            )
+
+            # Issues list
+            issues = v.get("issues", [])
+            if issues:
+                st.warning(
+                    "**Issues found:**\n" + "\n".join(f"- {i}" for i in issues),
+                    icon="⚠️",
+                )
+            else:
+                st.success("All checks passed.", icon="✅")
+
         # Requirements (pre-call output)
         if meta.get("requirements"):
             st.divider()
@@ -63,7 +155,7 @@ def _render_details(meta: dict) -> None:
             st.markdown(meta["requirements"])
 
 
-def _sync_stream(service, transcript: str) -> Generator[str, None, None]:
+def _sync_stream(service, transcript: str, kwargs: dict) -> Generator[str, None, None]:
     """Bridge between the async estimate_stream generator and st.write_stream.
 
     Runs the async generator in a background thread so that Streamlit's
@@ -76,7 +168,7 @@ def _sync_stream(service, transcript: str) -> Generator[str, None, None]:
 
     async def _producer() -> None:
         try:
-            async for delta in service.estimate_stream(transcript):
+            async for delta in service.estimate_stream(transcript, **kwargs):
                 delta_queue.put(delta)
         except BaseException as exc:  # noqa: BLE001
             exc_holder.append(exc)
@@ -108,11 +200,130 @@ if "messages" not in st.session_state:
 
 if "service" not in st.session_state:
     st.session_state.service = create_llm_service()
+    st.session_state.active_provider = settings.llm_provider
 
-# ── Render existing messages ───────────────────────────────────────────────────
+# ── Page header ───────────────────────────────────────────────────────────────
 
 st.title("Meeting Estimator")
 st.caption("Paste a meeting transcript below to receive a detailed effort estimate.")
+
+# ── Collapsible LLM options ───────────────────────────────────────────────────
+
+with st.expander("LLM Options", expanded=False):
+    col_a, col_b, col_c, col_d = st.columns(4)
+
+    with col_a:
+        st.subheader("Model")
+        provider = st.selectbox(
+            "Provider",
+            options=["openai", "anthropic"],
+            index=["openai", "anthropic"].index(st.session_state.active_provider),
+            help="LLM provider. Changing it recreates the service and clears the conversation.",
+        )
+        if provider != st.session_state.active_provider:
+            settings.llm_provider = provider  # type: ignore[assignment]
+            st.session_state.service = create_llm_service()
+            st.session_state.active_provider = provider
+            st.session_state.messages = []
+            st.rerun()
+
+        available_models = _MODELS_BY_PROVIDER[provider]
+        model = st.selectbox(
+            "Model",
+            options=available_models,
+            help="Specific model to use. Models prefixed with 'o' (OpenAI) or 'opus' (Anthropic) support extended reasoning.",
+        )
+
+    with col_b:
+        st.subheader("Sampling")
+        sampling_mode = st.radio(
+            "Sampling parameter",
+            options=["temperature", "top_p", "top_k", "none"],
+            index=0,
+            help="Only one sampling parameter can be active at a time. 'none' uses the model default.",
+        )
+        temperature: float | None = None
+        top_p: float | None = None
+        top_k: int | None = None
+        if sampling_mode == "temperature":
+            temperature = st.slider(
+                "Temperature",
+                min_value=0.0, max_value=2.0, value=1.0, step=0.05,
+                help="Controls randomness. Lower = more deterministic, higher = more creative. Typical range: 0.5–1.2.",
+            )
+        elif sampling_mode == "top_p":
+            top_p = st.slider(
+                "Top P",
+                min_value=0.0, max_value=1.0, value=1.0, step=0.05,
+                help="Nucleus sampling: considers only the top tokens whose cumulative probability reaches this value. Mutually exclusive with temperature.",
+            )
+        elif sampling_mode == "top_k":
+            top_k = st.number_input(
+                "Top K",
+                min_value=1, max_value=500, value=40, step=1,
+                help="Limits the token selection to the K most likely tokens at each step. Only supported by Anthropic models.",
+            )
+
+    with col_c:
+        st.subheader("Generation")
+        output_format = st.radio(
+            "Output format",
+            options=[ExampleFormat.MARKDOWN, ExampleFormat.JSON, ExampleFormat.NARRATIVE],
+            format_func=lambda f: f.value,
+            index=0,
+            horizontal=True,
+            help="Controls the output style by changing the format of the few-shot examples in the prompt. 'markdown' produces a table-based estimate, 'json' structured JSON, 'narrative' plain prose.",
+        )
+        max_output_tokens = st.number_input(
+            "Max output tokens",
+            min_value=256, max_value=32_768, value=2_048, step=256,
+            help="Hard cap on the number of tokens the model can generate. Higher values allow longer responses but increase cost and latency.",
+        )
+        model_supports_reasoning = model in _REASONING_MODELS
+        reasoning_effort = st.select_slider(
+            "Reasoning effort",
+            options=["low", "medium", "high"],
+            value="medium",
+            disabled=not model_supports_reasoning,
+            help=None if model_supports_reasoning else "Not supported by the selected model.",
+        )
+
+    with col_d:
+        st.subheader("Session")
+        continue_conversation = st.toggle(
+            "Multi-turn (continue conversation)",
+            value=False,
+            help="When enabled, each message continues from the previous one, keeping context across turns. Increases token usage over time.",
+        )
+        pre_call = st.toggle(
+            "Pre-call (extract requirements first)",
+            value=False,
+            help="Runs a cheaper pre-processing step to extract structured requirements from the transcript before sending it to the estimator. Improves quality for long or noisy transcripts.",
+        )
+        st.write("")
+        if st.button("Clear conversation", use_container_width=True):
+            st.session_state.messages = []
+            st.session_state.service.reset()
+            st.rerun()
+
+# ── Build call kwargs ─────────────────────────────────────────────────────────
+
+_call_kwargs: dict = {
+    "model": model,
+    "reasoning_effort": reasoning_effort,
+    "max_output_tokens": int(max_output_tokens),
+    "continue_conversation": continue_conversation,
+    "pre_call": pre_call,
+    "example_format": output_format,
+}
+if temperature is not None:
+    _call_kwargs["temperature"] = temperature
+if top_p is not None:
+    _call_kwargs["top_p"] = top_p
+if top_k is not None:
+    _call_kwargs["top_k"] = int(top_k)
+
+# ── Chat messages ─────────────────────────────────────────────────────────────
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -120,27 +331,28 @@ for message in st.session_state.messages:
         if message["role"] == "assistant" and "meta" in message:
             _render_details(message["meta"])
 
-# ── Chat input ─────────────────────────────────────────────────────────────────
+# ── Chat input + streaming response ───────────────────────────────────────────
 
 transcript = st.chat_input("Paste your meeting transcript here…")
 
 if transcript:
-    # Display user message
     st.session_state.messages.append({"role": "user", "content": transcript})
     with st.chat_message("user"):
         st.markdown(transcript)
 
-    # Call estimation service and stream the response
     with st.chat_message("assistant"):
         try:
             estimation = st.write_stream(
-                _sync_stream(st.session_state.service, transcript)
+                _sync_stream(st.session_state.service, transcript, _call_kwargs)
             )
             meta = {
                 k: v
                 for k, v in st.session_state.service._last_stream_result.items()
                 if k != "estimation"
             }
+            finish_reason = meta.get("finish_reason", "unknown")
+            validation = evaluate_estimation_structure(str(estimation), finish_reason)
+            meta["validation"] = validation.model_dump()
             _render_details(meta)
 
             st.session_state.messages.append(
@@ -148,8 +360,15 @@ if transcript:
             )
 
         except LLMServiceError as exc:
-            error_msg = f"**Error {exc.status_code}:** {exc.message}"
-            st.error(error_msg)
+            st.error(
+                f"**{exc.type}** (HTTP {exc.status_code})\n\n{exc.message}",
+                icon="🚨",
+            )
             st.session_state.messages.append(
-                {"role": "assistant", "content": error_msg}
+                {"role": "assistant", "content": f"**Error {exc.status_code} — {exc.type}:** {exc.message}"}
+            )
+        except Exception as exc:
+            st.error(f"**Unexpected error:** {exc}", icon="🚨")
+            st.session_state.messages.append(
+                {"role": "assistant", "content": f"**Unexpected error:** {exc}"}
             )
