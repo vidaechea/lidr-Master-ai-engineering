@@ -226,7 +226,7 @@ class OpenAILLMService(BaseLLMService):
             reasoning_tokens = usage.output_tokens_details.reasoning_tokens
 
         return {
-            "content": response.output_text,
+            "estimation": response.output_text,
             "response_id": response.id,
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,

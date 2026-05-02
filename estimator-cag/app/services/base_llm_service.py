@@ -351,7 +351,7 @@ class BaseLLMService(ABC):
             self._turn_count += 1
             self._total_cost += turn_cost
             total_cost = self._total_cost
-            self._on_turn_complete(transcription, partial["content"])
+            self._on_turn_complete(transcription, partial["estimation"])
         else:
             total_cost = turn_cost
 
@@ -370,7 +370,7 @@ class BaseLLMService(ABC):
         )
 
         return {
-            "content": partial["content"],
+            "estimation": partial["estimation"],
             "model": resolved_model,
             "input_tokens": actual_input_tokens,
             "output_tokens": actual_output_tokens,

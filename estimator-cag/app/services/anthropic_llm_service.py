@@ -258,7 +258,7 @@ class AnthropicLLMService(BaseLLMService):
                 reasoning_tokens = max(1, math.ceil(thinking_chars / _CHARS_PER_TOKEN))
 
         return {
-            "content": text_content,
+            "estimation": text_content,
             "response_id": response.id,
             "input_tokens": response.usage.input_tokens,
             "output_tokens": response.usage.output_tokens,

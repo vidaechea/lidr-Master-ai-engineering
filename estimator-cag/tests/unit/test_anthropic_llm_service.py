@@ -163,7 +163,7 @@ class TestEstimateSuccess:
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
-        assert result["content"] == FAKE_OUTPUT
+        assert result["estimation"] == FAKE_OUTPUT
 
     async def test_model_key_matches_resolved_model(self, service, mock_response):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
@@ -236,7 +236,7 @@ class TestEstimateApiErrors:
             result = await service.estimate("Build something")
         assert "error" not in result
         assert result.get("truncated") is True
-        assert result.get("content") == FAKE_OUTPUT
+        assert result.get("estimation") == FAKE_OUTPUT
 
     async def test_non_truncated_response_has_truncated_false(self, service):
         mock_response = _make_response_mock(stop_reason="end_turn")
@@ -589,7 +589,7 @@ class TestExtendedThinking:
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
-        assert result["content"] == "Final answer here."
+        assert result["estimation"] == "Final answer here."
 
     async def test_reasoning_tokens_read_from_usage_when_present(self, service):
         """reasoning_tokens is populated from usage.thinking_tokens when the API exposes it."""

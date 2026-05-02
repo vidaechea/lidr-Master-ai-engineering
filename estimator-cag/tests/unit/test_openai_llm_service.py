@@ -121,7 +121,7 @@ class TestEstimateSuccess:
         with patch("app.services.openai_llm_service._get_client") as mock_client:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
-        assert result["content"] == FAKE_OUTPUT
+        assert result["estimation"] == FAKE_OUTPUT
 
     async def test_model_key_matches_resolved_model(self, service, mock_response):
         with patch("app.services.openai_llm_service._get_client") as mock_client:
