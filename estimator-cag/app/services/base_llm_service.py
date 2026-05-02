@@ -140,9 +140,10 @@ class BaseLLMService(ABC):
 
     def _on_turn_complete(
         self,
-        transcription: str,
-        assistant_content: str,
+        _transcription: str,
+        _assistant_content: str,
     ) -> None:
+        """Hook for subclasses to override with turn completion logic."""
         pass
 
     @abstractmethod
