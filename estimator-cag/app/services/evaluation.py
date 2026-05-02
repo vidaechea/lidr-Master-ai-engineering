@@ -39,79 +39,50 @@ def evaluate_estimation_structure(text: str, finish_reason: str) -> StructureChe
         re.search(r"(Estimated\s+Duration|Duration:|\bweeks?\b)", text, re.IGNORECASE)
     )
 
-    sum_hours: int | None = None
-    sum_cost: int | None = None
-    rows = []
+    sum_hours, sum_cost = None, None
     if has_breakdown_table:
-        running_h = 0
-        running_c = 0
-        for match in _TABLE_ROW_RE.finditer(text):
-            task = match.group("task").strip().lower()
-            if task in {"task", ""} or _SEPARATOR_ROW_RE.match(match.group(0)):
+        running_h = running_c = 0
+        found = False
+        for m in _TABLE_ROW_RE.finditer(text):
+            if m.group("task").strip().lower() in {"task", ""} or _SEPARATOR_ROW_RE.match(m.group(0)):
                 continue
-            h = _to_int(match.group("hours"))
-            c = _to_int(match.group("cost"))
-            if h is None or c is None:
-                continue
-            running_h += h
-            running_c += c
-            rows.append((h, c))
-        if rows:
-            sum_hours = running_h
-            sum_cost = running_c
+            h, c = _to_int(m.group("hours")), _to_int(m.group("cost"))
+            if h is not None and c is not None:
+                running_h += h
+                running_c += c
+                found = True
+        if found:
+            sum_hours, sum_cost = running_h, running_c
 
     m_h = _TOTAL_HOURS_RE.search(text)
     m_c = _TOTAL_COST_RE.search(text)
     declared_total_hours = _to_int(m_h.group(1)) if m_h else None
     declared_total_cost = _to_int(m_c.group(1)) if m_c else None
 
-    hours_match: bool | None
-    if sum_hours is not None and declared_total_hours is not None:
-        hours_match = abs(sum_hours - declared_total_hours) <= 1
-    else:
-        hours_match = None
-
-    cost_match: bool | None
-    if sum_cost is not None and declared_total_cost is not None and declared_total_cost > 0:
-        cost_match = abs(sum_cost - declared_total_cost) / declared_total_cost <= 0.02
-    else:
-        cost_match = None
-
+    hours_match: bool | None = (
+        abs(sum_hours - declared_total_hours) <= 1
+        if sum_hours is not None and declared_total_hours is not None
+        else None
+    )
+    cost_match: bool | None = (
+        abs(sum_cost - declared_total_cost) / declared_total_cost <= 0.02
+        if sum_cost is not None and declared_total_cost
+        else None
+    )
     finish_reason_ok = finish_reason in _OK_FINISH_REASONS
 
-    checks: list[bool] = [
-        has_title,
-        has_breakdown_table,
-        has_totals_section,
-        has_team_section,
-        has_duration_section,
-        bool(hours_match),
-        bool(cost_match),
-        finish_reason_ok,
+    flag_checks: list[tuple[bool, str]] = [
+        (has_title,            "Missing H2 project title"),
+        (has_breakdown_table,  "Missing breakdown table with 'Task | Hours | Cost' header"),
+        (has_totals_section,   "Missing totals section ('Total hours' / 'Total cost')"),
+        (has_team_section,     "Missing recommended team section"),
+        (has_duration_section, "Missing estimated duration in weeks"),
+        (bool(hours_match),    f"Total hours mismatch: declared {declared_total_hours} vs sum of rows {sum_hours}"),
+        (bool(cost_match),     f"Total cost mismatch: declared {declared_total_cost} vs sum of rows {sum_cost}"),
+        (finish_reason_ok,     f"Response truncated or unexpected finish_reason='{finish_reason}'"),
     ]
-    score = round(sum(checks) / len(checks), 3)
-
-    issues: list[str] = []
-    if not has_title:
-        issues.append("Missing H2 project title")
-    if not has_breakdown_table:
-        issues.append("Missing breakdown table with 'Task | Hours | Cost' header")
-    if not has_totals_section:
-        issues.append("Missing totals section ('Total hours' / 'Total cost')")
-    if not has_team_section:
-        issues.append("Missing recommended team section")
-    if not has_duration_section:
-        issues.append("Missing estimated duration in weeks")
-    if hours_match is False:
-        issues.append(
-            f"Total hours mismatch: declared {declared_total_hours} vs sum of rows {sum_hours}"
-        )
-    if cost_match is False:
-        issues.append(
-            f"Total cost mismatch: declared {declared_total_cost} vs sum of rows {sum_cost}"
-        )
-    if not finish_reason_ok:
-        issues.append(f"Response truncated or unexpected finish_reason='{finish_reason}'")
+    score = round(sum(ok for ok, _ in flag_checks) / len(flag_checks), 3)
+    issues = [msg for ok, msg in flag_checks if not ok]
 
     return StructureCheck(
         has_title=has_title,
