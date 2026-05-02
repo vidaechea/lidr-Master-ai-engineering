@@ -22,7 +22,7 @@ def get_examples():
         for ex in ESTIMATION_EXAMPLES
     ]
 
-@router.post("/estimate", response_model=EstimationResponse)
+@router.post("/estimate")
 async def create_estimation(
     request: EstimationRequest,
     service: BaseLLMService = Depends(get_llm_service),
@@ -38,6 +38,7 @@ async def create_estimation(
             top_k=request.top_k,
             reasoning_effort=request.reasoning_effort,
             max_output_tokens=request.max_output_tokens,
+            pre_call=request.pre_call,
         )
     except LLMServiceError as exc:
         log.warning(

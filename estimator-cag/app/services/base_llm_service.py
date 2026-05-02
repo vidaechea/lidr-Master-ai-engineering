@@ -30,6 +30,28 @@ Now estimate the new project based on the meeting transcription provided \
 by the user.
 """
 
+_PRE_CALL_MAX_OUTPUT_TOKENS = 1_024
+
+_PRE_CALL_SYSTEM_PROMPT = """\
+You are an expert business analyst specializing in software requirements.
+Your task is to analyze a raw meeting transcription and extract a clean, \
+structured list of software requirements.
+
+Filter out:
+- Small talk and pleasantries
+- Off-topic discussions
+- Repetitions and redundant statements
+- Administrative details unrelated to the software
+
+Output a clear, structured document with:
+- Numbered list of functional requirements
+- Any non-functional requirements (performance, security, scalability)
+- Constraints and limitations mentioned
+- Deadlines or budget information if present
+
+Be concise and precise. Each requirement must be a clear, actionable statement.
+"""
+
 
 class BaseLLMService(ABC):
 
@@ -45,6 +67,59 @@ class BaseLLMService(ABC):
 
     def _build_system_prompt(self) -> str:
         return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(ESTIMATION_EXAMPLES, ExampleFormat.MARKDOWN))
+
+    def _build_pre_call_system_prompt(self) -> str:
+        return _PRE_CALL_SYSTEM_PROMPT
+
+    async def _run_pre_call(
+        self,
+        transcription: str,
+        *,
+        resolved_model: str,
+        model_info: dict[str, Any],
+        temperature: Optional[float],
+        top_p: Optional[float],
+        top_k: Optional[int],
+        reasoning_effort: str,
+    ) -> dict[str, Any]:
+        pre_call_system_prompt = self._build_pre_call_system_prompt()
+        api_params = self._build_api_params(
+            resolved_model=resolved_model,
+            system_prompt=pre_call_system_prompt,
+            transcription=transcription,
+            model_info=model_info,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            reasoning_effort=reasoning_effort,
+            verbosity="low",
+            max_output_tokens=_PRE_CALL_MAX_OUTPUT_TOKENS,
+            continue_conversation=False,
+        )
+        log.debug("running_pre_call", model=resolved_model)
+        response = await self._call_provider(api_params)
+        partial = self._parse_provider_response(response, is_reasoning=model_info["reasoning"])
+
+        price_in: float = model_info["input_price"]
+        price_out: float = model_info["output_price"]
+        cost = self._compute_cost(
+            partial["input_tokens"],
+            partial["output_tokens"],
+            price_in,
+            price_out,
+            cache_creation_tokens=partial.get("cache_creation_tokens", 0),
+            cache_read_tokens=partial.get("cache_read_tokens", 0),
+            cache_write_multiplier=model_info.get("cache_write_price_multiplier", 0.0),
+            cache_read_multiplier=model_info.get("cache_read_price_multiplier", 0.0),
+        )
+        log.info(
+            "pre_call_completed",
+            model=resolved_model,
+            input_tokens=partial["input_tokens"],
+            output_tokens=partial["output_tokens"],
+            cost_usd=round(cost, 8),
+        )
+        return {"requirements": partial["estimation"], "cost": cost}
 
     def _compute_cost(
         self,
@@ -123,6 +198,7 @@ class BaseLLMService(ABC):
         verbosity: str = "low",
         max_output_tokens: int = 2_048,
         continue_conversation: bool = False,
+        pre_call: bool = False,
     ) -> dict[str, Any]:
         if temperature is not None and top_p is not None:
             raise ValueError(
@@ -135,6 +211,24 @@ class BaseLLMService(ABC):
         price_in: float = model_info["input_price"]
         price_out: float = model_info["output_price"]
 
+        # Step 1 (optional): pre-call to extract structured requirements
+        pre_call_cost: float = 0.0
+        requirements: Optional[str] = None
+        if pre_call:
+            pre_call_result = await self._run_pre_call(
+                transcription,
+                resolved_model=resolved_model,
+                model_info=model_info,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                reasoning_effort=reasoning_effort,
+            )
+            requirements = pre_call_result["requirements"]
+            pre_call_cost = pre_call_result["cost"]
+            transcription = requirements
+
+        # Step 2: main estimation call
         system_prompt = self._build_system_prompt()
         input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
         total_tokens_est = input_tokens_est + max_output_tokens
@@ -207,11 +301,11 @@ class BaseLLMService(ABC):
         if continue_conversation:
             self._last_response_id = partial["response_id"]
             self._turn_count += 1
-            self._total_cost += turn_cost
+            self._total_cost += turn_cost + pre_call_cost
             total_cost = self._total_cost
             self._on_turn_complete(transcription, partial["estimation"])
         else:
-            total_cost = turn_cost
+            total_cost = turn_cost + pre_call_cost
 
         log.info(
             "estimation_succeeded",
@@ -222,6 +316,7 @@ class BaseLLMService(ABC):
             cache_creation_tokens=cache_creation_tokens,
             cache_read_tokens=cache_read_tokens,
             turn_cost_usd=round(turn_cost, 8),
+            pre_call_cost_usd=round(pre_call_cost, 8),
             total_cost_usd=round(total_cost, 8),
             continue_conversation=continue_conversation,
             turn_count=self._turn_count,
@@ -242,6 +337,8 @@ class BaseLLMService(ABC):
             "response_id": partial["response_id"],
             "estimated_input_tokens": input_tokens_est,
             "estimated_precall_cost_usd": round(cost_est, 8),
+            "requirements": requirements,
+            "pre_call_cost_usd": round(pre_call_cost, 8) if pre_call else None,
         }
 
 

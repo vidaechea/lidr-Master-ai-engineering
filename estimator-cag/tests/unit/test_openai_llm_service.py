@@ -489,3 +489,163 @@ class TestEstimateProviderExceptions:
                 await service.estimate("test")
         assert exc_info.value.status_code == 503
         assert exc_info.value.type == "connection_error"
+
+
+# --------------------------------------------------------------------------- #
+# estimate — pre-call two-step flow
+# --------------------------------------------------------------------------- #
+
+FAKE_REQUIREMENTS = (
+    "1. User authentication with JWT\n"
+    "2. Product catalog with search\n"
+    "3. Shopping cart and checkout\n"
+)
+
+
+class TestEstimatePreCall:
+    """Tests for the optional pre-call step that extracts requirements from
+    a raw transcription before the main estimation call."""
+
+    def _make_pre_call_response(self) -> MagicMock:
+        return _make_response_mock(
+            output_text=FAKE_REQUIREMENTS,
+            response_id="resp_pre_call",
+            input_tokens=300,
+            output_tokens=80,
+        )
+
+    def _make_estimation_response(self) -> MagicMock:
+        return _make_response_mock(
+            output_text=FAKE_OUTPUT,
+            response_id="resp_estimation",
+            input_tokens=400,
+            output_tokens=200,
+        )
+
+    async def test_provider_called_twice_when_pre_call_enabled(self, service):
+        create_mock = AsyncMock(side_effect=[
+            self._make_pre_call_response(),
+            self._make_estimation_response(),
+        ])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("Raw long meeting transcription here", pre_call=True)
+        assert create_mock.call_count == 2
+
+    async def test_provider_called_once_when_pre_call_disabled(self, service):
+        create_mock = AsyncMock(return_value=self._make_estimation_response())
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("Build a simple API", pre_call=False)
+        assert create_mock.call_count == 1
+
+    async def test_requirements_key_contains_pre_call_output(self, service):
+        create_mock = AsyncMock(side_effect=[
+            self._make_pre_call_response(),
+            self._make_estimation_response(),
+        ])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            result = await service.estimate("Raw transcription text here", pre_call=True)
+        assert result["requirements"] == FAKE_REQUIREMENTS
+
+    async def test_requirements_is_none_when_pre_call_disabled(self, service):
+        create_mock = AsyncMock(return_value=self._make_estimation_response())
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            result = await service.estimate("Build a simple API", pre_call=False)
+        assert result["requirements"] is None
+
+    async def test_pre_call_cost_usd_is_set_when_pre_call_enabled(self, service):
+        create_mock = AsyncMock(side_effect=[
+            self._make_pre_call_response(),
+            self._make_estimation_response(),
+        ])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            result = await service.estimate("Raw transcription text here", pre_call=True)
+        assert result["pre_call_cost_usd"] is not None
+        assert result["pre_call_cost_usd"] > 0
+
+    async def test_pre_call_cost_usd_is_none_when_pre_call_disabled(self, service):
+        create_mock = AsyncMock(return_value=self._make_estimation_response())
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            result = await service.estimate("Build a simple API", pre_call=False)
+        assert result["pre_call_cost_usd"] is None
+
+    async def test_total_cost_includes_pre_call_cost(self, service):
+        pre_response = self._make_pre_call_response()
+        est_response = self._make_estimation_response()
+        info = MODELS[DEFAULT_MODEL]
+
+        expected_pre_cost = (
+            pre_response.usage.input_tokens * info["input_price"]
+            + pre_response.usage.output_tokens * info["output_price"]
+        ) / 1_000_000
+        expected_est_cost = (
+            est_response.usage.input_tokens * info["input_price"]
+            + est_response.usage.output_tokens * info["output_price"]
+        ) / 1_000_000
+        expected_total = round(expected_pre_cost + expected_est_cost, 8)
+
+        create_mock = AsyncMock(side_effect=[pre_response, est_response])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            result = await service.estimate("Raw transcription text here", pre_call=True)
+        assert abs(result["total_cost_usd"] - expected_total) < 1e-9
+
+    async def test_second_call_receives_requirements_as_input(self, service):
+        """The estimation call must receive the extracted requirements, not the original transcription."""
+        create_mock = AsyncMock(side_effect=[
+            self._make_pre_call_response(),
+            self._make_estimation_response(),
+        ])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("Original raw transcription text", pre_call=True)
+
+        second_call_kwargs = create_mock.call_args_list[1].kwargs
+        assert second_call_kwargs["input"] == FAKE_REQUIREMENTS
+
+    async def test_first_call_uses_pre_call_system_prompt(self, service):
+        """The first call must NOT include the CAG examples header."""
+        from app.context.examples import EXAMPLE_HEADER_TEMPLATE
+
+        create_mock = AsyncMock(side_effect=[
+            self._make_pre_call_response(),
+            self._make_estimation_response(),
+        ])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("Original raw transcription text", pre_call=True)
+
+        first_call_instructions = create_mock.call_args_list[0].kwargs["instructions"]
+        assert EXAMPLE_HEADER_TEMPLATE.format(index=1) not in first_call_instructions
+        assert "requirements" in first_call_instructions.lower()
+
+    async def test_second_call_uses_estimation_system_prompt(self, service):
+        """The second call must include the CAG examples header."""
+        from app.context.examples import EXAMPLE_HEADER_TEMPLATE
+
+        create_mock = AsyncMock(side_effect=[
+            self._make_pre_call_response(),
+            self._make_estimation_response(),
+        ])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            await service.estimate("Original raw transcription text", pre_call=True)
+
+        second_call_instructions = create_mock.call_args_list[1].kwargs["instructions"]
+        assert EXAMPLE_HEADER_TEMPLATE.format(index=1) in second_call_instructions
+
+    async def test_estimation_key_contains_main_call_output(self, service):
+        """The 'estimation' key must come from the second call, not the pre-call."""
+        create_mock = AsyncMock(side_effect=[
+            self._make_pre_call_response(),
+            self._make_estimation_response(),
+        ])
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = create_mock
+            result = await service.estimate("Raw transcription text here", pre_call=True)
+        assert result["estimation"] == FAKE_OUTPUT

@@ -199,6 +199,124 @@ class TestCreateEstimationErrors:
 
 
 # --------------------------------------------------------------------------- #
+# POST /api/v1/estimate — pre-call two-step flow
+# --------------------------------------------------------------------------- #
+
+FAKE_REQUIREMENTS = (
+    "1. User authentication with JWT\n"
+    "2. Product catalog with search and filtering\n"
+    "3. Shopping cart and checkout flow\n"
+)
+
+
+def _patch_responses_api_two_calls(
+    pre_call_response: MagicMock,
+    estimation_response: MagicMock,
+):
+    """Context manager: patches _get_client so two sequential responses.create
+    calls return pre_call_response first, then estimation_response."""
+    create_mock = AsyncMock(side_effect=[pre_call_response, estimation_response])
+    return patch(
+        "app.services.openai_llm_service._get_client",
+        return_value=MagicMock(responses=MagicMock(create=create_mock)),
+    ), create_mock
+
+
+class TestCreateEstimationPreCall:
+    def _pre_call_mock(self) -> MagicMock:
+        return _make_responses_mock(
+            output_text=FAKE_REQUIREMENTS,
+            response_id="resp_pre_call",
+            input_tokens=300,
+            output_tokens=80,
+        )
+
+    def _estimation_mock(self) -> MagicMock:
+        return _make_responses_mock(
+            output_text=FAKE_OUTPUT,
+            response_id="resp_estimation",
+            input_tokens=400,
+            output_tokens=200,
+        )
+
+    def test_returns_200_with_pre_call_enabled(self, client: TestClient):
+        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        with ctx:
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": True},
+            )
+        assert response.status_code == 200
+
+    def test_response_contains_requirements_when_pre_call_enabled(self, client: TestClient):
+        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        with ctx:
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": True},
+            )
+        assert response.json()["requirements"] == FAKE_REQUIREMENTS
+
+    def test_requirements_is_none_when_pre_call_disabled(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": False},
+            )
+        assert response.json()["requirements"] is None
+
+    def test_pre_call_cost_usd_is_positive_when_pre_call_enabled(self, client: TestClient):
+        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        with ctx:
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": True},
+            )
+        data = response.json()
+        assert data["pre_call_cost_usd"] is not None
+        assert data["pre_call_cost_usd"] > 0
+
+    def test_pre_call_cost_usd_is_none_when_pre_call_disabled(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": False},
+            )
+        assert response.json()["pre_call_cost_usd"] is None
+
+    def test_estimation_field_contains_main_call_output(self, client: TestClient):
+        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        with ctx:
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": True},
+            )
+        assert response.json()["estimation"] == FAKE_OUTPUT
+
+    def test_total_cost_is_greater_than_turn_cost_when_pre_call_enabled(self, client: TestClient):
+        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        with ctx:
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": True},
+            )
+        data = response.json()
+        assert data["total_cost_usd"] > data["turn_cost_usd"]
+
+    def test_provider_called_twice_when_pre_call_enabled(self, client: TestClient):
+        ctx, create_mock = _patch_responses_api_two_calls(
+            self._pre_call_mock(), self._estimation_mock()
+        )
+        with ctx:
+            client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "pre_call": True},
+            )
+        assert create_mock.call_count == 2
+
+# --------------------------------------------------------------------------- #
 # POST /api/v1/estimate — validation field
 # --------------------------------------------------------------------------- #
 
