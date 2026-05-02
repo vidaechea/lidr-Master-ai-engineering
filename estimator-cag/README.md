@@ -12,6 +12,8 @@ A REST API service that generates software effort estimates from meeting transcr
 - **Multi-provider support** — OpenAI (Responses API) and Anthropic (Messages API); the routing layer handles each provider's differences automatically.
 - **Multi-turn sessions** — optional conversation continuation. OpenAI uses server-side `previous_response_id`; Anthropic replays the full history on every call (stateless).
 - **Provider-specific multi-turn** — Anthropic history is stored client-side and grows turn-by-turn; `reset()` starts a new thread.
+- **Pre-call requirements extraction** — optional first LLM call that distills the raw transcript into structured requirements before the main estimation call.
+- **Streamlit chat UI** — interactive chat interface to paste transcripts and receive estimates directly in the browser, with full token/cost metadata per response.
 
 ---
 
@@ -34,6 +36,7 @@ estimator-cag/
 │   ├── integration/          # HTTP-level tests via FastAPI TestClient
 │   └── unit/                 # Unit tests for the LLM service and examples module
 ├── main.py                   # Uvicorn entry point
+├── streamlit_app.py          # Streamlit chat UI entry point
 ├── pyproject.toml
 └── requirements.txt
 ```
@@ -154,6 +157,14 @@ UVICORN_HOST=0.0.0.0
 UVICORN_PORT=8080
 UVICORN_RELOAD=true
 ```
+
+### Run the Streamlit UI
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+The chat interface will be available at `http://localhost:8501`.
 
 ---
 
