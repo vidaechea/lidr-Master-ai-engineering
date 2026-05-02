@@ -1,11 +1,20 @@
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 
-from app.context.examples import ESTIMATION_EXAMPLES
+import structlog
 
-# --------------------------------------------------------------------------- #
-# Shared prompt template  —  CAG: role definition + injected examples
-# --------------------------------------------------------------------------- #
+from app.context.examples import ESTIMATION_EXAMPLES, ExampleFormat, format_examples_for_prompt
+
+log = structlog.get_logger(__name__)
+
+
+class LLMServiceError(Exception):
+    def __init__(self, type: str, message: str, status_code: int = 500) -> None:
+        super().__init__(message)
+        self.type = type
+        self.message = message
+        self.status_code = status_code
+
 _SYSTEM_PROMPT_TEMPLATE = """\
 You are an expert software estimator.
 Your task is to analyze meeting transcriptions and produce detailed effort \
@@ -21,24 +30,30 @@ Now estimate the new project based on the meeting transcription provided \
 by the user.
 """
 
+_PRE_CALL_MAX_OUTPUT_TOKENS = 1_024
 
-# --------------------------------------------------------------------------- #
-# Abstract base class
-# --------------------------------------------------------------------------- #
+_PRE_CALL_SYSTEM_PROMPT = """\
+You are an expert business analyst specializing in software requirements.
+Your task is to analyze a raw meeting transcription and extract a clean, \
+structured list of software requirements.
+
+Filter out:
+- Small talk and pleasantries
+- Off-topic discussions
+- Repetitions and redundant statements
+- Administrative details unrelated to the software
+
+Output a clear, structured document with:
+- Numbered list of functional requirements
+- Any non-functional requirements (performance, security, scalability)
+- Constraints and limitations mentioned
+- Deadlines or budget information if present
+
+Be concise and precise. Each requirement must be a clear, actionable statement.
+"""
+
+
 class BaseLLMService(ABC):
-    """Abstract base for LLM provider service implementations.
-
-    Subclasses must implement the provider-specific methods:
-
-    - ``_get_model_info``       — resolve and validate the model name.
-    - ``_count_tokens``         — token counting with the provider's tokenizer.
-    - ``_build_api_params``     — build the provider's API call parameters.
-    - ``_call_provider``        — execute the actual API call.
-    - ``_parse_provider_response`` — parse the raw response into a standard dict.
-
-    The ``estimate`` template method orchestrates the shared PRE-CALL / CALL /
-    POST-CALL pipeline and is inherited as-is by all subclasses.
-    """
 
     def __init__(self) -> None:
         self._last_response_id: Optional[str] = None
@@ -46,32 +61,65 @@ class BaseLLMService(ABC):
         self._total_cost: float = 0.0
 
     def reset(self) -> None:
-        """Reset multi-turn session state (start a new conversation thread)."""
         self._last_response_id = None
         self._turn_count = 0
         self._total_cost = 0.0
 
-    # ------------------------------------------------------------------ #
-    # Concrete shared helpers
-    # ------------------------------------------------------------------ #
-
     def _build_system_prompt(self) -> str:
-        """Build the CAG system prompt with injected examples."""
-        return _SYSTEM_PROMPT_TEMPLATE.format(examples=ESTIMATION_EXAMPLES.as_context())
+        return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(ESTIMATION_EXAMPLES, ExampleFormat.MARKDOWN))
 
-    @staticmethod
-    def _build_error_dict(
-        error_type: str,
-        message: str,
-        status_code: int,
+    def _build_pre_call_system_prompt(self) -> str:
+        return _PRE_CALL_SYSTEM_PROMPT
+
+    async def _run_pre_call(
+        self,
+        transcription: str,
+        *,
+        resolved_model: str,
+        model_info: dict[str, Any],
+        temperature: Optional[float],
+        top_p: Optional[float],
+        top_k: Optional[int],
+        reasoning_effort: str,
     ) -> dict[str, Any]:
-        """Build a standardised error response dict."""
-        return {
-            "error": True,
-            "type": error_type,
-            "message": message,
-            "status_code": status_code,
-        }
+        pre_call_system_prompt = self._build_pre_call_system_prompt()
+        api_params = self._build_api_params(
+            resolved_model=resolved_model,
+            system_prompt=pre_call_system_prompt,
+            transcription=transcription,
+            model_info=model_info,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            reasoning_effort=reasoning_effort,
+            verbosity="low",
+            max_output_tokens=_PRE_CALL_MAX_OUTPUT_TOKENS,
+            continue_conversation=False,
+        )
+        log.debug("running_pre_call", model=resolved_model)
+        response = await self._call_provider(api_params)
+        partial = self._parse_provider_response(response, is_reasoning=model_info["reasoning"])
+
+        price_in: float = model_info["input_price"]
+        price_out: float = model_info["output_price"]
+        cost = self._compute_cost(
+            partial["input_tokens"],
+            partial["output_tokens"],
+            price_in,
+            price_out,
+            cache_creation_tokens=partial.get("cache_creation_tokens", 0),
+            cache_read_tokens=partial.get("cache_read_tokens", 0),
+            cache_write_multiplier=model_info.get("cache_write_price_multiplier", 0.0),
+            cache_read_multiplier=model_info.get("cache_read_price_multiplier", 0.0),
+        )
+        log.info(
+            "pre_call_completed",
+            model=resolved_model,
+            input_tokens=partial["input_tokens"],
+            output_tokens=partial["output_tokens"],
+            cost_usd=round(cost, 8),
+        )
+        return {"requirements": partial["estimation"], "cost": cost}
 
     def _compute_cost(
         self,
@@ -85,40 +133,22 @@ class BaseLLMService(ABC):
         cache_write_multiplier: float = 0.0,
         cache_read_multiplier: float = 0.0,
     ) -> float:
-        """Compute cost in USD from token counts and per-million-token prices.
-
-        When prompt caching is active (Anthropic), pass the cache token counts
-        and their price multipliers so that cache write and read costs are
-        included in the total. For providers that do not use caching, all cache
-        parameters default to zero and the formula reduces to the standard
-        input/output cost.
-        """
         base = (input_tokens * price_in + output_tokens * price_out) / 1_000_000
         cache_write_cost = (cache_creation_tokens * price_in * cache_write_multiplier) / 1_000_000
         cache_read_cost = (cache_read_tokens * price_in * cache_read_multiplier) / 1_000_000
         return base + cache_write_cost + cache_read_cost
-
-    # ------------------------------------------------------------------ #
-    # Abstract provider-specific methods
-    # ------------------------------------------------------------------ #
 
     def _on_turn_complete(
         self,
         transcription: str,
         assistant_content: str,
     ) -> None:
-        """Hook called after each successful multi-turn call. No-op by default."""
+        pass
 
     @abstractmethod
     def _get_model_info(
         self, model: Optional[str]
-    ) -> tuple[str, dict[str, Any]]:
-        """Resolve and validate the model name.
-
-        Returns a ``(resolved_name, model_info_dict)`` tuple, where
-        ``model_info_dict`` must contain at minimum:
-        ``input_price``, ``output_price``, ``context_window``, ``reasoning``.
-        """
+    ) -> tuple[str, dict[str, Any]]: ...
 
     @abstractmethod
     def _count_tokens(
@@ -126,8 +156,7 @@ class BaseLLMService(ABC):
         system_prompt: str,
         user_message: str,
         model: str,
-    ) -> int:
-        """Count input tokens using the provider's tokenizer."""
+    ) -> int: ...
 
     @abstractmethod
     def _build_api_params(
@@ -144,12 +173,10 @@ class BaseLLMService(ABC):
         verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
-    ) -> dict[str, Any]:
-        """Build the API call parameters dict for the provider."""
+    ) -> dict[str, Any]: ...
 
     @abstractmethod
-    async def _call_provider(self, api_params: dict[str, Any]) -> Any:
-        """Execute the provider API call and return the raw response object."""
+    async def _call_provider(self, api_params: dict[str, Any]) -> Any: ...
 
     @abstractmethod
     def _parse_provider_response(
@@ -157,19 +184,7 @@ class BaseLLMService(ABC):
         response: Any,
         *,
         is_reasoning: bool,
-    ) -> dict[str, Any]:
-        """Parse the raw provider response into a standardised partial dict.
-
-        Returns either:
-
-        - ``{"error": True, "type": ..., "message": ..., ...}`` on failure, or
-        - ``{"content": ..., "response_id": ..., "input_tokens": ...,
-              "output_tokens": ..., "reasoning_tokens": ...}`` on success.
-        """
-
-    # ------------------------------------------------------------------ #
-    # Template method: shared estimation pipeline
-    # ------------------------------------------------------------------ #
+    ) -> dict[str, Any]: ...
 
     async def estimate(
         self,
@@ -183,57 +198,8 @@ class BaseLLMService(ABC):
         verbosity: str = "low",
         max_output_tokens: int = 2_048,
         continue_conversation: bool = False,
+        pre_call: bool = False,
     ) -> dict[str, Any]:
-        """Generate a software effort estimate from a meeting transcription.
-
-        The call follows a PRE-CALL / CALL / POST-CALL pipeline:
-          - PRE-CALL : validates params, forecasts token usage, aborts on overflow.
-          - CALL     : delegates to the concrete provider via ``_call_provider``.
-          - POST-CALL: reads usage, computes cost, optionally tracks session state.
-
-        Parameters
-        ----------
-        transcription:
-            Raw meeting transcription to estimate.
-        model:
-            Model identifier. Defaults to the provider's default model.
-        temperature:
-            Sampling temperature (non-reasoning models only; mutually exclusive
-            with ``top_p``).
-        top_p:
-            Nucleus sampling probability (non-reasoning models only; mutually
-            exclusive with ``temperature``).
-        top_k:
-            Limits the token sampling pool to the top-K candidates.  Only
-            honoured by the **Anthropic** provider; silently ignored by the
-            OpenAI provider.
-        reasoning_effort:
-            Effort level for reasoning models — ``"low"``, ``"medium"``, or
-            ``"high"``.  Only honoured by the **OpenAI** provider; silently
-            ignored by the Anthropic provider.
-        verbosity:
-            Controls how much reasoning-chain text is returned by the model —
-            ``"low"``, ``"medium"``, or ``"high"``.  Only honoured by the
-            **OpenAI** provider (reasoning models); silently ignored by the
-            Anthropic provider.
-        max_output_tokens:
-            Upper bound on tokens in the model's response.
-        continue_conversation:
-            When ``True`` the call is chained to the previous response via
-            ``previous_response_id`` (multi-turn session, ``store=True``).
-
-        Returns
-        -------
-        dict with keys:
-            ``content``, ``model``, ``input_tokens``, ``output_tokens``,
-            ``reasoning_tokens``, ``turn_cost_usd``, ``total_cost_usd``,
-            ``response_id``, ``estimated_input_tokens``,
-            ``estimated_precall_cost_usd``.
-
-            On error the dict contains ``error=True``, ``type``, ``message``,
-            and optionally ``status_code``.
-        """
-        # ① PRE-CALL — parameter validation & token forecast
         if temperature is not None and top_p is not None:
             raise ValueError(
                 "temperature and top_p are mutually exclusive — provide only one."
@@ -245,25 +211,48 @@ class BaseLLMService(ABC):
         price_in: float = model_info["input_price"]
         price_out: float = model_info["output_price"]
 
+        # Step 1 (optional): pre-call to extract structured requirements
+        pre_call_cost: float = 0.0
+        requirements: Optional[str] = None
+        if pre_call:
+            pre_call_result = await self._run_pre_call(
+                transcription,
+                resolved_model=resolved_model,
+                model_info=model_info,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                reasoning_effort=reasoning_effort,
+            )
+            requirements = pre_call_result["requirements"]
+            pre_call_cost = pre_call_result["cost"]
+            transcription = requirements
+
+        # Step 2: main estimation call
         system_prompt = self._build_system_prompt()
         input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
         total_tokens_est = input_tokens_est + max_output_tokens
 
         if total_tokens_est >= context_window:
-            return {
-                "error": True,
-                "type": "context_overflow",
-                "message": (
+            log.warning(
+                "context_overflow",
+                model=resolved_model,
+                estimated_input_tokens=input_tokens_est,
+                max_output_tokens=max_output_tokens,
+                context_window=context_window,
+            )
+            raise LLMServiceError(
+                "context_overflow",
+                (
                     f"Estimated request size ({input_tokens_est} input tokens + "
                     f"{max_output_tokens} max output tokens = {total_tokens_est} total) "
                     f"meets or exceeds the context window for model "
                     f"'{resolved_model}' ({context_window} tokens)."
                 ),
-                "status_code": 413,
-            }
+                413,
+            )
 
         cost_est = input_tokens_est * price_in / 1_000_000
-
         api_params = self._build_api_params(
             resolved_model=resolved_model,
             system_prompt=system_prompt,
@@ -277,18 +266,22 @@ class BaseLLMService(ABC):
             max_output_tokens=max_output_tokens,
             continue_conversation=continue_conversation,
         )
-
-        # ② CALL
-        response = await self._call_provider(api_params)
-
-        # Provider may return an error dict directly (e.g. caught API exception)
-        if isinstance(response, dict) and response.get("error"):
-            return response
-
-        # ③ POST-CALL — cost accounting & session state
-        partial = self._parse_provider_response(response, is_reasoning=is_reasoning)
-        if partial.get("error"):
-            return partial
+        log.debug(
+            "calling_provider",
+            model=resolved_model,
+            estimated_input_tokens=input_tokens_est,
+            estimated_precall_cost_usd=round(cost_est, 8),
+        )
+        try:
+            response = await self._call_provider(api_params)
+            partial = self._parse_provider_response(response, is_reasoning=is_reasoning)
+        except LLMServiceError as exc:
+            log.error(
+                "provider_error",
+                error_type=exc.type,
+                message=exc.message,
+            )
+            raise
 
         actual_input_tokens: int = partial["input_tokens"]
         actual_output_tokens: int = partial["output_tokens"]
@@ -308,14 +301,29 @@ class BaseLLMService(ABC):
         if continue_conversation:
             self._last_response_id = partial["response_id"]
             self._turn_count += 1
-            self._total_cost += turn_cost
+            self._total_cost += turn_cost + pre_call_cost
             total_cost = self._total_cost
-            self._on_turn_complete(transcription, partial["content"])
+            self._on_turn_complete(transcription, partial["estimation"])
         else:
-            total_cost = turn_cost
+            total_cost = turn_cost + pre_call_cost
+
+        log.info(
+            "estimation_succeeded",
+            model=resolved_model,
+            input_tokens=actual_input_tokens,
+            output_tokens=actual_output_tokens,
+            reasoning_tokens=partial.get("reasoning_tokens"),
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            turn_cost_usd=round(turn_cost, 8),
+            pre_call_cost_usd=round(pre_call_cost, 8),
+            total_cost_usd=round(total_cost, 8),
+            continue_conversation=continue_conversation,
+            turn_count=self._turn_count,
+        )
 
         return {
-            "content": partial["content"],
+            "estimation": partial["estimation"],
             "model": resolved_model,
             "input_tokens": actual_input_tokens,
             "output_tokens": actual_output_tokens,
@@ -323,9 +331,32 @@ class BaseLLMService(ABC):
             "cache_creation_tokens": cache_creation_tokens,
             "cache_read_tokens": cache_read_tokens,
             "truncated": partial.get("truncated", False),
+            "finish_reason": partial.get("finish_reason", "unknown"),
             "turn_cost_usd": round(turn_cost, 8),
             "total_cost_usd": round(total_cost, 8),
             "response_id": partial["response_id"],
             "estimated_input_tokens": input_tokens_est,
             "estimated_precall_cost_usd": round(cost_est, 8),
+            "requirements": requirements,
+            "pre_call_cost_usd": round(pre_call_cost, 8) if pre_call else None,
         }
+
+
+def _make_active_service() -> "BaseLLMService":
+    from app.services.factory import create_llm_service
+    return create_llm_service()
+
+
+_active_service: BaseLLMService = _make_active_service()
+
+
+async def estimate(
+    transcription: str,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    return await _active_service.estimate(transcription, **kwargs)
+
+
+def estimate_call_tokens(system_prompt: str, user_message: str) -> int:
+    resolved_model, _ = _active_service._get_model_info(None)
+    return _active_service._count_tokens(system_prompt, user_message, resolved_model)

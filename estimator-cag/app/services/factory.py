@@ -1,5 +1,9 @@
+import structlog
+
 from app.config import settings
 from app.services.base_llm_service import BaseLLMService
+
+log = structlog.get_logger(__name__)
 
 
 def create_llm_service() -> BaseLLMService:
@@ -13,8 +17,10 @@ def create_llm_service() -> BaseLLMService:
     if provider == "anthropic":
         from app.services.anthropic_llm_service import AnthropicLLMService
 
+        log.info("llm_service_created", provider=provider, model=settings.llm_model)
         return AnthropicLLMService()
 
     from app.services.openai_llm_service import OpenAILLMService
 
+    log.info("llm_service_created", provider=provider, model=settings.llm_model)
     return OpenAILLMService()

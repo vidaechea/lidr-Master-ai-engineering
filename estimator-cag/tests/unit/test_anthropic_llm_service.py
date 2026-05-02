@@ -21,6 +21,7 @@ from app.services.anthropic_llm_service import (
     _THINKING_BUDGET,
     AnthropicLLMService,
 )
+from app.services.base_llm_service import LLMServiceError
 
 FAKE_OUTPUT = "## Estimate: E-commerce Platform\n\n1. Backend: 60 hours\n\n**Total: 60 hours**"
 FAKE_RESPONSE_ID = "msg_abc123"
@@ -162,7 +163,7 @@ class TestEstimateSuccess:
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
-        assert result["content"] == FAKE_OUTPUT
+        assert result["estimation"] == FAKE_OUTPUT
 
     async def test_model_key_matches_resolved_model(self, service, mock_response):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
@@ -235,7 +236,7 @@ class TestEstimateApiErrors:
             result = await service.estimate("Build something")
         assert "error" not in result
         assert result.get("truncated") is True
-        assert result.get("content") == FAKE_OUTPUT
+        assert result.get("estimation") == FAKE_OUTPUT
 
     async def test_non_truncated_response_has_truncated_false(self, service):
         mock_response = _make_response_mock(stop_reason="end_turn")
@@ -244,14 +245,14 @@ class TestEstimateApiErrors:
             result = await service.estimate("Build something")
         assert result.get("truncated") is False
 
-    async def test_unknown_stop_reason_returns_error_dict(self, service):
+    async def test_unknown_stop_reason_raises_llm_service_error(self, service):
         mock_response = _make_response_mock(stop_reason="tool_use")
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("Build something")
-        assert result.get("error") is True
-        assert result.get("type") == "tool_use"
-        assert "message" in result
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("Build something")
+        assert exc_info.value.type == "tool_use"
+        assert exc_info.value.message
 
 
 # --------------------------------------------------------------------------- #
@@ -259,61 +260,61 @@ class TestEstimateApiErrors:
 # --------------------------------------------------------------------------- #
 
 class TestEstimateProviderExceptions:
-    async def test_authentication_error_returns_401(self, service):
+    async def test_authentication_error_raises_401(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=AuthenticationError(
                     message="Invalid key", response=MagicMock(), body={}
                 )
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 401
-        assert result.get("type") == "authentication_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.type == "authentication_error"
 
-    async def test_rate_limit_error_returns_429(self, service):
+    async def test_rate_limit_error_raises_429(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=RateLimitError(
                     message="Rate limit", response=MagicMock(), body={}
                 )
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 429
-        assert result.get("type") == "rate_limit_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.type == "rate_limit_error"
 
-    async def test_bad_request_error_returns_400(self, service):
+    async def test_bad_request_error_raises_400(self, service):
         exc = BadRequestError(message="Bad input", response=MagicMock(), body={})
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(side_effect=exc)
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 400
-        assert result.get("type") == "bad_request_error"
-        assert "Bad input" in result.get("message", "")
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.type == "bad_request_error"
+        assert "Bad input" in exc_info.value.message
 
-    async def test_connection_error_returns_503(self, service):
+    async def test_connection_error_raises_503(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=APIConnectionError(request=MagicMock())
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 503
-        assert result.get("type") == "connection_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.type == "connection_error"
 
-    async def test_internal_server_error_returns_503(self, service):
+    async def test_internal_server_error_raises_503(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=InternalServerError(
                     message="Server error", response=MagicMock(), body={}
                 )
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 503
-        assert result.get("type") == "connection_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.type == "connection_error"
 
 
 # --------------------------------------------------------------------------- #
@@ -378,12 +379,12 @@ class TestEstimateValidation:
         with pytest.raises(ValueError, match="Unknown model"):
             await service.estimate("test", model="nonexistent-model")
 
-    async def test_returns_error_dict_on_context_overflow(self, service):
+    async def test_raises_llm_service_error_on_context_overflow(self, service):
         with patch.object(service, "_count_tokens", return_value=999_999_999):
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 413
-        assert "overflow" in result.get("type", "")
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 413
+        assert "overflow" in exc_info.value.type
 
 
 # --------------------------------------------------------------------------- #
@@ -469,7 +470,8 @@ class TestMultiTurn:
                     message="Rate limit", response=MagicMock(), body={}
                 )
             )
-            await service.estimate("Turn one", continue_conversation=True)
+            with pytest.raises(LLMServiceError):
+                await service.estimate("Turn one", continue_conversation=True)
         assert service._conversation_history == []
 
     async def test_continue_false_does_not_append_to_history(self, service):
@@ -587,7 +589,7 @@ class TestExtendedThinking:
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
-        assert result["content"] == "Final answer here."
+        assert result["estimation"] == "Final answer here."
 
     async def test_reasoning_tokens_read_from_usage_when_present(self, service):
         """reasoning_tokens is populated from usage.thinking_tokens when the API exposes it."""

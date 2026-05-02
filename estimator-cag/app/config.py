@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     llm_model: LLMModel = "gpt-4o-mini"
     app_env: str = "development"
     log_level: str = "DEBUG"
+    example_fixture: Optional[Literal["short", "long"]] = None
 
 
 settings = Settings()
