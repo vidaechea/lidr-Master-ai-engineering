@@ -10,7 +10,6 @@ log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="", tags=["estimations"])
 
-
 def get_llm_service() -> BaseLLMService:
     return create_llm_service()
 
@@ -26,7 +25,7 @@ def get_examples():
 async def create_estimation(
     request: EstimationRequest,
     service: BaseLLMService = Depends(get_llm_service),
-):
+) -> EstimationResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
     result = await service.estimate(request.transcription)
