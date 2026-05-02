@@ -1,4 +1,5 @@
 import math
+from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 from anthropic import (
@@ -267,6 +268,59 @@ class AnthropicLLMService(BaseLLMService):
             "finish_reason": response.stop_reason or "unknown",
             "cache_creation_tokens": getattr(response.usage, "cache_creation_input_tokens", None) or 0,
             "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", None) or 0,
+        }
+
+    async def _call_provider_stream(
+        self,
+        api_params: dict[str, Any],
+        *,
+        is_reasoning: bool,
+    ) -> AsyncIterator[str]:
+        try:
+            async with _get_client().messages.stream(**api_params) as stream:
+                async for delta in stream.text_stream:
+                    yield delta
+                final = await stream.get_final_message()
+        except AuthenticationError:
+            raise LLMServiceError(
+                "authentication_error",
+                "Invalid or missing Anthropic API key.",
+                401,
+            )
+        except RateLimitError:
+            raise LLMServiceError(
+                "rate_limit_error",
+                "Rate limit reached or insufficient credit.",
+                429,
+            )
+        except BadRequestError as exc:
+            raise LLMServiceError(
+                "bad_request_error",
+                f"Invalid request: {exc.message}",
+                400,
+            )
+        except (APIConnectionError, InternalServerError) as exc:
+            raise LLMServiceError(
+                "connection_error",
+                f"Connection or server error: {exc}",
+                503,
+            )
+
+        reasoning_tokens: int | None = None
+        if is_reasoning:
+            sdk_thinking = getattr(final.usage, "thinking_tokens", None)
+            if sdk_thinking is not None:
+                reasoning_tokens = sdk_thinking
+
+        self._stream_partial = {
+            "response_id": final.id,
+            "input_tokens": final.usage.input_tokens,
+            "output_tokens": final.usage.output_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "finish_reason": final.stop_reason or "unknown",
+            "truncated": final.stop_reason == "max_tokens",
+            "cache_creation_tokens": getattr(final.usage, "cache_creation_input_tokens", None) or 0,
+            "cache_read_tokens": getattr(final.usage, "cache_read_input_tokens", None) or 0,
         }
 
     def _on_turn_complete(
