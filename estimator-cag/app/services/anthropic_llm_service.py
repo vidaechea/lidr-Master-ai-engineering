@@ -264,6 +264,7 @@ class AnthropicLLMService(BaseLLMService):
             "output_tokens": response.usage.output_tokens,
             "reasoning_tokens": reasoning_tokens,
             "truncated": response.stop_reason == "max_tokens",
+            "finish_reason": response.stop_reason or "unknown",
             "cache_creation_tokens": getattr(response.usage, "cache_creation_input_tokens", None) or 0,
             "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", None) or 0,
         }

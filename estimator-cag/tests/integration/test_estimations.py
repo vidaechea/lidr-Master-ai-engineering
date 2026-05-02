@@ -13,6 +13,9 @@ FAKE_OUTPUT = (
 )
 FAKE_RESPONSE_ID = "resp_integration_001"
 
+# Minimum valid transcription (>= 50 chars as required by EstimationRequest)
+VALID_TRANSCRIPTION = "Build an e-commerce platform with user auth and product catalog."
+
 
 def _make_responses_mock(
     output_text: str = FAKE_OUTPUT,
@@ -83,7 +86,7 @@ class TestCreateEstimation:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build an e-commerce platform"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         assert response.status_code == 200
 
@@ -92,7 +95,7 @@ class TestCreateEstimation:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build an e-commerce platform"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         assert "estimation" in response.json()
 
@@ -101,7 +104,7 @@ class TestCreateEstimation:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build an e-commerce platform"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         assert response.json()["estimation"] == FAKE_OUTPUT
 
@@ -110,7 +113,7 @@ class TestCreateEstimation:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build an e-commerce platform"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         data = response.json()
         assert "turn_cost_usd" in data
@@ -122,7 +125,7 @@ class TestCreateEstimation:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build an e-commerce platform"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         data = response.json()
         assert "input_tokens" in data
@@ -134,7 +137,7 @@ class TestCreateEstimation:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build an e-commerce platform"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         data = response.json()
         assert "model" in data
@@ -145,7 +148,7 @@ class TestCreateEstimation:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build an e-commerce platform"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         data = response.json()
         assert data["input_tokens"] == 600
@@ -155,12 +158,10 @@ class TestCreateEstimation:
         response = client.post("/api/v1/estimate", json={})
         assert response.status_code == 422
 
-    def test_returns_200_when_transcription_is_empty_string(self, client: TestClient):
-        """An empty string passes schema validation — documents the current contract."""
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
-            response = client.post("/api/v1/estimate", json={"transcription": ""})
-        assert response.status_code == 200
+    def test_returns_422_when_transcription_is_too_short(self, client: TestClient):
+        """Transcriptions shorter than 50 characters are rejected — documents the current contract."""
+        response = client.post("/api/v1/estimate", json={"transcription": "Too short."})
+        assert response.status_code == 422
 
 
 # --------------------------------------------------------------------------- #
@@ -173,7 +174,7 @@ class TestCreateEstimationErrors:
         with patch.object(OpenAILLMService, "_count_tokens", return_value=999_999_999):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build something very long"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         assert response.status_code == 413
 
@@ -183,7 +184,7 @@ class TestCreateEstimationErrors:
         with patch.object(OpenAILLMService, "_count_tokens", return_value=999_999_999):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build something very long"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         assert "context" in response.json()["detail"].lower()
 
@@ -192,6 +193,137 @@ class TestCreateEstimationErrors:
         with _patch_responses_api(mock_response):
             response = client.post(
                 "/api/v1/estimate",
-                json={"transcription": "Build something"},
+                json={"transcription": VALID_TRANSCRIPTION},
             )
         assert response.status_code == 500
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/v1/estimate — validation field
+# --------------------------------------------------------------------------- #
+
+WELL_FORMED_OUTPUT = """\
+## E-commerce Platform Estimation
+
+| Task | Hours | Cost |
+|------|-------|------|
+| Frontend | 40 | 4,000 EUR |
+| Backend | 60 | 6,000 EUR |
+
+Total hours: 100
+Total cost: 10,000 EUR
+
+### Recommended Team
+- 2 Senior Developers
+
+Estimated Duration: 6 weeks
+"""
+
+
+class TestEstimationValidation:
+    def test_validation_field_present_by_default(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert "validation" in response.json()
+
+    def test_validation_is_object_when_evaluate_true(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "evaluate": True},
+            )
+        data = response.json()
+        assert data["validation"] is not None
+        assert isinstance(data["validation"], dict)
+
+    def test_validation_is_null_when_evaluate_false(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "evaluate": False},
+            )
+        assert response.json()["validation"] is None
+
+    def test_validation_contains_score_field(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        validation = response.json()["validation"]
+        assert "score" in validation
+        assert isinstance(validation["score"], float)
+
+    def test_validation_contains_issues_list(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        validation = response.json()["validation"]
+        assert "issues" in validation
+        assert isinstance(validation["issues"], list)
+
+    def test_validation_contains_all_check_fields(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        validation = response.json()["validation"]
+        for field in [
+            "has_title",
+            "has_breakdown_table",
+            "has_totals_section",
+            "has_team_section",
+            "has_duration_section",
+            "finish_reason_ok",
+        ]:
+            assert field in validation, f"Missing field: {field}"
+
+    def test_well_formed_output_gives_perfect_score(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        validation = response.json()["validation"]
+        assert validation["score"] == 1.0
+        assert validation["issues"] == []
+
+    def test_malformed_output_gives_issues(self, client: TestClient):
+        mock_response = _make_responses_mock(output_text="Just some random text without structure.")
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        validation = response.json()["validation"]
+        assert validation["score"] < 1.0
+        assert len(validation["issues"]) > 0
+
+    def test_evaluate_defaults_to_true(self, client: TestClient):
+        """Omitting evaluate should behave the same as evaluate=True."""
+        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_responses_api(mock_response):
+            without_flag = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        with _patch_responses_api(mock_response):
+            with_flag = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "evaluate": True},
+            )
+        assert without_flag.json()["validation"] is not None
+        assert with_flag.json()["validation"] is not None

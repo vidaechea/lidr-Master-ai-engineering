@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from app.context.examples import ESTIMATION_EXAMPLES
 from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem
 from app.services.base_llm_service import BaseLLMService, LLMServiceError
+from app.services.evaluation import evaluate_estimation_structure
 from app.services.factory import create_llm_service
 
 log = structlog.get_logger(__name__)
@@ -29,7 +30,15 @@ async def create_estimation(
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
     try:
-        result = await service.estimate(request.transcription)
+        result = await service.estimate(
+            request.transcription,
+            model=request.model,
+            temperature=request.temperature,
+            top_p=request.top_p,
+            top_k=request.top_k,
+            reasoning_effort=request.reasoning_effort,
+            max_output_tokens=request.max_output_tokens,
+        )
     except LLMServiceError as exc:
         log.warning(
             "estimation_failed",
@@ -46,4 +55,9 @@ async def create_estimation(
         turn_cost_usd=result["turn_cost_usd"],
         total_cost_usd=result["total_cost_usd"],
     )
-    return EstimationResponse(**result)
+    validation = (
+        evaluate_estimation_structure(result["estimation"], result["finish_reason"])
+        if request.evaluate
+        else None
+    )
+    return EstimationResponse(**result, validation=validation)

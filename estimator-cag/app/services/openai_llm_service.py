@@ -231,4 +231,5 @@ class OpenAILLMService(BaseLLMService):
             "input_tokens": usage.input_tokens,
             "output_tokens": usage.output_tokens,
             "reasoning_tokens": reasoning_tokens,
+            "finish_reason": "stop",
         }
