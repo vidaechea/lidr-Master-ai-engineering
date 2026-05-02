@@ -11,7 +11,7 @@ from anthropic import (
 )
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService
+from app.services.base_llm_service import BaseLLMService, LLMServiceError
 
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
@@ -185,25 +185,25 @@ class AnthropicLLMService(BaseLLMService):
         try:
             return await _get_client().messages.create(**api_params)
         except AuthenticationError:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "authentication_error",
                 "Invalid or missing Anthropic API key.",
                 401,
             )
         except RateLimitError:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "rate_limit_error",
                 "Rate limit reached or insufficient credit.",
                 429,
             )
         except BadRequestError as exc:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "bad_request_error",
                 f"Invalid request: {exc.message}",
                 400,
             )
         except (APIConnectionError, InternalServerError) as exc:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "connection_error",
                 f"Connection or server error: {exc}",
                 503,
@@ -218,13 +218,10 @@ class AnthropicLLMService(BaseLLMService):
         # max_tokens means the response was truncated but content is usable —
         # return it with a warning flag instead of discarding it as an error.
         if response.stop_reason not in ("end_turn", "stop_sequence", "max_tokens"):
-            return {
-                "error": True,
-                "type": response.stop_reason or "unknown",
-                "message": (
-                    f"Response ended with stop_reason '{response.stop_reason}'."
-                ),
-            }
+            raise LLMServiceError(
+                response.stop_reason or "unknown",
+                f"Response ended with stop_reason '{response.stop_reason}'.",
+            )
 
         # Extended Thinking responses contain a list of typed content blocks:
         #   [{"type": "thinking", ...}, {"type": "text", ...}]

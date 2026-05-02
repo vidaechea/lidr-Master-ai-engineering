@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import app.services.base_llm_service as svc
-from app.services.base_llm_service import estimate, estimate_call_tokens
+from app.services.base_llm_service import LLMServiceError, estimate, estimate_call_tokens
 
 
 
@@ -37,9 +37,9 @@ class TestFacadeValidation:
         with pytest.raises(ValueError, match="Unknown model"):
             await estimate("test", model="nonexistent-model")
 
-    async def test_returns_error_dict_on_context_overflow(self):
+    async def test_raises_llm_service_error_on_context_overflow(self):
         with patch.object(svc._active_service, "_count_tokens", return_value=999_999_999):
-            result = await estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 413
-        assert "overflow" in result.get("type", "")
+            with pytest.raises(LLMServiceError) as exc_info:
+                await estimate("test")
+        assert exc_info.value.status_code == 413
+        assert "overflow" in exc_info.value.type

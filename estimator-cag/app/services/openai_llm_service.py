@@ -11,7 +11,7 @@ from openai import (
 )
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService
+from app.services.base_llm_service import BaseLLMService, LLMServiceError
 
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
@@ -184,25 +184,25 @@ class OpenAILLMService(BaseLLMService):
         try:
             return await _get_client().responses.create(**api_params)
         except AuthenticationError:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "authentication_error",
                 "Invalid or missing OpenAI API key.",
                 401,
             )
         except RateLimitError:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "rate_limit_error",
                 "Rate limit reached or insufficient credit.",
                 429,
             )
         except BadRequestError as exc:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "bad_request_error",
                 f"Invalid request: {exc.message}",
                 400,
             )
         except (APIConnectionError, InternalServerError) as exc:
-            return self._build_error_dict(
+            raise LLMServiceError(
                 "connection_error",
                 f"Connection or server error: {exc}",
                 503,
@@ -215,11 +215,10 @@ class OpenAILLMService(BaseLLMService):
         is_reasoning: bool,
     ) -> dict[str, Any]:
         if response.status != "completed":
-            return {
-                "error": True,
-                "type": response.status,
-                "message": f"Response ended with status '{response.status}'.",
-            }
+            raise LLMServiceError(
+                response.status,
+                f"Response ended with status '{response.status}'.",
+            )
 
         usage = response.usage
         reasoning_tokens: Optional[int] = None

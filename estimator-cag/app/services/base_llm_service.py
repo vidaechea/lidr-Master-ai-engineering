@@ -7,6 +7,29 @@ from app.context.examples import ESTIMATION_EXAMPLES, ExampleFormat, format_exam
 
 log = structlog.get_logger(__name__)
 
+
+# --------------------------------------------------------------------------- #
+# Domain error
+# --------------------------------------------------------------------------- #
+class LLMServiceError(Exception):
+    """Domain error raised by LLM service implementations.
+
+    Attributes
+    ----------
+    type:
+        Machine-readable error category (e.g. ``"authentication_error"``).
+    message:
+        Human-readable description of the failure.
+    status_code:
+        Suggested HTTP status code for the caller to use (default 500).
+    """
+
+    def __init__(self, type: str, message: str, status_code: int = 500) -> None:
+        super().__init__(message)
+        self.type = type
+        self.message = message
+        self.status_code = status_code
+
 # --------------------------------------------------------------------------- #
 # Shared prompt template  —  CAG: role definition + injected examples
 # --------------------------------------------------------------------------- #
@@ -261,17 +284,16 @@ class BaseLLMService(ABC):
                 max_output_tokens=max_output_tokens,
                 context_window=context_window,
             )
-            return {
-                "error": True,
-                "type": "context_overflow",
-                "message": (
+            raise LLMServiceError(
+                "context_overflow",
+                (
                     f"Estimated request size ({input_tokens_est} input tokens + "
                     f"{max_output_tokens} max output tokens = {total_tokens_est} total) "
                     f"meets or exceeds the context window for model "
                     f"'{resolved_model}' ({context_window} tokens)."
                 ),
-                "status_code": 413,
-            }
+                413,
+            )
 
         cost_est = input_tokens_est * price_in / 1_000_000
 
@@ -296,21 +318,18 @@ class BaseLLMService(ABC):
             estimated_input_tokens=input_tokens_est,
             estimated_precall_cost_usd=round(cost_est, 8),
         )
-        response = await self._call_provider(api_params)
+        try:
+            response = await self._call_provider(api_params)
 
-        # Provider may return an error dict directly (e.g. caught API exception)
-        if isinstance(response, dict) and response.get("error"):
+            # ③ POST-CALL — cost accounting & session state
+            partial = self._parse_provider_response(response, is_reasoning=is_reasoning)
+        except LLMServiceError as exc:
             log.error(
                 "provider_error",
-                error_type=response.get("type"),
-                message=response.get("message"),
+                error_type=exc.type,
+                message=exc.message,
             )
-            return response
-
-        # ③ POST-CALL — cost accounting & session state
-        partial = self._parse_provider_response(response, is_reasoning=is_reasoning)
-        if partial.get("error"):
-            return partial
+            raise
 
         actual_input_tokens: int = partial["input_tokens"]
         actual_output_tokens: int = partial["output_tokens"]

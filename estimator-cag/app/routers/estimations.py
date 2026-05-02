@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.context.examples import ESTIMATION_EXAMPLES
 from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem
-from app.services.base_llm_service import BaseLLMService
+from app.services.base_llm_service import BaseLLMService, LLMServiceError
 from app.services.factory import create_llm_service
 
 log = structlog.get_logger(__name__)
@@ -28,16 +28,16 @@ async def create_estimation(
 ) -> EstimationResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
-    result = await service.estimate(request.transcription)
-    if result.get("error"):
-        status_code = result.get("status_code", 500)
+    try:
+        result = await service.estimate(request.transcription)
+    except LLMServiceError as exc:
         log.warning(
             "estimation_failed",
-            error_type=result.get("type"),
-            status_code=status_code,
-            detail=result["message"],
+            error_type=exc.type,
+            status_code=exc.status_code,
+            detail=exc.message,
         )
-        raise HTTPException(status_code=status_code, detail=result["message"])
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
     log.info(
         "estimation_completed",
         model=result["model"],
