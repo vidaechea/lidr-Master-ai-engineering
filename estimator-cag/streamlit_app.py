@@ -236,11 +236,19 @@ with st.expander("LLM Options", expanded=False):
 
     with col_b:
         st.subheader("Sampling")
+        _sampling_options = (
+            ["temperature", "top_p", "top_k", "none"]
+            if provider == "anthropic"
+            else ["temperature", "top_p", "none"]
+        )
         sampling_mode = st.radio(
             "Sampling parameter",
-            options=["temperature", "top_p", "top_k", "none"],
+            options=_sampling_options,
             index=0,
-            help="Only one sampling parameter can be active at a time. 'none' uses the model default.",
+            help=(
+                "Only one sampling parameter can be active at a time. 'none' uses the model default. "
+                "Top K is only supported by Anthropic."
+            ),
         )
         temperature: float | None = None
         top_p: float | None = None
