@@ -2,7 +2,7 @@ import re
 
 from app.schemas.estimation import StructureCheck
 
-_OK_FINISH_REASONS = {"stop", "end_turn"}
+_OK_FINISH_REASONS = {"stop", "end_turn", "stop_sequence"}
 
 _TABLE_ROW_RE = re.compile(
     r"^\|\s*(?P<task>[^|]+?)\s*\|\s*(?P<hours>[\d.,]+)\s*\|\s*(?P<cost>[\d.,\sEURer]+)\s*\|\s*$",
