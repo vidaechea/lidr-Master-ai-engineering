@@ -1,9 +1,22 @@
 from enum import Enum
+from pathlib import Path
 from typing import Literal, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.config import LLMModel
 
+from app.config import settings as _settings
+
+_FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
+
+
+def _load_example_transcription(fixture: str | None, fixtures_dir: Path = _FIXTURES_DIR) -> str | None:
+    if not fixture:
+        return None
+    return (fixtures_dir / f"{fixture}_transcription.txt").read_text(encoding="utf-8")
+
+
+_EXAMPLE_TRANSCRIPTION = _load_example_transcription(_settings.example_fixture)
 
 class ExampleFormat(str, Enum):
     MARKDOWN = "markdown"
@@ -18,6 +31,22 @@ class ExampleItem(BaseModel):
 
 
 class EstimationRequest(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "example": {
+                **( {"transcription": _EXAMPLE_TRANSCRIPTION} if _EXAMPLE_TRANSCRIPTION else {} ),
+                "evaluate": True,
+                "model": "gpt-4o-mini",
+                "temperature": 0.7,
+                "top_p": None,
+                "top_k": None,
+                "reasoning_effort": "medium",
+                "max_output_tokens": 2048,
+                "pre_call": False,
+            }
+        }
+    )
+
     transcription: str = Field(
         ...,
         min_length=50,
@@ -58,6 +87,13 @@ class EstimationRequest(BaseModel):
         le=32_768,
         description="Maximum tokens the model may generate",
     )
+    pre_call: bool = Field(
+        default=False,
+        description=(
+            "When enabled, a first LLM call extracts structured requirements from "
+            "the raw transcription before the main estimation call."
+        ),
+    )
 
 
 class StructureCheck(BaseModel):
@@ -91,3 +127,5 @@ class EstimationResponse(BaseModel):
     estimated_input_tokens: int
     estimated_precall_cost_usd: float
     validation: StructureCheck | None = None
+    requirements: str | None = None
+    pre_call_cost_usd: float | None = None
