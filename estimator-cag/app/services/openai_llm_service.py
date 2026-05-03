@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 import tiktoken
@@ -111,6 +112,17 @@ def _get_client() -> AsyncOpenAI:
 class OpenAILLMService(BaseLLMService):
     """LLM service implementation backed by the OpenAI Responses API."""
 
+    _ERROR_MAPPING = {
+        **BaseLLMService._build_provider_error_mapping(
+            provider_label="OpenAI",
+            auth_error_type=AuthenticationError,
+            rate_limit_type=RateLimitError,
+            bad_request_type=BadRequestError,
+            connection_type=APIConnectionError,
+            internal_error_type=InternalServerError,
+        )
+    }
+
     def _get_model_info(
         self, model: Optional[str]
     ) -> tuple[str, dict[str, Any]]:
@@ -152,9 +164,9 @@ class OpenAILLMService(BaseLLMService):
         model_info: dict[str, Any],
         temperature: Optional[float],
         top_p: Optional[float],
-        top_k: Optional[int],  # not supported by OpenAI — ignored
+        top_k: Optional[int] = None,      # not supported by OpenAI — ignored
         reasoning_effort: str,
-        verbosity: str,
+        verbosity: str = "low",            # not supported by OpenAI — ignored
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
@@ -183,30 +195,14 @@ class OpenAILLMService(BaseLLMService):
     async def _call_provider(self, api_params: dict[str, Any]) -> Any:
         try:
             return await _get_client().responses.create(**api_params)
-        except AuthenticationError:
-            raise LLMServiceError(
-                "authentication_error",
-                "Invalid or missing OpenAI API key.",
-                401,
-            )
-        except RateLimitError:
-            raise LLMServiceError(
-                "rate_limit_error",
-                "Rate limit reached or insufficient credit.",
-                429,
-            )
-        except BadRequestError as exc:
-            raise LLMServiceError(
-                "bad_request_error",
-                f"Invalid request: {exc.message}",
-                400,
-            )
-        except (APIConnectionError, InternalServerError) as exc:
-            raise LLMServiceError(
-                "connection_error",
-                f"Connection or server error: {exc}",
-                503,
-            )
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
@@ -232,4 +228,52 @@ class OpenAILLMService(BaseLLMService):
             "output_tokens": usage.output_tokens,
             "reasoning_tokens": reasoning_tokens,
             "finish_reason": "stop",
+        }
+
+    async def _call_provider_stream(
+        self,
+        api_params: dict[str, Any],
+        *,
+        is_reasoning: bool,
+    ) -> AsyncIterator[str]:
+        # Use create(stream=True) with raw SSE events instead of the higher-level
+        # responses.stream() helper, which has a bug in SDK v2.32.0 when the
+        # response object inside events arrives as a plain dict.
+        final_response = None
+        try:
+            raw_stream = await _get_client().responses.create(**api_params, stream=True)
+            async for event in raw_stream:
+                event_type = getattr(event, "type", None)
+                if event_type == "response.output_text.delta":
+                    yield event.delta
+                elif event_type == "response.completed":
+                    final_response = event.response
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
+
+        if final_response is None:
+            raise LLMServiceError(
+                "stream_error",
+                "Stream ended without a response.completed event.",
+                500,
+            )
+
+        usage = final_response.usage
+        reasoning_tokens: int | None = None
+        if is_reasoning and usage.output_tokens_details:
+            reasoning_tokens = usage.output_tokens_details.reasoning_tokens
+
+        self._stream_partial = {
+            "response_id": final_response.id,
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "reasoning_tokens": reasoning_tokens,
+            "finish_reason": "stop",
+            "truncated": False,
         }

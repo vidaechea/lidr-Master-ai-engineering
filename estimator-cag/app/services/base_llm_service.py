@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator, Callable
 from typing import Any, Optional
 
 import structlog
 
-from app.context.examples import ESTIMATION_EXAMPLES, ExampleFormat, format_examples_for_prompt
+from app.context.examples import ExampleFormat, format_examples_for_prompt, select_examples
 
 log = structlog.get_logger(__name__)
 
@@ -65,11 +66,65 @@ class BaseLLMService(ABC):
         self._turn_count = 0
         self._total_cost = 0.0
 
-    def _build_system_prompt(self) -> str:
-        return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(ESTIMATION_EXAMPLES, ExampleFormat.MARKDOWN))
+    def _build_system_prompt(
+        self,
+        fmt: ExampleFormat = ExampleFormat.MARKDOWN,
+        num_examples: int = 3,
+    ) -> str:
+        examples = select_examples(num_examples)
+        return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(examples, fmt))
 
     def _build_pre_call_system_prompt(self) -> str:
         return _PRE_CALL_SYSTEM_PROMPT
+
+    def _raise_service_error(
+        self,
+        exc: Exception,
+        mapping: dict[type[Exception], tuple[str, str | Callable[[Exception], str], int]],
+    ) -> None:
+        for exc_type, (error_type, message, status_code) in mapping.items():
+            if isinstance(exc, exc_type):
+                resolved_message = message(exc) if callable(message) else message
+                raise LLMServiceError(error_type, resolved_message, status_code)
+        raise exc
+
+    @staticmethod
+    def _build_provider_error_mapping(
+        *,
+        provider_label: str,
+        auth_error_type: type[Exception],
+        rate_limit_type: type[Exception],
+        bad_request_type: type[Exception],
+        connection_type: type[Exception],
+        internal_error_type: type[Exception],
+    ) -> dict[type[Exception], tuple[str, str | Callable[[Exception], str], int]]:
+        return {
+            auth_error_type: (
+                "authentication_error",
+                f"Invalid or missing {provider_label} API key.",
+                401,
+            ),
+            rate_limit_type: (
+                "rate_limit_error",
+                "Rate limit reached or insufficient credit.",
+                429,
+            ),
+            bad_request_type: (
+                "bad_request_error",
+                lambda error: f"Invalid request: {error.message}",
+                400,
+            ),
+            connection_type: (
+                "connection_error",
+                lambda error: f"Connection or server error: {error}",
+                503,
+            ),
+            internal_error_type: (
+                "connection_error",
+                lambda error: f"Connection or server error: {error}",
+                503,
+            ),
+        }
 
     async def _run_pre_call(
         self,
@@ -180,6 +235,14 @@ class BaseLLMService(ABC):
     async def _call_provider(self, api_params: dict[str, Any]) -> Any: ...
 
     @abstractmethod
+    async def _call_provider_stream(
+        self,
+        api_params: dict[str, Any],
+        *,
+        is_reasoning: bool,
+    ) -> AsyncIterator[str]: ...
+
+    @abstractmethod
     def _parse_provider_response(
         self,
         response: Any,
@@ -200,6 +263,8 @@ class BaseLLMService(ABC):
         max_output_tokens: int = 2_048,
         continue_conversation: bool = False,
         pre_call: bool = False,
+        example_format: ExampleFormat = ExampleFormat.MARKDOWN,
+        num_examples: int = 3,
     ) -> dict[str, Any]:
         if temperature is not None and top_p is not None:
             raise ValueError(
@@ -230,7 +295,7 @@ class BaseLLMService(ABC):
             transcription = requirements
 
         # Step 2: main estimation call
-        system_prompt = self._build_system_prompt()
+        system_prompt = self._build_system_prompt(fmt=example_format, num_examples=num_examples)
         input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
         total_tokens_est = input_tokens_est + max_output_tokens
 
@@ -325,6 +390,161 @@ class BaseLLMService(ABC):
 
         return {
             "estimation": partial["estimation"],
+            "model": resolved_model,
+            "input_tokens": actual_input_tokens,
+            "output_tokens": actual_output_tokens,
+            "reasoning_tokens": partial.get("reasoning_tokens"),
+            "cache_creation_tokens": cache_creation_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "truncated": partial.get("truncated", False),
+            "finish_reason": partial.get("finish_reason", "unknown"),
+            "turn_cost_usd": round(turn_cost, 8),
+            "total_cost_usd": round(total_cost, 8),
+            "response_id": partial["response_id"],
+            "estimated_input_tokens": input_tokens_est,
+            "estimated_precall_cost_usd": round(cost_est, 8),
+            "requirements": requirements,
+            "pre_call_cost_usd": round(pre_call_cost, 8) if pre_call else None,
+        }
+
+    async def estimate_stream(
+        self,
+        transcription: str,
+        *,
+        model: str | None = None,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        top_k: int | None = None,
+        reasoning_effort: str = "medium",
+        verbosity: str = "low",
+        max_output_tokens: int = 2_048,
+        continue_conversation: bool = False,
+        pre_call: bool = False,
+        example_format: ExampleFormat = ExampleFormat.MARKDOWN,
+        num_examples: int = 3,
+    ) -> AsyncIterator[str]:
+        """Async generator that yields text deltas from the LLM.
+
+        After the iterator is exhausted, ``self._last_stream_result`` holds the
+        same metadata dict that ``estimate()`` would have returned.
+        """
+        if temperature is not None and top_p is not None:
+            raise ValueError(
+                "temperature and top_p are mutually exclusive — provide only one."
+            )
+
+        resolved_model, model_info = self._get_model_info(model)
+        is_reasoning: bool = model_info["reasoning"]
+        context_window: int = model_info["context_window"]
+        price_in: float = model_info["input_price"]
+        price_out: float = model_info["output_price"]
+
+        pre_call_cost: float = 0.0
+        requirements: str | None = None
+        if pre_call:
+            pre_call_result = await self._run_pre_call(
+                transcription,
+                resolved_model=resolved_model,
+                model_info=model_info,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                reasoning_effort=reasoning_effort,
+            )
+            requirements = pre_call_result["requirements"]
+            pre_call_cost = pre_call_result["cost"]
+            transcription = requirements  # type: ignore[assignment]
+
+        system_prompt = self._build_system_prompt(fmt=example_format, num_examples=num_examples)
+        input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
+        total_tokens_est = input_tokens_est + max_output_tokens
+
+        if total_tokens_est >= context_window:
+            log.warning(
+                "context_overflow",
+                model=resolved_model,
+                estimated_input_tokens=input_tokens_est,
+                max_output_tokens=max_output_tokens,
+                context_window=context_window,
+            )
+            raise LLMServiceError(
+                "context_overflow",
+                (
+                    f"Estimated request size ({input_tokens_est} input tokens + "
+                    f"{max_output_tokens} max output tokens = {total_tokens_est} total) "
+                    f"meets or exceeds the context window for model "
+                    f"'{resolved_model}' ({context_window} tokens)."
+                ),
+                413,
+            )
+
+        cost_est = input_tokens_est * price_in / 1_000_000
+        api_params = self._build_api_params(
+            resolved_model=resolved_model,
+            system_prompt=system_prompt,
+            transcription=transcription,
+            model_info=model_info,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            reasoning_effort=reasoning_effort,
+            verbosity=verbosity,
+            max_output_tokens=max_output_tokens,
+            continue_conversation=continue_conversation,
+        )
+        log.debug(
+            "calling_provider_stream",
+            model=resolved_model,
+            estimated_input_tokens=input_tokens_est,
+        )
+
+        full_text_parts: list[str] = []
+        try:
+            async for delta in self._call_provider_stream(api_params, is_reasoning=is_reasoning):
+                full_text_parts.append(delta)
+                yield delta
+        except LLMServiceError as exc:
+            log.error("provider_stream_error", error_type=exc.type, message=exc.message)
+            raise
+
+        full_text = "".join(full_text_parts)
+
+        # --- post-stream: compute costs and store final result ---
+        partial = self._stream_partial  # set by _call_provider_stream after completion
+        actual_input_tokens: int = partial["input_tokens"]
+        actual_output_tokens: int = partial["output_tokens"]
+        cache_creation_tokens: int = partial.get("cache_creation_tokens", 0)
+        cache_read_tokens: int = partial.get("cache_read_tokens", 0)
+        turn_cost = self._compute_cost(
+            actual_input_tokens,
+            actual_output_tokens,
+            price_in,
+            price_out,
+            cache_creation_tokens=cache_creation_tokens,
+            cache_read_tokens=cache_read_tokens,
+            cache_write_multiplier=model_info.get("cache_write_price_multiplier", 0.0),
+            cache_read_multiplier=model_info.get("cache_read_price_multiplier", 0.0),
+        )
+
+        if continue_conversation:
+            self._last_response_id = partial["response_id"]
+            self._turn_count += 1
+            self._total_cost += turn_cost + pre_call_cost
+            total_cost = self._total_cost
+            self._on_turn_complete(transcription, full_text)
+        else:
+            total_cost = turn_cost + pre_call_cost
+
+        log.info(
+            "estimation_stream_succeeded",
+            model=resolved_model,
+            input_tokens=actual_input_tokens,
+            output_tokens=actual_output_tokens,
+            turn_cost_usd=round(turn_cost, 8),
+        )
+
+        self._last_stream_result: dict[str, Any] = {
+            "estimation": full_text,
             "model": resolved_model,
             "input_tokens": actual_input_tokens,
             "output_tokens": actual_output_tokens,

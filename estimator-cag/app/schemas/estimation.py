@@ -94,6 +94,20 @@ class EstimationRequest(BaseModel):
             "the raw transcription before the main estimation call."
         ),
     )
+    example_format: ExampleFormat = Field(
+        default=ExampleFormat.MARKDOWN,
+        description=(
+            "Format used for the few-shot examples in the system prompt. "
+            "Controls the output style: 'markdown' (table-based), 'json' (structured JSON), "
+            "or 'narrative' (plain text prose)."
+        ),
+    )
+    num_examples: int = Field(
+        default=3,
+        ge=0,
+        le=5,
+        description="Number of few-shot examples to include in the system prompt (0–5).",
+    )
 
 
 class StructureCheck(BaseModel):
