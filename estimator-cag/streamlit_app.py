@@ -292,6 +292,12 @@ with st.expander("LLM Options", expanded=False):
             min_value=256, max_value=32_768, value=2_048, step=256,
             help="Hard cap on the number of tokens the model can generate. Higher values allow longer responses but increase cost and latency.",
         )
+        verbosity = st.select_slider(
+            "Verbosity",
+            options=["low", "medium", "high"],
+            value="low",
+            help="Controls the level of detail in the response. Currently applied by providers that support it.",
+        )
         model_supports_reasoning = model in _REASONING_MODELS
         reasoning_effort = st.select_slider(
             "Reasoning effort",
@@ -324,6 +330,7 @@ with st.expander("LLM Options", expanded=False):
 _call_kwargs: dict = {
     "model": model,
     "reasoning_effort": reasoning_effort,
+    "verbosity": verbosity,
     "max_output_tokens": int(max_output_tokens),
     "continue_conversation": continue_conversation,
     "pre_call": pre_call,

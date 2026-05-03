@@ -166,6 +166,35 @@ uv run streamlit run streamlit_app.py
 
 The chat interface will be available at `http://localhost:8501`.
 
+#### LLM Options panel
+
+The sidebar expander exposes all call parameters without writing code:
+
+| Section | Control | Description |
+|---------|---------|-------------|
+| **Model** | Provider selector | Switch between `openai` and `anthropic`. Changing the provider recreates the service and clears the conversation. |
+| | Model selector | Lists all models registered for the active provider. Reasoning models (`o3`, `o4-mini`, `claude-opus-4-7`, …) are supported. |
+| **Sampling** | Sampling parameter | Choose `temperature`, `top_p`, `top_k` (Anthropic only), or `none` (model default). Only one can be active at a time. |
+| | Slider / input | Sets the selected sampling parameter value. |
+| **Generation** | Output format | `markdown` (table-based), `json` (structured), or `narrative` (prose). Controls the few-shot examples injected into the system prompt. |
+| | Number of examples | 0–5 few-shot examples in the system prompt. 0 = zero-shot. |
+| | Max output tokens | Hard cap on generated tokens (256–32 768). |
+| | Verbosity | `low`, `medium`, or `high`. Passed to providers that support it; silently ignored by others. |
+| | Reasoning effort | `low`, `medium`, or `high`. Only active for reasoning models. |
+| **Session** | Multi-turn toggle | Continues the conversation across messages. OpenAI uses `previous_response_id`; Anthropic replays the full history. |
+| | Pre-call toggle | Runs a cheap requirements-extraction step before the main estimation call. Improves quality on long or noisy transcripts. |
+| | Clear conversation | Resets session state and conversation history. |
+
+#### Details expander (per response)
+
+Each assistant response includes a collapsible **Details** panel with:
+
+- **Tokens** — input, output, reasoning, estimated input, cache creation, cache read
+- **Costs (USD)** — turn cost, total cumulative cost, pre-call cost, estimated pre-call cost
+- **Run info** — model used, finish reason, truncated flag, response ID
+- **Validation** — structural checks (title, breakdown table, totals, team, duration, finish reason) with a score percentage and numeric consistency check (declared hours/cost vs. row sums)
+- **Extracted requirements** — shown when pre-call is enabled
+
 ---
 
 ## Running tests
@@ -174,4 +203,4 @@ The chat interface will be available at `http://localhost:8501`.
 uv run pytest tests/ -v
 ```
 
-The test suite covers 132 cases across unit and integration layers. All external API calls are mocked.
+The test suite covers 137 cases across unit and integration layers. All external API calls are mocked.
