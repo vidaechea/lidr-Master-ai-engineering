@@ -108,41 +108,60 @@ def _render_details(meta: dict, session_id: str) -> None:
 
         # Tokens
         st.subheader("Tokens")
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Input tokens", meta["input_tokens"])
-        col2.metric("Output tokens", meta["output_tokens"])
-        col3.metric("Reasoning tokens", meta.get("reasoning_tokens") or 0)
-        col4.metric("Estimated input tokens", meta["estimated_input_tokens"])
+        reasoning_tokens = meta.get("reasoning_tokens")
+        token_cols = st.columns(4 if reasoning_tokens is not None else 3)
+        token_cols[0].metric("Input tokens", meta["input_tokens"])
+        token_cols[1].metric("Output tokens", meta["output_tokens"])
+        if reasoning_tokens is not None:
+            token_cols[2].metric("Reasoning tokens", reasoning_tokens)
+            token_cols[3].metric("Estimated input tokens", meta["estimated_input_tokens"])
+        else:
+            token_cols[2].metric("Estimated input tokens", meta["estimated_input_tokens"])
 
-        col5, col6 = st.columns(2)
-        col5.metric("Cache creation tokens", meta.get("cache_creation_tokens", 0))
-        col6.metric("Cache read tokens", meta.get("cache_read_tokens", 0))
+        cache_creation_tokens = meta.get("cache_creation_tokens", 0)
+        cache_read_tokens = meta.get("cache_read_tokens", 0)
+        if cache_creation_tokens or cache_read_tokens:
+            col5, col6 = st.columns(2)
+            col5.metric("Cache creation tokens", cache_creation_tokens)
+            col6.metric("Cache read tokens", cache_read_tokens)
 
         st.divider()
 
         # Costs
         st.subheader("Costs (USD)")
-        col7, col8, col9 = st.columns(3)
+        col7, col8 = st.columns(2)
         col7.metric("Turn cost", f"${meta['turn_cost_usd']:.6f}")
         col8.metric("Total cost", f"${meta['total_cost_usd']:.6f}")
-        col9.metric(
-            "Pre-call cost",
-            f"${meta['pre_call_cost_usd']:.6f}" if meta.get("pre_call_cost_usd") is not None else "—",
+
+        show_precall_costs = (
+            meta.get("pre_call_cost_usd") is not None
+            or meta.get("estimated_precall_cost_usd") is not None
         )
-        st.metric(
-            "Estimated pre-call cost",
-            f"${meta['estimated_precall_cost_usd']:.6f}",
-        )
+        if show_precall_costs:
+            col9, col10 = st.columns(2)
+            col9.metric(
+                "Pre-call cost",
+                f"${meta['pre_call_cost_usd']:.6f}",
+            )
+            col10.metric(
+                "Estimated pre-call cost",
+                f"${meta['estimated_precall_cost_usd']:.6f}",
+            )
 
         st.divider()
 
         # Model & run info
         st.subheader("Run info")
-        col10, col11, col12 = st.columns(3)
-        col10.metric("Model", meta["model"])
-        col11.metric("Finish reason", meta.get("finish_reason", "—"))
-        col12.metric("Truncated", str(meta.get("truncated", False)))
-        st.caption(f"Response ID: `{meta.get('response_id', '—')}`")
+        run_items: list[tuple[str, str]] = [("Model", meta["model"])]
+        if meta.get("finish_reason"):
+            run_items.append(("Finish reason", meta["finish_reason"]))
+        if "truncated" in meta:
+            run_items.append(("Truncated", str(meta.get("truncated"))))
+        run_cols = st.columns(len(run_items))
+        for col, (label, value) in zip(run_cols, run_items):
+            col.metric(label, value)
+        if meta.get("response_id"):
+            st.caption(f"Response ID: `{meta['response_id']}`")
 
         # Validation
         if meta.get("validation"):

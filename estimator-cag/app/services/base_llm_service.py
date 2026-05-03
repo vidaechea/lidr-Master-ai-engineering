@@ -77,6 +77,20 @@ class BaseLLMService(ABC):
     def _build_pre_call_system_prompt(self) -> str:
         return _PRE_CALL_SYSTEM_PROMPT
 
+    def _estimate_precall_cost(
+        self,
+        pre_call_system_prompt: str,
+        transcription: str,
+        resolved_model: str,
+        price_in: float,
+    ) -> float:
+        input_tokens_est = self._count_tokens(
+            pre_call_system_prompt,
+            transcription,
+            resolved_model,
+        )
+        return input_tokens_est * price_in / 1_000_000
+
     def _raise_service_error(
         self,
         exc: Exception,
@@ -280,7 +294,18 @@ class BaseLLMService(ABC):
         # Step 1 (optional): pre-call to extract structured requirements
         pre_call_cost: float = 0.0
         requirements: Optional[str] = None
+        estimated_precall_cost_usd: float | None = None
         if pre_call:
+            pre_call_system_prompt = self._build_pre_call_system_prompt()
+            estimated_precall_cost_usd = round(
+                self._estimate_precall_cost(
+                    pre_call_system_prompt,
+                    transcription,
+                    resolved_model,
+                    price_in,
+                ),
+                8,
+            )
             pre_call_result = await self._run_pre_call(
                 transcription,
                 resolved_model=resolved_model,
@@ -318,7 +343,6 @@ class BaseLLMService(ABC):
                 413,
             )
 
-        cost_est = input_tokens_est * price_in / 1_000_000
         api_params = self._build_api_params(
             resolved_model=resolved_model,
             system_prompt=system_prompt,
@@ -332,12 +356,13 @@ class BaseLLMService(ABC):
             max_output_tokens=max_output_tokens,
             continue_conversation=continue_conversation,
         )
-        log.debug(
-            "calling_provider",
-            model=resolved_model,
-            estimated_input_tokens=input_tokens_est,
-            estimated_precall_cost_usd=round(cost_est, 8),
-        )
+        log_payload = {
+            "model": resolved_model,
+            "estimated_input_tokens": input_tokens_est,
+        }
+        if estimated_precall_cost_usd is not None:
+            log_payload["estimated_precall_cost_usd"] = estimated_precall_cost_usd
+        log.debug("calling_provider", **log_payload)
         try:
             response = await self._call_provider(api_params)
             partial = self._parse_provider_response(response, is_reasoning=is_reasoning)
@@ -402,7 +427,7 @@ class BaseLLMService(ABC):
             "total_cost_usd": round(total_cost, 8),
             "response_id": partial["response_id"],
             "estimated_input_tokens": input_tokens_est,
-            "estimated_precall_cost_usd": round(cost_est, 8),
+            "estimated_precall_cost_usd": estimated_precall_cost_usd,
             "requirements": requirements,
             "pre_call_cost_usd": round(pre_call_cost, 8) if pre_call else None,
         }
@@ -441,7 +466,18 @@ class BaseLLMService(ABC):
 
         pre_call_cost: float = 0.0
         requirements: str | None = None
+        estimated_precall_cost_usd: float | None = None
         if pre_call:
+            pre_call_system_prompt = self._build_pre_call_system_prompt()
+            estimated_precall_cost_usd = round(
+                self._estimate_precall_cost(
+                    pre_call_system_prompt,
+                    transcription,
+                    resolved_model,
+                    price_in,
+                ),
+                8,
+            )
             pre_call_result = await self._run_pre_call(
                 transcription,
                 resolved_model=resolved_model,
@@ -478,7 +514,6 @@ class BaseLLMService(ABC):
                 413,
             )
 
-        cost_est = input_tokens_est * price_in / 1_000_000
         api_params = self._build_api_params(
             resolved_model=resolved_model,
             system_prompt=system_prompt,
@@ -557,7 +592,7 @@ class BaseLLMService(ABC):
             "total_cost_usd": round(total_cost, 8),
             "response_id": partial["response_id"],
             "estimated_input_tokens": input_tokens_est,
-            "estimated_precall_cost_usd": round(cost_est, 8),
+            "estimated_precall_cost_usd": estimated_precall_cost_usd,
             "requirements": requirements,
             "pre_call_cost_usd": round(pre_call_cost, 8) if pre_call else None,
         }
