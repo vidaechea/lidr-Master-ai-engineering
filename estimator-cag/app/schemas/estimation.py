@@ -102,6 +102,12 @@ class EstimationRequest(BaseModel):
             "or 'narrative' (plain text prose)."
         ),
     )
+    num_examples: int = Field(
+        default=3,
+        ge=0,
+        le=5,
+        description="Number of few-shot examples to include in the system prompt (0–5).",
+    )
 
 
 class StructureCheck(BaseModel):

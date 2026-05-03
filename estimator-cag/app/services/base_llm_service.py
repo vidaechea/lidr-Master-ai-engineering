@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import structlog
 
-from app.context.examples import ESTIMATION_EXAMPLES, ExampleFormat, format_examples_for_prompt
+from app.context.examples import ESTIMATION_EXAMPLES, ExampleFormat, format_examples_for_prompt, select_examples
 
 log = structlog.get_logger(__name__)
 
@@ -66,8 +66,13 @@ class BaseLLMService(ABC):
         self._turn_count = 0
         self._total_cost = 0.0
 
-    def _build_system_prompt(self, fmt: ExampleFormat = ExampleFormat.MARKDOWN) -> str:
-        return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(ESTIMATION_EXAMPLES, fmt))
+    def _build_system_prompt(
+        self,
+        fmt: ExampleFormat = ExampleFormat.MARKDOWN,
+        num_examples: int = 3,
+    ) -> str:
+        examples = select_examples(num_examples)
+        return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(examples, fmt))
 
     def _build_pre_call_system_prompt(self) -> str:
         return _PRE_CALL_SYSTEM_PROMPT
@@ -210,6 +215,7 @@ class BaseLLMService(ABC):
         continue_conversation: bool = False,
         pre_call: bool = False,
         example_format: ExampleFormat = ExampleFormat.MARKDOWN,
+        num_examples: int = 3,
     ) -> dict[str, Any]:
         if temperature is not None and top_p is not None:
             raise ValueError(
@@ -240,7 +246,7 @@ class BaseLLMService(ABC):
             transcription = requirements
 
         # Step 2: main estimation call
-        system_prompt = self._build_system_prompt(fmt=example_format)
+        system_prompt = self._build_system_prompt(fmt=example_format, num_examples=num_examples)
         input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
         total_tokens_est = input_tokens_est + max_output_tokens
 
@@ -366,6 +372,7 @@ class BaseLLMService(ABC):
         continue_conversation: bool = False,
         pre_call: bool = False,
         example_format: ExampleFormat = ExampleFormat.MARKDOWN,
+        num_examples: int = 3,
     ) -> AsyncIterator[str]:
         """Async generator that yields text deltas from the LLM.
 
@@ -399,7 +406,7 @@ class BaseLLMService(ABC):
             pre_call_cost = pre_call_result["cost"]
             transcription = requirements  # type: ignore[assignment]
 
-        system_prompt = self._build_system_prompt(fmt=example_format)
+        system_prompt = self._build_system_prompt(fmt=example_format, num_examples=num_examples)
         input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
         total_tokens_est = input_tokens_est + max_output_tokens
 

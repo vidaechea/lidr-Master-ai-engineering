@@ -282,6 +282,11 @@ with st.expander("LLM Options", expanded=False):
             horizontal=True,
             help="Controls the output style by changing the format of the few-shot examples in the prompt. 'markdown' produces a table-based estimate, 'json' structured JSON, 'narrative' plain prose.",
         )
+        num_examples = st.slider(
+            "Number of examples",
+            min_value=0, max_value=5, value=3, step=1,
+            help="How many few-shot examples to include in the system prompt (0 = zero-shot). More examples improve consistency but use more tokens.",
+        )
         max_output_tokens = st.number_input(
             "Max output tokens",
             min_value=256, max_value=32_768, value=2_048, step=256,
@@ -323,6 +328,7 @@ _call_kwargs: dict = {
     "continue_conversation": continue_conversation,
     "pre_call": pre_call,
     "example_format": output_format,
+    "num_examples": int(num_examples),
 }
 if temperature is not None:
     _call_kwargs["temperature"] = temperature
