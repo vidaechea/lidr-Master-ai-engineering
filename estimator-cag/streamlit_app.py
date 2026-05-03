@@ -98,6 +98,14 @@ _CHECK_LABELS: dict[str, str] = {
 def _render_details(meta: dict, session_id: str) -> None:
     """Render the full estimation metadata inside the sidebar."""
     with st.sidebar.expander(f"Details — session {session_id}", expanded=False):
+        if meta.get("system_prompt"):
+            with st.expander("System prompt", expanded=False):
+                st.code(meta["system_prompt"], language="text")
+
+        if meta.get("pre_call_prompt"):
+            with st.expander("Pre-call prompt", expanded=False):
+                st.code(meta["pre_call_prompt"], language="text")
+
         # Tokens
         st.subheader("Tokens")
         col1, col2, col3, col4 = st.columns(4)
@@ -412,6 +420,13 @@ if transcript:
             estimation = st.write_stream(
                 _sync_stream(st.session_state.service, transcript, _call_kwargs)
             )
+            system_prompt = st.session_state.service._build_system_prompt(
+                fmt=output_format,
+                num_examples=int(num_examples),
+            )
+            pre_call_prompt = None
+            if pre_call:
+                pre_call_prompt = st.session_state.service._build_pre_call_system_prompt()
             meta = {
                 k: v
                 for k, v in st.session_state.service._last_stream_result.items()
@@ -420,6 +435,8 @@ if transcript:
             finish_reason = meta.get("finish_reason", "unknown")
             validation = evaluate_estimation_structure(str(estimation), finish_reason)
             meta["validation"] = validation.model_dump()
+            meta["system_prompt"] = system_prompt
+            meta["pre_call_prompt"] = pre_call_prompt
             _render_details(meta, session_id)
 
             st.session_state.messages.append(
