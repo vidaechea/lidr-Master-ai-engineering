@@ -1,4 +1,7 @@
 """Unit tests for OpenAILLMService — no facade, no Anthropic dependency."""
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +15,7 @@ from openai import (
 )
 
 import app.services.openai_llm_service as openai_svc
+from app.config import settings
 from app.context.examples import EXAMPLE_HEADER_TEMPLATE
 from app.services.base_llm_service import LLMServiceError
 from app.services.openai_llm_service import (
@@ -29,6 +33,37 @@ FAKE_RESPONSE_ID = "resp_abc123"
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
+
+@dataclass
+class _StreamUsage:
+    input_tokens: int
+    output_tokens: int
+    output_tokens_details: Any | None = None
+
+
+@dataclass
+class _StreamResponse:
+    id: str
+    usage: _StreamUsage
+
+
+@dataclass
+class _StreamEvent:
+    type: str
+    delta: str | None = None
+    response: _StreamResponse | None = None
+
+
+async def _yield_openai_events(
+    response: _StreamResponse,
+    *,
+    include_completed: bool = True,
+) -> AsyncIterator[_StreamEvent]:
+    yield _StreamEvent("response.output_text.delta", delta="Hello ")
+    yield _StreamEvent("response.output_text.delta", delta="world")
+    if include_completed:
+        yield _StreamEvent("response.completed", response=response)
 
 def _make_response_mock(
     output_text: str = FAKE_OUTPUT,
@@ -182,6 +217,97 @@ class TestEstimateSuccess:
             result = await service.estimate("Build a simple API")
         assert isinstance(result["estimated_input_tokens"], int)
         assert result["estimated_input_tokens"] > 0
+
+
+# --------------------------------------------------------------------------- #
+# _get_client — lazy singleton
+# --------------------------------------------------------------------------- #
+
+
+class TestGetClient:
+    def test_client_is_cached(self, monkeypatch) -> None:
+        class DummyClient:
+            def __init__(self, api_key: str) -> None:
+                self.api_key = api_key
+
+        monkeypatch.setattr(openai_svc, "AsyncOpenAI", DummyClient)
+        monkeypatch.setattr(settings, "openai_api_key", "test-key")
+        openai_svc._client = None
+
+        first = openai_svc._get_client()
+        second = openai_svc._get_client()
+
+        assert first is second
+        assert first.api_key == "test-key"
+
+
+# --------------------------------------------------------------------------- #
+# _call_provider_stream — streaming
+# --------------------------------------------------------------------------- #
+
+
+class TestCallProviderStream:
+    @pytest.mark.asyncio
+    async def test_stream_emits_deltas_and_sets_partial(self, service: OpenAILLMService) -> None:
+        response = _StreamResponse(
+            id="resp_stream",
+            usage=_StreamUsage(input_tokens=10, output_tokens=5),
+        )
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = AsyncMock(
+                return_value=_yield_openai_events(response)
+            )
+            deltas: list[str] = []
+            async for delta in service._call_provider_stream({"model": "gpt"}, is_reasoning=False):
+                deltas.append(delta)
+
+        assert "".join(deltas) == "Hello world"
+        assert service._stream_partial["response_id"] == "resp_stream"
+        assert service._stream_partial["input_tokens"] == 10
+
+    @pytest.mark.asyncio
+    async def test_stream_includes_reasoning_tokens(self, service: OpenAILLMService) -> None:
+        details = MagicMock(reasoning_tokens=42)
+        response = _StreamResponse(
+            id="resp_stream",
+            usage=_StreamUsage(input_tokens=10, output_tokens=5, output_tokens_details=details),
+        )
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = AsyncMock(
+                return_value=_yield_openai_events(response)
+            )
+            async for _ in service._call_provider_stream({"model": "gpt"}, is_reasoning=True):
+                pass
+
+        assert service._stream_partial["reasoning_tokens"] == 42
+
+    @pytest.mark.asyncio
+    async def test_stream_raises_without_completed_event(self, service: OpenAILLMService) -> None:
+        response = _StreamResponse(
+            id="resp_stream",
+            usage=_StreamUsage(input_tokens=10, output_tokens=5),
+        )
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = AsyncMock(
+                return_value=_yield_openai_events(response, include_completed=False)
+            )
+            with pytest.raises(LLMServiceError) as exc_info:
+                async for _ in service._call_provider_stream({"model": "gpt"}, is_reasoning=False):
+                    pass
+
+        assert exc_info.value.type == "stream_error"
+
+    @pytest.mark.asyncio
+    async def test_stream_maps_provider_errors(self, service: OpenAILLMService) -> None:
+        with patch("app.services.openai_llm_service._get_client") as mock_client:
+            mock_client.return_value.responses.create = AsyncMock(
+                side_effect=AuthenticationError(message="bad key", response=MagicMock(), body={})
+            )
+            with pytest.raises(LLMServiceError) as exc_info:
+                async for _ in service._call_provider_stream({"model": "gpt"}, is_reasoning=False):
+                    pass
+
+        assert exc_info.value.type == "authentication_error"
 
 
 # --------------------------------------------------------------------------- #
