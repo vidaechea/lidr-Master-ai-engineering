@@ -274,7 +274,7 @@ if "service" not in st.session_state:
 
 # ── Page header ───────────────────────────────────────────────────────────────
 
-st.title("Meeting Estimator")
+st.title("Software Estimator")
 st.caption("Paste a meeting transcript below to receive a detailed effort estimate.")
 
 # ── Collapsible LLM options ───────────────────────────────────────────────────
