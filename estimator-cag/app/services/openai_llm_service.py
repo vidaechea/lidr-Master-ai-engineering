@@ -164,9 +164,7 @@ class OpenAILLMService(BaseLLMService):
         model_info: dict[str, Any],
         temperature: Optional[float],
         top_p: Optional[float],
-        top_k: Optional[int] = None,      # not supported by OpenAI — ignored
-        reasoning_effort: str,
-        verbosity: str = "low",            # not supported by OpenAI — ignored
+        reasoning_effort: str,      
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
