@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import structlog
 
-from app.context.examples import ESTIMATION_EXAMPLES, ExampleFormat, format_examples_for_prompt, select_examples
+from app.context.examples import ExampleFormat, format_examples_for_prompt, select_examples
 
 log = structlog.get_logger(__name__)
 
