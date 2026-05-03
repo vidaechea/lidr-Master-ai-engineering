@@ -4,6 +4,7 @@ import threading
 from typing import Generator
 
 import streamlit as st
+from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from app.config import settings
 from app.context.examples import ExampleFormat
@@ -46,6 +47,43 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(
+    """
+    <style>
+        :root {
+            --app-font: "Source Sans 3", "Source Sans Pro", sans-serif;
+        }
+        html, body, [class*="css"] {
+            font-family: var(--app-font);
+            font-size: 16px;
+        }
+        [data-testid="stMetric"] {
+            font-size: 0.85rem;
+        }
+        [data-testid="stMetricLabel"] {
+            font-size: 0.8rem;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.05rem;
+        }
+        [data-testid="stMetricDelta"] {
+            font-size: 0.75rem;
+        }
+        h1 {
+            font-size: 2.2rem;
+            letter-spacing: -0.02em;
+        }
+        h2 {
+            font-size: 1.35rem;
+        }
+        h3 {
+            font-size: 1.1rem;
+        }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 _CHECK_LABELS: dict[str, str] = {
     "has_title": "H2 project title",
@@ -57,9 +95,9 @@ _CHECK_LABELS: dict[str, str] = {
 }
 
 
-def _render_details(meta: dict) -> None:
-    """Render the full estimation metadata inside an expander."""
-    with st.expander("Details", expanded=False):
+def _render_details(meta: dict, session_id: str) -> None:
+    """Render the full estimation metadata inside the sidebar."""
+    with st.sidebar.expander(f"Details — session {session_id}", expanded=False):
         # Tokens
         st.subheader("Tokens")
         col1, col2, col3, col4 = st.columns(4)
@@ -155,6 +193,11 @@ def _render_details(meta: dict) -> None:
             st.markdown(meta["requirements"])
 
 
+def _get_session_id() -> str:
+    ctx = get_script_run_ctx()
+    return ctx.session_id if ctx and ctx.session_id else "unknown"
+
+
 def _sync_stream(service, transcript: str, kwargs: dict) -> Generator[str, None, None]:
     """Bridge between the async estimate_stream generator and st.write_stream.
 
@@ -209,6 +252,7 @@ st.caption("Paste a meeting transcript below to receive a detailed effort estima
 
 # ── Collapsible LLM options ───────────────────────────────────────────────────
 
+session_id = _get_session_id()
 with st.expander("LLM Options", expanded=False):
     col_a, col_b, col_c, col_d = st.columns(4)
 
@@ -292,12 +336,14 @@ with st.expander("LLM Options", expanded=False):
             min_value=256, max_value=32_768, value=2_048, step=256,
             help="Hard cap on the number of tokens the model can generate. Higher values allow longer responses but increase cost and latency.",
         )
-        verbosity = st.select_slider(
-            "Verbosity",
-            options=["low", "medium", "high"],
-            value="low",
-            help="Controls the level of detail in the response. Currently applied by providers that support it.",
-        )
+        verbosity = "low"
+        if provider != "openai":
+            verbosity = st.select_slider(
+                "Verbosity",
+                options=["low", "medium", "high"],
+                value="low",
+                help="Controls the level of detail in the response.",
+            )
         model_supports_reasoning = model in _REASONING_MODELS
         reasoning_effort = st.select_slider(
             "Reasoning effort",
@@ -350,7 +396,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if message["role"] == "assistant" and "meta" in message:
-            _render_details(message["meta"])
+            _render_details(message["meta"], session_id)
 
 # ── Chat input + streaming response ───────────────────────────────────────────
 
@@ -374,7 +420,7 @@ if transcript:
             finish_reason = meta.get("finish_reason", "unknown")
             validation = evaluate_estimation_structure(str(estimation), finish_reason)
             meta["validation"] = validation.model_dump()
-            _render_details(meta)
+            _render_details(meta, session_id)
 
             st.session_state.messages.append(
                 {"role": "assistant", "content": estimation, "meta": meta}
