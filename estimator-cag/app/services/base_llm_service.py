@@ -498,14 +498,16 @@ class BaseLLMService(ABC):
             estimated_input_tokens=input_tokens_est,
         )
 
-        full_text = ""
+        full_text_parts: list[str] = []
         try:
             async for delta in self._call_provider_stream(api_params, is_reasoning=is_reasoning):
-                full_text += delta
+                full_text_parts.append(delta)
                 yield delta
         except LLMServiceError as exc:
             log.error("provider_stream_error", error_type=exc.type, message=exc.message)
             raise
+
+        full_text = "".join(full_text_parts)
 
         # --- post-stream: compute costs and store final result ---
         partial = self._stream_partial  # set by _call_provider_stream after completion
