@@ -189,9 +189,9 @@ The sidebar expander exposes all call parameters without writing code:
 
 Each assistant response includes a collapsible **Details** panel with:
 
-- **Tokens** — input, output, reasoning, estimated input, cache creation, cache read
-- **Costs (USD)** — turn cost, total cumulative cost, pre-call cost, estimated pre-call cost
-- **Run info** — model used, finish reason, truncated flag, response ID
+- **Tokens** — input, output, estimated input; reasoning and cache tokens appear only when present
+- **Costs (USD)** — turn cost, total cumulative cost; pre-call costs only when pre-call is enabled
+- **Run info** — model used, finish reason, truncated flag, response ID (shown when available)
 - **Validation** — structural checks (title, breakdown table, totals, team, duration, finish reason) with a score percentage and numeric consistency check (declared hours/cost vs. row sums)
 - **Extracted requirements** — shown when pre-call is enabled
 
