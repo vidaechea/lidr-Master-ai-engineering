@@ -112,6 +112,17 @@ def _get_client() -> AsyncOpenAI:
 class OpenAILLMService(BaseLLMService):
     """LLM service implementation backed by the OpenAI Responses API."""
 
+    _ERROR_MAPPING = {
+        **BaseLLMService._build_provider_error_mapping(
+            provider_label="OpenAI",
+            auth_error_type=AuthenticationError,
+            rate_limit_type=RateLimitError,
+            bad_request_type=BadRequestError,
+            connection_type=APIConnectionError,
+            internal_error_type=InternalServerError,
+        )
+    }
+
     def _get_model_info(
         self, model: Optional[str]
     ) -> tuple[str, dict[str, Any]]:
@@ -184,30 +195,14 @@ class OpenAILLMService(BaseLLMService):
     async def _call_provider(self, api_params: dict[str, Any]) -> Any:
         try:
             return await _get_client().responses.create(**api_params)
-        except AuthenticationError:
-            raise LLMServiceError(
-                "authentication_error",
-                "Invalid or missing OpenAI API key.",
-                401,
-            )
-        except RateLimitError:
-            raise LLMServiceError(
-                "rate_limit_error",
-                "Rate limit reached or insufficient credit.",
-                429,
-            )
-        except BadRequestError as exc:
-            raise LLMServiceError(
-                "bad_request_error",
-                f"Invalid request: {exc.message}",
-                400,
-            )
-        except (APIConnectionError, InternalServerError) as exc:
-            raise LLMServiceError(
-                "connection_error",
-                f"Connection or server error: {exc}",
-                503,
-            )
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
@@ -253,30 +248,14 @@ class OpenAILLMService(BaseLLMService):
                     yield event.delta
                 elif event_type == "response.completed":
                     final_response = event.response
-        except AuthenticationError:
-            raise LLMServiceError(
-                "authentication_error",
-                "Invalid or missing OpenAI API key.",
-                401,
-            )
-        except RateLimitError:
-            raise LLMServiceError(
-                "rate_limit_error",
-                "Rate limit reached or insufficient credit.",
-                429,
-            )
-        except BadRequestError as exc:
-            raise LLMServiceError(
-                "bad_request_error",
-                f"Invalid request: {exc.message}",
-                400,
-            )
-        except (APIConnectionError, InternalServerError) as exc:
-            raise LLMServiceError(
-                "connection_error",
-                f"Connection or server error: {exc}",
-                503,
-            )
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
 
         if final_response is None:
             raise LLMServiceError(

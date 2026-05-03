@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any, Optional
 
 import structlog
@@ -76,6 +76,55 @@ class BaseLLMService(ABC):
 
     def _build_pre_call_system_prompt(self) -> str:
         return _PRE_CALL_SYSTEM_PROMPT
+
+    def _raise_service_error(
+        self,
+        exc: Exception,
+        mapping: dict[type[Exception], tuple[str, str | Callable[[Exception], str], int]],
+    ) -> None:
+        for exc_type, (error_type, message, status_code) in mapping.items():
+            if isinstance(exc, exc_type):
+                resolved_message = message(exc) if callable(message) else message
+                raise LLMServiceError(error_type, resolved_message, status_code)
+        raise exc
+
+    @staticmethod
+    def _build_provider_error_mapping(
+        *,
+        provider_label: str,
+        auth_error_type: type[Exception],
+        rate_limit_type: type[Exception],
+        bad_request_type: type[Exception],
+        connection_type: type[Exception],
+        internal_error_type: type[Exception],
+    ) -> dict[type[Exception], tuple[str, str | Callable[[Exception], str], int]]:
+        return {
+            auth_error_type: (
+                "authentication_error",
+                f"Invalid or missing {provider_label} API key.",
+                401,
+            ),
+            rate_limit_type: (
+                "rate_limit_error",
+                "Rate limit reached or insufficient credit.",
+                429,
+            ),
+            bad_request_type: (
+                "bad_request_error",
+                lambda error: f"Invalid request: {error.message}",
+                400,
+            ),
+            connection_type: (
+                "connection_error",
+                lambda error: f"Connection or server error: {error}",
+                503,
+            ),
+            internal_error_type: (
+                "connection_error",
+                lambda error: f"Connection or server error: {error}",
+                503,
+            ),
+        }
 
     async def _run_pre_call(
         self,

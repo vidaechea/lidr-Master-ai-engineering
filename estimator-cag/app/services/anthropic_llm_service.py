@@ -86,6 +86,17 @@ def _get_client() -> AsyncAnthropic:
 class AnthropicLLMService(BaseLLMService):
     """LLM service implementation backed by the Anthropic Messages API."""
 
+    _ERROR_MAPPING = {
+        **BaseLLMService._build_provider_error_mapping(
+            provider_label="Anthropic",
+            auth_error_type=AuthenticationError,
+            rate_limit_type=RateLimitError,
+            bad_request_type=BadRequestError,
+            connection_type=APIConnectionError,
+            internal_error_type=InternalServerError,
+        )
+    }
+
     def __init__(self) -> None:
         super().__init__()
         # Full conversation history for stateless multi-turn sessions.
@@ -185,30 +196,14 @@ class AnthropicLLMService(BaseLLMService):
     async def _call_provider(self, api_params: dict[str, Any]) -> Any:
         try:
             return await _get_client().messages.create(**api_params)
-        except AuthenticationError:
-            raise LLMServiceError(
-                "authentication_error",
-                "Invalid or missing Anthropic API key.",
-                401,
-            )
-        except RateLimitError:
-            raise LLMServiceError(
-                "rate_limit_error",
-                "Rate limit reached or insufficient credit.",
-                429,
-            )
-        except BadRequestError as exc:
-            raise LLMServiceError(
-                "bad_request_error",
-                f"Invalid request: {exc.message}",
-                400,
-            )
-        except (APIConnectionError, InternalServerError) as exc:
-            raise LLMServiceError(
-                "connection_error",
-                f"Connection or server error: {exc}",
-                503,
-            )
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
@@ -281,30 +276,14 @@ class AnthropicLLMService(BaseLLMService):
                 async for delta in stream.text_stream:
                     yield delta
                 final = await stream.get_final_message()
-        except AuthenticationError:
-            raise LLMServiceError(
-                "authentication_error",
-                "Invalid or missing Anthropic API key.",
-                401,
-            )
-        except RateLimitError:
-            raise LLMServiceError(
-                "rate_limit_error",
-                "Rate limit reached or insufficient credit.",
-                429,
-            )
-        except BadRequestError as exc:
-            raise LLMServiceError(
-                "bad_request_error",
-                f"Invalid request: {exc.message}",
-                400,
-            )
-        except (APIConnectionError, InternalServerError) as exc:
-            raise LLMServiceError(
-                "connection_error",
-                f"Connection or server error: {exc}",
-                503,
-            )
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
 
         reasoning_tokens: int | None = None
         if is_reasoning:
