@@ -1,5 +1,7 @@
 """Unit tests for AnthropicLLMService — no facade, no OpenAI dependency."""
 import math
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +14,7 @@ from anthropic import (
 )
 
 import app.services.anthropic_llm_service as anthropic_svc
+from app.config import settings
 from app.services.anthropic_llm_service import (
     DEFAULT_MODEL,
     MODELS,
@@ -30,6 +33,45 @@ FAKE_RESPONSE_ID = "msg_abc123"
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
+
+@dataclass
+class _StreamUsage:
+    input_tokens: int
+    output_tokens: int
+    thinking_tokens: int | None = None
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+@dataclass
+class _StreamFinal:
+    id: str
+    usage: _StreamUsage
+    stop_reason: str
+
+
+class _DummyStream:
+    def __init__(self, deltas: list[str], final: _StreamFinal) -> None:
+        self._deltas = deltas
+        self._final = final
+
+    async def __aenter__(self) -> "_DummyStream":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def get_final_message(self) -> _StreamFinal:
+        return self._final
+
+    @property
+    def text_stream(self) -> AsyncIterator[str]:
+        async def _gen() -> AsyncIterator[str]:
+            for delta in self._deltas:
+                yield delta
+
+        return _gen()
 
 def _make_response_mock(
     output_text: str = FAKE_OUTPUT,
@@ -224,6 +266,28 @@ class TestEstimateSuccess:
 
 
 # --------------------------------------------------------------------------- #
+# _get_client — lazy singleton
+# --------------------------------------------------------------------------- #
+
+
+class TestGetClient:
+    def test_client_is_cached(self, monkeypatch) -> None:
+        class DummyClient:
+            def __init__(self, api_key: str) -> None:
+                self.api_key = api_key
+
+        monkeypatch.setattr(anthropic_svc, "AsyncAnthropic", DummyClient)
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+        anthropic_svc._client = None
+
+        first = anthropic_svc._get_client()
+        second = anthropic_svc._get_client()
+
+        assert first is second
+        assert first.api_key == "test-key"
+
+
+# --------------------------------------------------------------------------- #
 # estimate — API error propagation
 # --------------------------------------------------------------------------- #
 
@@ -253,6 +317,52 @@ class TestEstimateApiErrors:
                 await service.estimate("Build something")
         assert exc_info.value.type == "tool_use"
         assert exc_info.value.message
+
+
+# --------------------------------------------------------------------------- #
+# _call_provider_stream — streaming
+# --------------------------------------------------------------------------- #
+
+
+class TestCallProviderStream:
+    @pytest.mark.asyncio
+    async def test_stream_emits_deltas_and_sets_partial(self, service: AnthropicLLMService) -> None:
+        final = _StreamFinal(
+            id="msg_stream",
+            usage=_StreamUsage(input_tokens=9, output_tokens=4),
+            stop_reason="end_turn",
+        )
+        dummy_stream = _DummyStream(["Hello ", "world"], final)
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.stream = MagicMock(return_value=dummy_stream)
+            deltas: list[str] = []
+            async for delta in service._call_provider_stream({"model": DEFAULT_MODEL}, is_reasoning=False):
+                deltas.append(delta)
+
+        assert "".join(deltas) == "Hello world"
+        assert service._stream_partial["response_id"] == "msg_stream"
+        assert service._stream_partial["finish_reason"] == "end_turn"
+
+    @pytest.mark.asyncio
+    async def test_stream_reasoning_and_cache_tokens(self, service: AnthropicLLMService) -> None:
+        usage = _StreamUsage(
+            input_tokens=11,
+            output_tokens=7,
+            thinking_tokens=123,
+            cache_creation_input_tokens=5,
+            cache_read_input_tokens=3,
+        )
+        final = _StreamFinal(id="msg_stream", usage=usage, stop_reason="max_tokens")
+        dummy_stream = _DummyStream(["OK"], final)
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.stream = MagicMock(return_value=dummy_stream)
+            async for _ in service._call_provider_stream({"model": DEFAULT_MODEL}, is_reasoning=True):
+                pass
+
+        assert service._stream_partial["reasoning_tokens"] == 123
+        assert service._stream_partial["truncated"] is True
+        assert service._stream_partial["cache_creation_tokens"] == 5
+        assert service._stream_partial["cache_read_tokens"] == 3
 
 
 # --------------------------------------------------------------------------- #

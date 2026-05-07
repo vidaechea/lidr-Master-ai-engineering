@@ -139,7 +139,7 @@ class EstimationResponse(BaseModel):
     total_cost_usd: float
     response_id: str
     estimated_input_tokens: int
-    estimated_precall_cost_usd: float
+    estimated_precall_cost_usd: float | None = None
     validation: StructureCheck | None = None
     requirements: str | None = None
     pre_call_cost_usd: float | None = None

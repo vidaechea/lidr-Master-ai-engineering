@@ -1,6 +1,6 @@
 [project]
 name = "estimator-artificial-intelligence"
-version = "1.0.0"
+version = "1.1.0"
 description = "Cost estimation service for CAG workflows"
 readme = "README.md"
 requires-python = ">=3.11"

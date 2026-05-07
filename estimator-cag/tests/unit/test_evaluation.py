@@ -1,7 +1,7 @@
 """Unit tests for app.services.evaluation — pure regex/parsing, no I/O."""
 import pytest
 
-from app.services.evaluation import evaluate_estimation_structure
+from app.services.evaluation import _to_int, evaluate_estimation_structure
 
 # --------------------------------------------------------------------------- #
 # Fixtures: estimation texts
@@ -296,6 +296,27 @@ class TestCostMatch:
     def test_sum_row_cost_computed(self):
         result = evaluate_estimation_structure(WELL_FORMED, "stop")
         assert result.sum_row_cost == 10_000.0
+
+
+class TestTableParsing:
+    def test_table_row_with_currency_only_cost_is_ignored(self) -> None:
+        text = """\
+## Platform Estimation
+
+| Task | Hours | Cost |
+|------|-------|------|
+| Backend | 2 | EUR |
+
+Total hours: 2
+Total cost: 2 EUR
+"""
+        result = evaluate_estimation_structure(text, "stop")
+        assert result.sum_row_cost is None
+
+
+class TestToInt:
+    def test_returns_none_when_no_digits(self) -> None:
+        assert _to_int("EUR") is None
 
 
 # --------------------------------------------------------------------------- #
