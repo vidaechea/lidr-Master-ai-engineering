@@ -1,8 +1,15 @@
 """LiteLLM Router service — provider-transparent LLM wrapper.
 
-The Router holds two entries under the same logical name ``LOGICAL_MODEL``.
-litellm automatically retries and fails over between them, so the rest of the
-application never knows whether a response came from OpenAI or Anthropic.
+Failover policy (ordered, not random):
+  1. All calls are sent to the primary model (``LOGICAL_MODEL`` → OpenAI gpt-4o-mini).
+  2. If it fails after ``num_retries`` attempts the Router automatically retries
+     on the fallback model (``_FALLBACK_MODEL`` → Anthropic claude-haiku) via the
+     ``fallbacks`` list — guaranteeing OpenAI-first, Anthropic-second ordering.
+  3. ``timeout`` caps each individual provider call so we never wait forever.
+  4. ``retry_after`` adds a back-off delay before retrying a 429 / rate-limit.
+  5. ``allowed_fails`` / ``cooldown_time`` implement a circuit-breaker: once a
+     model accumulates too many consecutive failures it is marked unhealthy and
+     skipped for ``cooldown_time`` seconds before being reconsidered.
 """
 from collections.abc import AsyncIterator
 from typing import Any, Optional
@@ -17,8 +24,10 @@ from app.services.base_llm_service import BaseLLMService, LLMServiceError
 
 log = structlog.get_logger(__name__)
 
-# Single logical name used by all callers — the Router resolves the actual model.
+# Primary logical name used by all callers — maps to OpenAI gpt-4o-mini.
 LOGICAL_MODEL = "estimator"
+# Fallback logical name — maps to Anthropic claude-haiku; never called directly.
+_FALLBACK_MODEL = "estimator-fb"
 
 # Pricing baseline: gpt-4o-mini (primary model).
 # Cost is an approximation; the router may transparently use Anthropic on fallback.
@@ -43,6 +52,7 @@ class LiteLLMRouterService(BaseLLMService):
         self._router = Router(
             model_list=[
                 {
+                    # Primary: OpenAI gpt-4o-mini — always tried first.
                     "model_name": LOGICAL_MODEL,
                     "litellm_params": {
                         "model": "gpt-4o-mini",
@@ -50,16 +60,32 @@ class LiteLLMRouterService(BaseLLMService):
                     },
                 },
                 {
-                    "model_name": LOGICAL_MODEL,
+                    # Fallback: Anthropic claude-haiku — only used when primary exhausts retries.
+                    "model_name": _FALLBACK_MODEL,
                     "litellm_params": {
                         "model": "anthropic/claude-haiku-4-5-20251001",
                         "api_key": settings.anthropic_api_key,
                     },
                 },
             ],
-            num_retries=2,
+            # Ordered failover: primary → fallback (never random shuffle).
+            fallbacks=[{LOGICAL_MODEL: [_FALLBACK_MODEL]}],
+            # Retry the *same* model up to 2 times before triggering the fallback.
+            num_retries=settings.router_num_retries,
+            # Hard cap per provider call — prevents hanging on slow responses.
+            timeout=settings.router_timeout,
+            # Back-off (seconds) before retrying after a 429 / rate-limit error.
+            retry_after=settings.router_retry_after,
+            # Circuit-breaker: mark a model unhealthy after this many consecutive failures …
+            allowed_fails=settings.router_allowed_fails,
+            # … and keep it out of rotation for this many seconds.
+            cooldown_time=settings.router_cooldown_time,
         )
-        log.info("litellm_router_service_created", logical_model=LOGICAL_MODEL)
+        log.info(
+            "litellm_router_service_created",
+            logical_model=LOGICAL_MODEL,
+            fallback_model=_FALLBACK_MODEL,
+        )
 
     # ---------------------------------------------------------------------- #
     # Abstract method implementations

@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.services.base_llm_service import BaseLLMService, LLMServiceError
-from app.services.litellm_router_service import LOGICAL_MODEL, LiteLLMRouterService
+from app.services.litellm_router_service import (
+    LOGICAL_MODEL,
+    _FALLBACK_MODEL,
+    LiteLLMRouterService,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -28,14 +32,84 @@ class TestLiteLLMRouterServiceStructure:
         service = LiteLLMRouterService()
         assert len(service._router.model_list) == 2
 
-    def test_both_entries_use_same_logical_model_name(self):
+    def test_primary_entry_uses_logical_model_name(self):
         service = LiteLLMRouterService()
-        names = {entry["model_name"] for entry in service._router.model_list}
-        assert names == {LOGICAL_MODEL}
+        names = [entry["model_name"] for entry in service._router.model_list]
+        assert LOGICAL_MODEL in names
+
+    def test_fallback_entry_uses_fallback_model_name(self):
+        service = LiteLLMRouterService()
+        names = [entry["model_name"] for entry in service._router.model_list]
+        assert _FALLBACK_MODEL in names
+
+    def test_primary_and_fallback_names_are_distinct(self):
+        assert LOGICAL_MODEL != _FALLBACK_MODEL
 
     def test_logical_model_constant_is_string(self):
         assert isinstance(LOGICAL_MODEL, str)
         assert len(LOGICAL_MODEL) > 0
+
+    def test_fallback_model_constant_is_string(self):
+        assert isinstance(_FALLBACK_MODEL, str)
+        assert len(_FALLBACK_MODEL) > 0
+
+
+# --------------------------------------------------------------------------- #
+# Failover policy
+# --------------------------------------------------------------------------- #
+
+
+class TestRouterFailoverPolicy:
+    """Verify the Router is constructed with the ordered failover policy."""
+
+    def test_fallbacks_list_is_configured(self):
+        service = LiteLLMRouterService()
+        assert service._router.fallbacks is not None
+        assert len(service._router.fallbacks) > 0
+
+    def test_fallbacks_maps_primary_to_fallback(self):
+        service = LiteLLMRouterService()
+        mapping = service._router.fallbacks[0]
+        assert LOGICAL_MODEL in mapping
+        assert _FALLBACK_MODEL in mapping[LOGICAL_MODEL]
+
+    def test_num_retries_comes_from_settings(self):
+        from app.config import settings
+
+        service = LiteLLMRouterService()
+        assert service._router.num_retries == settings.router_num_retries
+
+    def test_timeout_comes_from_settings(self):
+        from app.config import settings
+
+        service = LiteLLMRouterService()
+        assert service._router.timeout == settings.router_timeout
+
+    def test_allowed_fails_comes_from_settings(self):
+        from app.config import settings
+
+        service = LiteLLMRouterService()
+        assert service._router.allowed_fails == settings.router_allowed_fails
+
+    def test_cooldown_time_comes_from_settings(self):
+        from app.config import settings
+
+        service = LiteLLMRouterService()
+        assert service._router.cooldown_time == settings.router_cooldown_time
+
+    def test_primary_model_is_openai(self):
+        service = LiteLLMRouterService()
+        primary = next(
+            e for e in service._router.model_list if e["model_name"] == LOGICAL_MODEL
+        )
+        assert "gpt" in primary["litellm_params"]["model"]
+
+    def test_fallback_model_is_anthropic(self):
+        service = LiteLLMRouterService()
+        fallback = next(
+            e for e in service._router.model_list if e["model_name"] == _FALLBACK_MODEL
+        )
+        assert "anthropic" in fallback["litellm_params"]["model"]
 
 
 # --------------------------------------------------------------------------- #

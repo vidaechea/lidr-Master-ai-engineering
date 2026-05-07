@@ -33,5 +33,12 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
     example_fixture: Optional[Literal["short", "long"]] = None
 
+    # LiteLLM Router failover policy
+    router_num_retries: int = 2
+    router_timeout: float = 30.0
+    router_retry_after: int = 5
+    router_allowed_fails: int = 2
+    router_cooldown_time: int = 60
+
 
 settings = Settings()
