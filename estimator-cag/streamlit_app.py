@@ -30,9 +30,13 @@ _ANTHROPIC_MODELS = [
     "claude-haiku-4-5-20251001",
     "claude-opus-4-7",
 ]
+_LITELLM_MODELS = [
+    "gpt-4o-mini → claude-haiku (auto-failover)",
+]
 _MODELS_BY_PROVIDER: dict[str, list[str]] = {
     "openai": _OPENAI_MODELS,
     "anthropic": _ANTHROPIC_MODELS,
+    "litellm": _LITELLM_MODELS,
 }
 
 # Models that support reasoning / extended thinking
@@ -287,9 +291,10 @@ with st.expander("LLM Options", expanded=False):
         st.subheader("Model")
         provider = st.selectbox(
             "Provider",
-            options=["openai", "anthropic"],
-            index=["openai", "anthropic"].index(st.session_state.active_provider),
-            help="LLM provider. Changing it recreates the service and clears the conversation.",
+            options=["openai", "anthropic", "litellm"],
+            index=["openai", "anthropic", "litellm"].index(st.session_state.active_provider),
+            help="LLM provider. 'litellm' usa un Router con failover automático entre proveedores.",
+
         )
         if provider != st.session_state.active_provider:
             settings.llm_provider = provider  # type: ignore[assignment]

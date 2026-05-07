@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-LLMProvider = Literal["openai", "anthropic"]
+LLMProvider = Literal["openai", "anthropic", "litellm"]
 
 LLMModel = Literal[
     # OpenAI

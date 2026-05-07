@@ -20,6 +20,12 @@ def create_llm_service() -> BaseLLMService:
         log.info("llm_service_created", provider=provider, model=settings.llm_model)
         return AnthropicLLMService()
 
+    if provider == "litellm":
+        from app.services.litellm_router_service import LiteLLMRouterService
+
+        log.info("llm_service_created", provider=provider)
+        return LiteLLMRouterService()
+
     from app.services.openai_llm_service import OpenAILLMService
 
     log.info("llm_service_created", provider=provider, model=settings.llm_model)
