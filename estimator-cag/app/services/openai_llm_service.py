@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 import tiktoken
@@ -11,75 +12,75 @@ from openai import (
 )
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService
+from app.services.base_llm_service import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
 
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
 # --------------------------------------------------------------------------- #
-MODELS: dict[str, dict[str, Any]] = {
-    "gpt-3.5-turbo": {
-        "input_price": 0.50,
-        "output_price": 1.50,
-        "encoding": "cl100k_base",
-        "context_window": 16_385,
-        "reasoning": False,
-    },
-    "gpt-4-turbo": {
-        "input_price": 10.0,
-        "output_price": 30.0,
-        "encoding": "cl100k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "gpt-4o-mini": {
-        "input_price": 0.15,
-        "output_price": 0.60,
-        "encoding": "o200k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "gpt-5.4-mini": {
-        "input_price": 0.75,
-        "output_price": 4.50,
-        "encoding": "o200k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "gpt-5.4": {
-        "input_price": 2.50,
-        "output_price": 15.00,
-        "encoding": "o200k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "o3-mini": {
-        "input_price": 1.10,
-        "output_price": 4.40,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
-    "o3": {
-        "input_price": 10.0,
-        "output_price": 40.0,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
-    "o4-mini": {
-        "input_price": 1.10,
-        "output_price": 4.40,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
-    "o4-mini-2025-04-16": {
-        "input_price": 1.10,
-        "output_price": 4.40,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
+MODELS: dict[str, ModelInfo] = {
+    "gpt-3.5-turbo": ModelInfo(
+        input_price=0.50,
+        output_price=1.50,
+        encoding="cl100k_base",
+        context_window=16_385,
+        reasoning=False,
+    ),
+    "gpt-4-turbo": ModelInfo(
+        input_price=10.0,
+        output_price=30.0,
+        encoding="cl100k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "gpt-4o-mini": ModelInfo(
+        input_price=0.15,
+        output_price=0.60,
+        encoding="o200k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "gpt-5.4-mini": ModelInfo(
+        input_price=0.75,
+        output_price=4.50,
+        encoding="o200k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "gpt-5.4": ModelInfo(
+        input_price=2.50,
+        output_price=15.00,
+        encoding="o200k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "o3-mini": ModelInfo(
+        input_price=1.10,
+        output_price=4.40,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
+    "o3": ModelInfo(
+        input_price=10.0,
+        output_price=40.0,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
+    "o4-mini": ModelInfo(
+        input_price=1.10,
+        output_price=4.40,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
+    "o4-mini-2025-04-16": ModelInfo(
+        input_price=1.10,
+        output_price=4.40,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
 }
 
 DEFAULT_MODEL: str = (
@@ -111,9 +112,24 @@ def _get_client() -> AsyncOpenAI:
 class OpenAILLMService(BaseLLMService):
     """LLM service implementation backed by the OpenAI Responses API."""
 
+    _ERROR_MAPPING = {
+        **BaseLLMService._build_provider_error_mapping(
+            provider_label="OpenAI",
+            auth_error_type=AuthenticationError,
+            rate_limit_type=RateLimitError,
+            bad_request_type=BadRequestError,
+            connection_type=APIConnectionError,
+            internal_error_type=InternalServerError,
+        )
+    }
+
+    @property
+    def _provider_name(self) -> str:
+        return "openai"
+
     def _get_model_info(
         self, model: Optional[str]
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, ModelInfo]:
         resolved = model or DEFAULT_MODEL
         info = MODELS.get(resolved)
         if info is None:
@@ -128,7 +144,7 @@ class OpenAILLMService(BaseLLMService):
         user_message: str,
         model: str,
     ) -> int:
-        encoding_name = (MODELS.get(model) or {}).get("encoding")
+        encoding_name = MODELS[model].encoding if model in MODELS else None
         if encoding_name:
             encoding = tiktoken.get_encoding(encoding_name)
         else:
@@ -149,10 +165,10 @@ class OpenAILLMService(BaseLLMService):
         resolved_model: str,
         system_prompt: str,
         transcription: str,
-        model_info: dict[str, Any],
+        model_info: ModelInfo,
         temperature: Optional[float],
         top_p: Optional[float],
-        top_k: Optional[int],  # not supported by OpenAI — ignored
+        top_k: Optional[int],
         reasoning_effort: str,
         verbosity: str,
         max_output_tokens: int,
@@ -166,7 +182,7 @@ class OpenAILLMService(BaseLLMService):
             "store": continue_conversation,
         }
 
-        if model_info["reasoning"]:
+        if model_info.reasoning:
             params["reasoning"] = {"effort": reasoning_effort}
             params["text"] = {"format": {"type": "text"}}
         else:
@@ -183,53 +199,86 @@ class OpenAILLMService(BaseLLMService):
     async def _call_provider(self, api_params: dict[str, Any]) -> Any:
         try:
             return await _get_client().responses.create(**api_params)
-        except AuthenticationError:
-            return self._build_error_dict(
-                "authentication_error",
-                "Invalid or missing OpenAI API key.",
-                401,
-            )
-        except RateLimitError:
-            return self._build_error_dict(
-                "rate_limit_error",
-                "Rate limit reached or insufficient credit.",
-                429,
-            )
-        except BadRequestError as exc:
-            return self._build_error_dict(
-                "bad_request_error",
-                f"Invalid request: {exc.message}",
-                400,
-            )
-        except (APIConnectionError, InternalServerError) as exc:
-            return self._build_error_dict(
-                "connection_error",
-                f"Connection or server error: {exc}",
-                503,
-            )
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
         response: Any,
         *,
         is_reasoning: bool,
-    ) -> dict[str, Any]:
+    ) -> ParsedResponse:
         if response.status != "completed":
-            return {
-                "error": True,
-                "type": response.status,
-                "message": f"Response ended with status '{response.status}'.",
-            }
+            raise LLMServiceError(
+                response.status,
+                f"Response ended with status '{response.status}'.",
+            )
 
         usage = response.usage
         reasoning_tokens: Optional[int] = None
         if is_reasoning and usage.output_tokens_details:
             reasoning_tokens = usage.output_tokens_details.reasoning_tokens
 
-        return {
-            "content": response.output_text,
-            "response_id": response.id,
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "reasoning_tokens": reasoning_tokens,
-        }
+        return ParsedResponse(
+            estimation=response.output_text,
+            response_id=response.id,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            finish_reason="stop",
+        )
+
+    async def _call_provider_stream(
+        self,
+        api_params: dict[str, Any],
+        *,
+        is_reasoning: bool,
+    ) -> AsyncIterator[str]:
+        # Use create(stream=True) with raw SSE events instead of the higher-level
+        # responses.stream() helper, which has a bug in SDK v2.32.0 when the
+        # response object inside events arrives as a plain dict.
+        final_response = None
+        try:
+            raw_stream = await _get_client().responses.create(**api_params, stream=True)
+            async for event in raw_stream:
+                event_type = getattr(event, "type", None)
+                if event_type == "response.output_text.delta":
+                    yield event.delta
+                elif event_type == "response.completed":
+                    final_response = event.response
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
+
+        if final_response is None:
+            raise LLMServiceError(
+                "stream_error",
+                "Stream ended without a response.completed event.",
+                500,
+            )
+
+        usage = final_response.usage
+        reasoning_tokens: int | None = None
+        if is_reasoning and usage.output_tokens_details:
+            reasoning_tokens = usage.output_tokens_details.reasoning_tokens
+
+        self._stream_partial = ParsedResponse(
+            estimation="",
+            response_id=final_response.id,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            finish_reason="stop",
+            truncated=False,
+        )

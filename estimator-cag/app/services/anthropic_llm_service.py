@@ -1,4 +1,5 @@
 import math
+from collections.abc import AsyncIterator
 from typing import Any, Optional
 
 from anthropic import (
@@ -11,7 +12,7 @@ from anthropic import (
 )
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService
+from app.services.base_llm_service import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
 
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
@@ -25,32 +26,32 @@ DEFAULT_MODEL: str = "claude-sonnet-4-6"
 _CACHE_WRITE_PRICE_MULTIPLIER: float = 1.25
 _CACHE_READ_PRICE_MULTIPLIER: float = 0.10
 
-MODELS: dict[str, dict[str, Any]] = {
-    "claude-haiku-4-5-20251001": {
-        "input_price": 1.00,
-        "output_price": 5.00,
-        "context_window": 200_000,
-        "reasoning": False,
-        "cache_write_price_multiplier": _CACHE_WRITE_PRICE_MULTIPLIER,
-        "cache_read_price_multiplier": _CACHE_READ_PRICE_MULTIPLIER,
-    },
-    "claude-sonnet-4-6": {
-        "input_price": 3.00,
-        "output_price": 15.00,
-        "context_window": 200_000,
-        "reasoning": False,
-        "cache_write_price_multiplier": _CACHE_WRITE_PRICE_MULTIPLIER,
-        "cache_read_price_multiplier": _CACHE_READ_PRICE_MULTIPLIER,
-    },
-    "claude-opus-4-7": {
-        "input_price": 15.00,
-        "output_price": 75.00,
-        "context_window": 200_000,
-        "reasoning": True,   # Supports Extended Thinking
-        "thinking_api": "adaptive",  # Only supported mode; uses thinking.type=adaptive + output_config.effort
-        "cache_write_price_multiplier": _CACHE_WRITE_PRICE_MULTIPLIER,
-        "cache_read_price_multiplier": _CACHE_READ_PRICE_MULTIPLIER,
-    },
+MODELS: dict[str, ModelInfo] = {
+    "claude-haiku-4-5-20251001": ModelInfo(
+        input_price=1.00,
+        output_price=5.00,
+        context_window=200_000,
+        reasoning=False,
+        cache_write_price_multiplier=_CACHE_WRITE_PRICE_MULTIPLIER,
+        cache_read_price_multiplier=_CACHE_READ_PRICE_MULTIPLIER,
+    ),
+    "claude-sonnet-4-6": ModelInfo(
+        input_price=3.00,
+        output_price=15.00,
+        context_window=200_000,
+        reasoning=False,
+        cache_write_price_multiplier=_CACHE_WRITE_PRICE_MULTIPLIER,
+        cache_read_price_multiplier=_CACHE_READ_PRICE_MULTIPLIER,
+    ),
+    "claude-opus-4-7": ModelInfo(
+        input_price=15.00,
+        output_price=75.00,
+        context_window=200_000,
+        reasoning=True,
+        thinking_api="adaptive",
+        cache_write_price_multiplier=_CACHE_WRITE_PRICE_MULTIPLIER,
+        cache_read_price_multiplier=_CACHE_READ_PRICE_MULTIPLIER,
+    ),
 }
 
 # Approximate chars-per-token ratio used for pre-call token estimation.
@@ -85,11 +86,26 @@ def _get_client() -> AsyncAnthropic:
 class AnthropicLLMService(BaseLLMService):
     """LLM service implementation backed by the Anthropic Messages API."""
 
+    _ERROR_MAPPING = {
+        **BaseLLMService._build_provider_error_mapping(
+            provider_label="Anthropic",
+            auth_error_type=AuthenticationError,
+            rate_limit_type=RateLimitError,
+            bad_request_type=BadRequestError,
+            connection_type=APIConnectionError,
+            internal_error_type=InternalServerError,
+        )
+    }
+
     def __init__(self) -> None:
         super().__init__()
         # Full conversation history for stateless multi-turn sessions.
         # Anthropic does not store history server-side; we send it on every call.
         self._conversation_history: list[dict[str, str]] = []
+
+    @property
+    def _provider_name(self) -> str:
+        return "anthropic"
 
     def reset(self) -> None:
         """Reset session state and clear conversation history."""
@@ -98,7 +114,7 @@ class AnthropicLLMService(BaseLLMService):
 
     def _get_model_info(
         self, model: Optional[str]
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, ModelInfo]:
         # Priority: caller arg > LLM_MODEL env var (if valid for Anthropic) > DEFAULT_MODEL
         env_model = settings.llm_model if settings.llm_model in MODELS else None
         resolved = model or env_model or DEFAULT_MODEL
@@ -134,7 +150,7 @@ class AnthropicLLMService(BaseLLMService):
         resolved_model: str,
         system_prompt: str,
         transcription: str,
-        model_info: dict[str, Any],
+        model_info: ModelInfo,
         temperature: Optional[float],
         top_p: Optional[float],
         top_k: Optional[int] = None,
@@ -158,11 +174,11 @@ class AnthropicLLMService(BaseLLMService):
             "max_tokens": max_output_tokens,
         }
 
-        if model_info.get("reasoning"):
+        if model_info.reasoning:
             # Reasoning models: force high effort and enough token budget.
             # These values are non-negotiable for Extended Thinking to activate.
             params["max_tokens"] = 8_000
-            thinking_api = model_info.get("thinking_api", "enabled")
+            thinking_api = model_info.thinking_api or "enabled"
             if thinking_api == "adaptive":
                 params["thinking"] = {"type": "adaptive"}
                 params["output_config"] = {"effort": "high"}
@@ -184,47 +200,28 @@ class AnthropicLLMService(BaseLLMService):
     async def _call_provider(self, api_params: dict[str, Any]) -> Any:
         try:
             return await _get_client().messages.create(**api_params)
-        except AuthenticationError:
-            return self._build_error_dict(
-                "authentication_error",
-                "Invalid or missing Anthropic API key.",
-                401,
-            )
-        except RateLimitError:
-            return self._build_error_dict(
-                "rate_limit_error",
-                "Rate limit reached or insufficient credit.",
-                429,
-            )
-        except BadRequestError as exc:
-            return self._build_error_dict(
-                "bad_request_error",
-                f"Invalid request: {exc.message}",
-                400,
-            )
-        except (APIConnectionError, InternalServerError) as exc:
-            return self._build_error_dict(
-                "connection_error",
-                f"Connection or server error: {exc}",
-                503,
-            )
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
         response: Any,
         *,
         is_reasoning: bool,
-    ) -> dict[str, Any]:
+    ) -> ParsedResponse:
         # max_tokens means the response was truncated but content is usable —
         # return it with a warning flag instead of discarding it as an error.
         if response.stop_reason not in ("end_turn", "stop_sequence", "max_tokens"):
-            return {
-                "error": True,
-                "type": response.stop_reason or "unknown",
-                "message": (
-                    f"Response ended with stop_reason '{response.stop_reason}'."
-                ),
-            }
+            raise LLMServiceError(
+                response.stop_reason or "unknown",
+                f"Response ended with stop_reason '{response.stop_reason}'.",
+            )
 
         # Extended Thinking responses contain a list of typed content blocks:
         #   [{"type": "thinking", ...}, {"type": "text", ...}]
@@ -260,16 +257,55 @@ class AnthropicLLMService(BaseLLMService):
             elif thinking_chars > 0:
                 reasoning_tokens = max(1, math.ceil(thinking_chars / _CHARS_PER_TOKEN))
 
-        return {
-            "content": text_content,
-            "response_id": response.id,
-            "input_tokens": response.usage.input_tokens,
-            "output_tokens": response.usage.output_tokens,
-            "reasoning_tokens": reasoning_tokens,
-            "truncated": response.stop_reason == "max_tokens",
-            "cache_creation_tokens": getattr(response.usage, "cache_creation_input_tokens", None) or 0,
-            "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", None) or 0,
-        }
+        return ParsedResponse(
+            estimation=text_content,
+            response_id=response.id,
+            input_tokens=response.usage.input_tokens,
+            output_tokens=response.usage.output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            truncated=response.stop_reason == "max_tokens",
+            finish_reason=response.stop_reason or "unknown",
+            cache_creation_tokens=getattr(response.usage, "cache_creation_input_tokens", None) or 0,
+            cache_read_tokens=getattr(response.usage, "cache_read_input_tokens", None) or 0,
+        )
+
+    async def _call_provider_stream(
+        self,
+        api_params: dict[str, Any],
+        *,
+        is_reasoning: bool,
+    ) -> AsyncIterator[str]:
+        try:
+            async with _get_client().messages.stream(**api_params) as stream:
+                async for delta in stream.text_stream:
+                    yield delta
+                final = await stream.get_final_message()
+        except (
+            AuthenticationError,
+            RateLimitError,
+            BadRequestError,
+            APIConnectionError,
+            InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._ERROR_MAPPING)
+
+        reasoning_tokens: int | None = None
+        if is_reasoning:
+            sdk_thinking = getattr(final.usage, "thinking_tokens", None)
+            if sdk_thinking is not None:
+                reasoning_tokens = sdk_thinking
+
+        self._stream_partial = ParsedResponse(
+            estimation="",
+            response_id=final.id,
+            input_tokens=final.usage.input_tokens,
+            output_tokens=final.usage.output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            finish_reason=final.stop_reason or "unknown",
+            truncated=final.stop_reason == "max_tokens",
+            cache_creation_tokens=getattr(final.usage, "cache_creation_input_tokens", None) or 0,
+            cache_read_tokens=getattr(final.usage, "cache_read_input_tokens", None) or 0,
+        )
 
     def _on_turn_complete(
         self,

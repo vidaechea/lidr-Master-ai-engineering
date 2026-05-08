@@ -1,5 +1,7 @@
 """Unit tests for AnthropicLLMService — no facade, no OpenAI dependency."""
 import math
+from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,6 +14,7 @@ from anthropic import (
 )
 
 import app.services.anthropic_llm_service as anthropic_svc
+from app.config import settings
 from app.services.anthropic_llm_service import (
     DEFAULT_MODEL,
     MODELS,
@@ -21,6 +24,7 @@ from app.services.anthropic_llm_service import (
     _THINKING_BUDGET,
     AnthropicLLMService,
 )
+from app.services.base_llm_service import LLMServiceError
 
 FAKE_OUTPUT = "## Estimate: E-commerce Platform\n\n1. Backend: 60 hours\n\n**Total: 60 hours**"
 FAKE_RESPONSE_ID = "msg_abc123"
@@ -29,6 +33,45 @@ FAKE_RESPONSE_ID = "msg_abc123"
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
+
+
+@dataclass
+class _StreamUsage:
+    input_tokens: int
+    output_tokens: int
+    thinking_tokens: int | None = None
+    cache_creation_input_tokens: int = 0
+    cache_read_input_tokens: int = 0
+
+
+@dataclass
+class _StreamFinal:
+    id: str
+    usage: _StreamUsage
+    stop_reason: str
+
+
+class _DummyStream:
+    def __init__(self, deltas: list[str], final: _StreamFinal) -> None:
+        self._deltas = deltas
+        self._final = final
+
+    async def __aenter__(self) -> "_DummyStream":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    async def get_final_message(self) -> _StreamFinal:
+        return self._final
+
+    @property
+    def text_stream(self) -> AsyncIterator[str]:
+        async def _gen() -> AsyncIterator[str]:
+            for delta in self._deltas:
+                yield delta
+
+        return _gen()
 
 def _make_response_mock(
     output_text: str = FAKE_OUTPUT,
@@ -162,7 +205,7 @@ class TestEstimateSuccess:
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
-        assert result["content"] == FAKE_OUTPUT
+        assert result["estimation"] == FAKE_OUTPUT
 
     async def test_model_key_matches_resolved_model(self, service, mock_response):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
@@ -201,8 +244,8 @@ class TestEstimateSuccess:
         info = MODELS[DEFAULT_MODEL]
         expected = round(
             (
-                mock_response.usage.input_tokens * info["input_price"]
-                + mock_response.usage.output_tokens * info["output_price"]
+                mock_response.usage.input_tokens * info.input_price
+                + mock_response.usage.output_tokens * info.output_price
                 # cache tokens are 0 in mock_response — no adjustment expected
             )
             / 1_000_000,
@@ -223,6 +266,28 @@ class TestEstimateSuccess:
 
 
 # --------------------------------------------------------------------------- #
+# _get_client — lazy singleton
+# --------------------------------------------------------------------------- #
+
+
+class TestGetClient:
+    def test_client_is_cached(self, monkeypatch) -> None:
+        class DummyClient:
+            def __init__(self, api_key: str) -> None:
+                self.api_key = api_key
+
+        monkeypatch.setattr(anthropic_svc, "AsyncAnthropic", DummyClient)
+        monkeypatch.setattr(settings, "anthropic_api_key", "test-key")
+        anthropic_svc._client = None
+
+        first = anthropic_svc._get_client()
+        second = anthropic_svc._get_client()
+
+        assert first is second
+        assert first.api_key == "test-key"
+
+
+# --------------------------------------------------------------------------- #
 # estimate — API error propagation
 # --------------------------------------------------------------------------- #
 
@@ -235,7 +300,7 @@ class TestEstimateApiErrors:
             result = await service.estimate("Build something")
         assert "error" not in result
         assert result.get("truncated") is True
-        assert result.get("content") == FAKE_OUTPUT
+        assert result.get("estimation") == FAKE_OUTPUT
 
     async def test_non_truncated_response_has_truncated_false(self, service):
         mock_response = _make_response_mock(stop_reason="end_turn")
@@ -244,14 +309,60 @@ class TestEstimateApiErrors:
             result = await service.estimate("Build something")
         assert result.get("truncated") is False
 
-    async def test_unknown_stop_reason_returns_error_dict(self, service):
+    async def test_unknown_stop_reason_raises_llm_service_error(self, service):
         mock_response = _make_response_mock(stop_reason="tool_use")
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("Build something")
-        assert result.get("error") is True
-        assert result.get("type") == "tool_use"
-        assert "message" in result
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("Build something")
+        assert exc_info.value.error_type == "tool_use"
+        assert exc_info.value.message
+
+
+# --------------------------------------------------------------------------- #
+# _call_provider_stream — streaming
+# --------------------------------------------------------------------------- #
+
+
+class TestCallProviderStream:
+    @pytest.mark.asyncio
+    async def test_stream_emits_deltas_and_sets_partial(self, service: AnthropicLLMService) -> None:
+        final = _StreamFinal(
+            id="msg_stream",
+            usage=_StreamUsage(input_tokens=9, output_tokens=4),
+            stop_reason="end_turn",
+        )
+        dummy_stream = _DummyStream(["Hello ", "world"], final)
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.stream = MagicMock(return_value=dummy_stream)
+            deltas: list[str] = []
+            async for delta in service._call_provider_stream({"model": DEFAULT_MODEL}, is_reasoning=False):
+                deltas.append(delta)
+
+        assert "".join(deltas) == "Hello world"
+        assert service._stream_partial.response_id == "msg_stream"
+        assert service._stream_partial.finish_reason == "end_turn"
+
+    @pytest.mark.asyncio
+    async def test_stream_reasoning_and_cache_tokens(self, service: AnthropicLLMService) -> None:
+        usage = _StreamUsage(
+            input_tokens=11,
+            output_tokens=7,
+            thinking_tokens=123,
+            cache_creation_input_tokens=5,
+            cache_read_input_tokens=3,
+        )
+        final = _StreamFinal(id="msg_stream", usage=usage, stop_reason="max_tokens")
+        dummy_stream = _DummyStream(["OK"], final)
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.stream = MagicMock(return_value=dummy_stream)
+            async for _ in service._call_provider_stream({"model": DEFAULT_MODEL}, is_reasoning=True):
+                pass
+
+        assert service._stream_partial.reasoning_tokens == 123
+        assert service._stream_partial.truncated is True
+        assert service._stream_partial.cache_creation_tokens == 5
+        assert service._stream_partial.cache_read_tokens == 3
 
 
 # --------------------------------------------------------------------------- #
@@ -259,61 +370,61 @@ class TestEstimateApiErrors:
 # --------------------------------------------------------------------------- #
 
 class TestEstimateProviderExceptions:
-    async def test_authentication_error_returns_401(self, service):
+    async def test_authentication_error_raises_401(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=AuthenticationError(
                     message="Invalid key", response=MagicMock(), body={}
                 )
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 401
-        assert result.get("type") == "authentication_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 401
+        assert exc_info.value.error_type == "authentication_error"
 
-    async def test_rate_limit_error_returns_429(self, service):
+    async def test_rate_limit_error_raises_429(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=RateLimitError(
                     message="Rate limit", response=MagicMock(), body={}
                 )
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 429
-        assert result.get("type") == "rate_limit_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 429
+        assert exc_info.value.error_type == "rate_limit_error"
 
-    async def test_bad_request_error_returns_400(self, service):
+    async def test_bad_request_error_raises_400(self, service):
         exc = BadRequestError(message="Bad input", response=MagicMock(), body={})
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(side_effect=exc)
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 400
-        assert result.get("type") == "bad_request_error"
-        assert "Bad input" in result.get("message", "")
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 400
+        assert exc_info.value.error_type == "bad_request_error"
+        assert "Bad input" in exc_info.value.message
 
-    async def test_connection_error_returns_503(self, service):
+    async def test_connection_error_raises_503(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=APIConnectionError(request=MagicMock())
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 503
-        assert result.get("type") == "connection_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.error_type == "connection_error"
 
-    async def test_internal_server_error_returns_503(self, service):
+    async def test_internal_server_error_raises_503(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=InternalServerError(
                     message="Server error", response=MagicMock(), body={}
                 )
             )
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 503
-        assert result.get("type") == "connection_error"
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.error_type == "connection_error"
 
 
 # --------------------------------------------------------------------------- #
@@ -366,6 +477,64 @@ class TestEstimateParamRouting:
 
 
 # --------------------------------------------------------------------------- #
+# estimate — verbosity (ignored by Anthropic)
+# --------------------------------------------------------------------------- #
+
+class TestEstimateIgnoredParams:
+    """verbosity is part of the base contract but the Anthropic Messages API
+    has no equivalent parameter.  It must be silently dropped — never forwarded
+    to messages.create — and must never raise a TypeError."""
+
+    async def test_verbosity_low_does_not_raise(self, service):
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("test", verbosity="low")
+        assert "estimation" in result
+
+    async def test_verbosity_medium_does_not_raise(self, service):
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("test", verbosity="medium")
+        assert "estimation" in result
+
+    async def test_verbosity_high_does_not_raise(self, service):
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
+            result = await service.estimate("test", verbosity="high")
+        assert "estimation" in result
+
+    async def test_verbosity_not_forwarded_to_api(self, service):
+        mock_response = _make_response_mock()
+        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+            create_mock = AsyncMock(return_value=mock_response)
+            mock_client.return_value.messages.create = create_mock
+            await service.estimate("test", verbosity="high")
+        assert "verbosity" not in create_mock.call_args.kwargs
+
+    def test_build_api_params_accepts_verbosity_keyword(self, service):
+        """Direct call to _build_api_params with verbosity must not raise TypeError."""
+        resolved_model = DEFAULT_MODEL
+        info = MODELS[resolved_model]
+        params = service._build_api_params(
+            resolved_model=resolved_model,
+            system_prompt="system",
+            transcription="user message",
+            model_info=info,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+            reasoning_effort="medium",
+            verbosity="high",
+            max_output_tokens=1024,
+            continue_conversation=False,
+        )
+        assert "verbosity" not in params
+
+
+# --------------------------------------------------------------------------- #
 # estimate — PRE-CALL validation (inherited from BaseLLMService)
 # --------------------------------------------------------------------------- #
 
@@ -378,12 +547,12 @@ class TestEstimateValidation:
         with pytest.raises(ValueError, match="Unknown model"):
             await service.estimate("test", model="nonexistent-model")
 
-    async def test_returns_error_dict_on_context_overflow(self, service):
+    async def test_raises_llm_service_error_on_context_overflow(self, service):
         with patch.object(service, "_count_tokens", return_value=999_999_999):
-            result = await service.estimate("test")
-        assert result.get("error") is True
-        assert result.get("status_code") == 413
-        assert "overflow" in result.get("type", "")
+            with pytest.raises(LLMServiceError) as exc_info:
+                await service.estimate("test")
+        assert exc_info.value.status_code == 413
+        assert "overflow" in exc_info.value.error_type
 
 
 # --------------------------------------------------------------------------- #
@@ -469,7 +638,8 @@ class TestMultiTurn:
                     message="Rate limit", response=MagicMock(), body={}
                 )
             )
-            await service.estimate("Turn one", continue_conversation=True)
+            with pytest.raises(LLMServiceError):
+                await service.estimate("Turn one", continue_conversation=True)
         assert service._conversation_history == []
 
     async def test_continue_false_does_not_append_to_history(self, service):
@@ -528,12 +698,12 @@ class TestExtendedThinking:
     REASONING_MODEL = "claude-opus-4-7"
 
     def test_reasoning_model_is_flagged_in_registry(self):
-        assert MODELS[self.REASONING_MODEL]["reasoning"] is True
+        assert MODELS[self.REASONING_MODEL].reasoning is True
 
     def test_non_reasoning_models_not_flagged(self):
         for name, info in MODELS.items():
             if name != self.REASONING_MODEL:
-                assert info["reasoning"] is False, f"{name} should have reasoning=False"
+                assert info.reasoning is False, f"{name} should have reasoning=False"
 
     async def test_thinking_param_sent_for_reasoning_model(self, service):
         """_build_api_params must include thinking block for reasoning models."""
@@ -587,7 +757,7 @@ class TestExtendedThinking:
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
-        assert result["content"] == "Final answer here."
+        assert result["estimation"] == "Final answer here."
 
     async def test_reasoning_tokens_read_from_usage_when_present(self, service):
         """reasoning_tokens is populated from usage.thinking_tokens when the API exposes it."""
@@ -670,9 +840,9 @@ class TestPromptCaching:
         info = MODELS[DEFAULT_MODEL]
         expected = round(
             (
-                500 * info["input_price"]
-                + 200 * info["output_price"]
-                + cache_write * info["input_price"] * _CACHE_WRITE_PRICE_MULTIPLIER
+                500 * info.input_price
+                + 200 * info.output_price
+                + cache_write * info.input_price * _CACHE_WRITE_PRICE_MULTIPLIER
             )
             / 1_000_000,
             8,
@@ -693,9 +863,9 @@ class TestPromptCaching:
         info = MODELS[DEFAULT_MODEL]
         expected = round(
             (
-                500 * info["input_price"]
-                + 200 * info["output_price"]
-                + cache_read * info["input_price"] * _CACHE_READ_PRICE_MULTIPLIER
+                500 * info.input_price
+                + 200 * info.output_price
+                + cache_read * info.input_price * _CACHE_READ_PRICE_MULTIPLIER
             )
             / 1_000_000,
             8,
@@ -727,7 +897,7 @@ class TestPromptCaching:
         mock_response = _make_response_mock(input_tokens=800, output_tokens=300)
         info = MODELS[DEFAULT_MODEL]
         expected = round(
-            (800 * info["input_price"] + 300 * info["output_price"]) / 1_000_000, 8
+            (800 * info.input_price + 300 * info.output_price) / 1_000_000, 8
         )
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
