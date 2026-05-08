@@ -117,7 +117,7 @@ class TestFacadeValidation:
             await estimate("test", model="nonexistent-model")
 
     async def test_raises_llm_service_error_on_context_overflow(self):
-        with patch.object(svc._active_service, "_count_tokens", return_value=999_999_999):
+        with patch.object(svc._get_active_service(), "_count_tokens", return_value=999_999_999):
             with pytest.raises(LLMServiceError) as exc_info:
                 await estimate("test")
         assert exc_info.value.status_code == 413
