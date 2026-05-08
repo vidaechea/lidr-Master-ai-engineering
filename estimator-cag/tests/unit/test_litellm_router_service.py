@@ -127,17 +127,17 @@ class TestGetModelInfo:
         service = LiteLLMRouterService()
         _, info = service._get_model_info(None)
         for key in ("input_price", "output_price", "context_window", "reasoning"):
-            assert key in info, f"Missing key: {key}"
+            assert hasattr(info, key), f"Missing key: {key}"
 
     def test_reasoning_is_false(self):
         service = LiteLLMRouterService()
         _, info = service._get_model_info(None)
-        assert info["reasoning"] is False
+        assert info.reasoning is False
 
     def test_context_window_is_positive(self):
         service = LiteLLMRouterService()
         _, info = service._get_model_info(None)
-        assert info["context_window"] > 0
+        assert info.context_window > 0
 
     def test_raises_value_error_when_model_override_is_provided(self):
         """Passing a model hint must be rejected — the router owns provider selection."""
@@ -333,44 +333,44 @@ class TestParseProviderResponse:
         service = LiteLLMRouterService()
         response = _make_litellm_response(content="# Estimate\n1. Task: 10h")
         result = service._parse_provider_response(response, is_reasoning=False)
-        assert result["estimation"] == "# Estimate\n1. Task: 10h"
+        assert result.estimation == "# Estimate\n1. Task: 10h"
 
     def test_extracts_input_token_count(self):
         service = LiteLLMRouterService()
         response = _make_litellm_response(prompt_tokens=200)
         result = service._parse_provider_response(response, is_reasoning=False)
-        assert result["input_tokens"] == 200
+        assert result.input_tokens == 200
 
     def test_extracts_output_token_count(self):
         service = LiteLLMRouterService()
         response = _make_litellm_response(completion_tokens=80)
         result = service._parse_provider_response(response, is_reasoning=False)
-        assert result["output_tokens"] == 80
+        assert result.output_tokens == 80
 
     def test_extracts_response_id(self):
         service = LiteLLMRouterService()
         response = _make_litellm_response(response_id="chatcmpl-xyz")
         result = service._parse_provider_response(response, is_reasoning=False)
-        assert result["response_id"] == "chatcmpl-xyz"
+        assert result.response_id == "chatcmpl-xyz"
 
     def test_reasoning_tokens_is_always_none(self):
         service = LiteLLMRouterService()
         response = _make_litellm_response()
         result = service._parse_provider_response(response, is_reasoning=False)
-        assert result["reasoning_tokens"] is None
+        assert result.reasoning_tokens is None
 
     def test_finish_reason_extracted(self):
         service = LiteLLMRouterService()
         response = _make_litellm_response(finish_reason="length")
         result = service._parse_provider_response(response, is_reasoning=False)
-        assert result["finish_reason"] == "length"
+        assert result.finish_reason == "length"
 
     def test_result_has_all_required_keys(self):
         service = LiteLLMRouterService()
         response = _make_litellm_response()
         result = service._parse_provider_response(response, is_reasoning=False)
         for key in ("estimation", "response_id", "input_tokens", "output_tokens", "reasoning_tokens", "finish_reason"):
-            assert key in result, f"Missing key: {key}"
+            assert hasattr(result, key), f"Missing key: {key}"
 
 
 # --------------------------------------------------------------------------- #
@@ -452,7 +452,7 @@ class TestCallProviderStream:
         ):
             pass
 
-        assert service._stream_partial["input_tokens"] == 15
+        assert service._stream_partial.input_tokens == 15
 
     async def test_stream_partial_output_tokens_set_after_completion(self):
         service = LiteLLMRouterService()
@@ -467,7 +467,7 @@ class TestCallProviderStream:
         ):
             pass
 
-        assert service._stream_partial["output_tokens"] == 8
+        assert service._stream_partial.output_tokens == 8
 
     async def test_stream_partial_has_all_required_keys(self):
         service = LiteLLMRouterService()
@@ -483,7 +483,7 @@ class TestCallProviderStream:
             pass
 
         for key in ("response_id", "input_tokens", "output_tokens", "reasoning_tokens", "finish_reason", "truncated"):
-            assert key in service._stream_partial, f"Missing key: {key}"
+            assert hasattr(service._stream_partial, key), f"Missing key: {key}"
 
     async def test_stream_includes_usage_in_request(self):
         """Verifies stream_options with include_usage is passed to router."""

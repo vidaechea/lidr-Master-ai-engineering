@@ -262,8 +262,8 @@ class TestCallProviderStream:
                 deltas.append(delta)
 
         assert "".join(deltas) == "Hello world"
-        assert service._stream_partial["response_id"] == "resp_stream"
-        assert service._stream_partial["input_tokens"] == 10
+        assert service._stream_partial.response_id == "resp_stream"
+        assert service._stream_partial.input_tokens == 10
 
     @pytest.mark.asyncio
     async def test_stream_includes_reasoning_tokens(self, service: OpenAILLMService) -> None:
@@ -279,7 +279,7 @@ class TestCallProviderStream:
             async for _ in service._call_provider_stream({"model": "gpt"}, is_reasoning=True):
                 pass
 
-        assert service._stream_partial["reasoning_tokens"] == 42
+        assert service._stream_partial.reasoning_tokens == 42
 
     @pytest.mark.asyncio
     async def test_stream_raises_without_completed_event(self, service: OpenAILLMService) -> None:

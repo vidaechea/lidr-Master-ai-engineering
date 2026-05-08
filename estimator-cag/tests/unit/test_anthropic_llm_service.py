@@ -340,8 +340,8 @@ class TestCallProviderStream:
                 deltas.append(delta)
 
         assert "".join(deltas) == "Hello world"
-        assert service._stream_partial["response_id"] == "msg_stream"
-        assert service._stream_partial["finish_reason"] == "end_turn"
+        assert service._stream_partial.response_id == "msg_stream"
+        assert service._stream_partial.finish_reason == "end_turn"
 
     @pytest.mark.asyncio
     async def test_stream_reasoning_and_cache_tokens(self, service: AnthropicLLMService) -> None:
@@ -359,10 +359,10 @@ class TestCallProviderStream:
             async for _ in service._call_provider_stream({"model": DEFAULT_MODEL}, is_reasoning=True):
                 pass
 
-        assert service._stream_partial["reasoning_tokens"] == 123
-        assert service._stream_partial["truncated"] is True
-        assert service._stream_partial["cache_creation_tokens"] == 5
-        assert service._stream_partial["cache_read_tokens"] == 3
+        assert service._stream_partial.reasoning_tokens == 123
+        assert service._stream_partial.truncated is True
+        assert service._stream_partial.cache_creation_tokens == 5
+        assert service._stream_partial.cache_read_tokens == 3
 
 
 # --------------------------------------------------------------------------- #

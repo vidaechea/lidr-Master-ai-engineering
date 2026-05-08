@@ -61,6 +61,10 @@ class _FakeInnerService(BaseLLMService):
         yield self._result["estimation"]
         self._last_stream_result = dict(self._result)
 
+    @property
+    def _provider_name(self) -> str:
+        return "fake"
+
 
 def _make_service(result: dict[str, Any] | None = None) -> CachedLLMService:
     default_result = {

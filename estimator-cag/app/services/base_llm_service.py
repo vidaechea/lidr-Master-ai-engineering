@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
@@ -48,6 +49,7 @@ class ParsedResponse:
     truncated: bool = False
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
+    fallback_provider: str | None = None
 
 
 @dataclass
@@ -63,6 +65,7 @@ class CallContext:
     is_reasoning: bool
     continue_conversation: bool
     pre_call: bool
+    provider: str = "unknown"
 
 
 class LLMServiceError(Exception):
@@ -271,6 +274,10 @@ class BaseLLMService(ABC):
         """Hook for subclasses to override with turn completion logic."""
         pass
 
+    @property
+    @abstractmethod
+    def _provider_name(self) -> str: ...
+
     @abstractmethod
     def _get_model_info(
         self, model: str | None
@@ -459,6 +466,7 @@ class BaseLLMService(ABC):
             is_reasoning=model_info.reasoning,
             continue_conversation=continue_conversation,
             pre_call=pre_call,
+            provider=self._provider_name,
         )
 
     def _finalize_turn(
@@ -520,25 +528,42 @@ class BaseLLMService(ABC):
             response = await self._call_provider(ctx.api_params)
             return self._parse_provider_response(response, is_reasoning=ctx.is_reasoning)
         except LLMServiceError as exc:
-            log.error("provider_error", error_type=exc.error_type, message=exc.message)
+            log.error(
+                "provider_error",
+                error_type=exc.error_type,
+                message=exc.message,
+                model=ctx.resolved_model,
+                provider=ctx.provider,
+            )
             raise
 
     async def estimate(self, transcription: str, **kwargs: Unpack[_EstimationKwargs]) -> dict[str, Any]:
         ctx = await self._prepare_call(transcription, **kwargs)
-        log.debug("calling_provider", model=ctx.resolved_model, estimated_input_tokens=ctx.input_tokens_est)
+        log.debug(
+            "calling_provider",
+            model=ctx.resolved_model,
+            provider=ctx.provider,
+            estimated_input_tokens=ctx.input_tokens_est,
+        )
+        t0 = time.perf_counter()
         partial = await self._call_and_parse(ctx)
+        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
         result = self._finalize_turn(partial, ctx, estimation_text=partial.estimation)
         log.info(
             "estimation_succeeded",
             model=ctx.resolved_model,
+            provider=ctx.provider,
             input_tokens=result["input_tokens"],
             output_tokens=result["output_tokens"],
             reasoning_tokens=result["reasoning_tokens"],
             cache_creation_tokens=result["cache_creation_tokens"],
             cache_read_tokens=result["cache_read_tokens"],
+            finish_reason=result["finish_reason"],
+            latency_ms=latency_ms,
             turn_cost_usd=result["turn_cost_usd"],
             pre_call_cost_usd=round(ctx.pre_call_cost, 8),
             total_cost_usd=result["total_cost_usd"],
+            fallback_provider=partial.fallback_provider,
             continue_conversation=ctx.continue_conversation,
             turn_count=self._turn_count,
         )
@@ -551,19 +576,43 @@ class BaseLLMService(ABC):
         same metadata dict that ``estimate()`` would have returned.
         """
         ctx = await self._prepare_call(transcription, **kwargs)
-        log.debug("calling_provider_stream", model=ctx.resolved_model, estimated_input_tokens=ctx.input_tokens_est)
+        log.debug(
+            "calling_provider_stream",
+            model=ctx.resolved_model,
+            provider=ctx.provider,
+            estimated_input_tokens=ctx.input_tokens_est,
+        )
+        t0 = time.perf_counter()
         full_text_parts: list[str] = []
         try:
             async for delta in self._call_provider_stream(ctx.api_params, is_reasoning=ctx.is_reasoning):
                 full_text_parts.append(delta)
                 yield delta
         except LLMServiceError as exc:
-            log.error("provider_stream_error", error_type=exc.error_type, message=exc.message)
+            log.error(
+                "provider_stream_error",
+                error_type=exc.error_type,
+                message=exc.message,
+                model=ctx.resolved_model,
+                provider=ctx.provider,
+            )
             raise
 
+        latency_ms = round((time.perf_counter() - t0) * 1000, 1)
         partial = self._stream_partial  # set by _call_provider_stream after completion
         result = self._finalize_turn(partial, ctx, estimation_text="".join(full_text_parts))
-        log.info("estimation_stream_succeeded", model=ctx.resolved_model, input_tokens=result["input_tokens"], output_tokens=result["output_tokens"], turn_cost_usd=result["turn_cost_usd"])
+        log.info(
+            "estimation_stream_succeeded",
+            model=ctx.resolved_model,
+            provider=ctx.provider,
+            input_tokens=result["input_tokens"],
+            output_tokens=result["output_tokens"],
+            finish_reason=result["finish_reason"],
+            latency_ms=latency_ms,
+            turn_cost_usd=result["turn_cost_usd"],
+            total_cost_usd=result["total_cost_usd"],
+            fallback_provider=partial.fallback_provider if partial else None,
+        )
         self._last_stream_result: dict[str, Any] = result
 
 

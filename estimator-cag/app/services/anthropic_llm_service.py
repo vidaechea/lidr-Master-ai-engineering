@@ -103,6 +103,10 @@ class AnthropicLLMService(BaseLLMService):
         # Anthropic does not store history server-side; we send it on every call.
         self._conversation_history: list[dict[str, str]] = []
 
+    @property
+    def _provider_name(self) -> str:
+        return "anthropic"
+
     def reset(self) -> None:
         """Reset session state and clear conversation history."""
         super().reset()

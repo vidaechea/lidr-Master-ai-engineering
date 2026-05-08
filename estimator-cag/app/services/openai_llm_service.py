@@ -123,6 +123,10 @@ class OpenAILLMService(BaseLLMService):
         )
     }
 
+    @property
+    def _provider_name(self) -> str:
+        return "openai"
+
     def _get_model_info(
         self, model: Optional[str]
     ) -> tuple[str, ModelInfo]:

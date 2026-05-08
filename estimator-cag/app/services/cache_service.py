@@ -31,6 +31,10 @@ class CachedLLMService(BaseLLMService):
         self._redis_loop: asyncio.AbstractEventLoop | None = None
         self._ttl: int = settings.cache_ttl
 
+    @property
+    def _provider_name(self) -> str:
+        return self._inner._provider_name
+
     # ------------------------------------------------------------------
     # Redis client — recreated when the running event loop changes
     # (needed for Streamlit which spawns a new loop per request)

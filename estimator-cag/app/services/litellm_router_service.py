@@ -102,6 +102,10 @@ class LiteLLMRouterService(BaseLLMService):
     # Abstract method implementations
     # ---------------------------------------------------------------------- #
 
+    @property
+    def _provider_name(self) -> str:
+        return "openai"  # primary intended provider
+
     def _get_model_info(self, model: str | None) -> tuple[str, ModelInfo]:
         if model is not None:
             raise ValueError(
@@ -161,6 +165,15 @@ class LiteLLMRouterService(BaseLLMService):
             litellm.APIConnectionError,
             litellm.InternalServerError,
         ) as exc:
+            log.error(
+                "router_provider_failed",
+                error_type=type(exc).__name__,
+                failed_provider=getattr(exc, "llm_provider", "unknown"),
+                failed_model=getattr(exc, "model", api_params.get("model", "unknown")),
+                fallback_configured=True,
+                fallback_exhausted=True,
+                max_retries=settings.router_num_retries,
+            )
             self._raise_service_error(exc, self._LITELLM_ERROR_MAPPING)
 
     def _parse_provider_response(
@@ -169,6 +182,20 @@ class LiteLLMRouterService(BaseLLMService):
         *,
         is_reasoning: bool,
     ) -> ParsedResponse:
+        actual_model = getattr(response, "model", "") or ""
+        fallback_provider: str | None = None
+        if actual_model and "gpt-4o-mini" not in actual_model:
+            if "anthropic" in actual_model or "claude" in actual_model:
+                fallback_provider = "anthropic"
+            else:
+                fallback_provider = actual_model
+        if fallback_provider:
+            log.warning(
+                "router_fallback_used",
+                requested_model="gpt-4o-mini",
+                actual_model=actual_model,
+                fallback_provider=fallback_provider,
+            )
         return ParsedResponse(
             estimation=response.choices[0].message.content,
             response_id=response.id,
@@ -176,6 +203,7 @@ class LiteLLMRouterService(BaseLLMService):
             output_tokens=response.usage.completion_tokens,
             reasoning_tokens=None,
             finish_reason=response.choices[0].finish_reason or "stop",
+            fallback_provider=fallback_provider,
         )
 
     async def _call_provider_stream(
@@ -187,11 +215,14 @@ class LiteLLMRouterService(BaseLLMService):
         params = {**api_params, "stream": True, "stream_options": {"include_usage": True}}
         usage_data = None
         last_id = "unknown"
+        actual_model: str = ""
 
         try:
             response = await self._router.acompletion(**params)
             async for chunk in response:
                 last_id = getattr(chunk, "id", last_id)
+                if not actual_model:
+                    actual_model = getattr(chunk, "model", "") or ""
                 if getattr(chunk, "usage", None) is not None:
                     usage_data = chunk.usage
                 if chunk.choices and chunk.choices[0].delta.content:
@@ -205,13 +236,37 @@ class LiteLLMRouterService(BaseLLMService):
             litellm.APIConnectionError,
             litellm.InternalServerError,
         ) as exc:
+            log.error(
+                "router_provider_failed",
+                error_type=type(exc).__name__,
+                failed_provider=getattr(exc, "llm_provider", "unknown"),
+                failed_model=getattr(exc, "model", api_params.get("model", "unknown")),
+                fallback_configured=True,
+                fallback_exhausted=True,
+                max_retries=settings.router_num_retries,
+            )
             self._raise_service_error(exc, self._LITELLM_ERROR_MAPPING)
 
-        self._stream_partial = {
-            "response_id": last_id,
-            "input_tokens": usage_data.prompt_tokens if usage_data else 0,
-            "output_tokens": usage_data.completion_tokens if usage_data else 0,
-            "reasoning_tokens": None,
-            "finish_reason": "stop",
-            "truncated": False,
-        }
+        fallback_provider: str | None = None
+        if actual_model and "gpt-4o-mini" not in actual_model:
+            if "anthropic" in actual_model or "claude" in actual_model:
+                fallback_provider = "anthropic"
+            else:
+                fallback_provider = actual_model
+            log.warning(
+                "router_fallback_used",
+                requested_model="gpt-4o-mini",
+                actual_model=actual_model,
+                fallback_provider=fallback_provider,
+            )
+
+        self._stream_partial = ParsedResponse(
+            estimation="",
+            response_id=last_id,
+            input_tokens=usage_data.prompt_tokens if usage_data else 0,
+            output_tokens=usage_data.completion_tokens if usage_data else 0,
+            reasoning_tokens=None,
+            finish_reason="stop",
+            truncated=False,
+            fallback_provider=fallback_provider,
+        )

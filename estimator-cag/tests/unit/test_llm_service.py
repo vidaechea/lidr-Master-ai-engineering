@@ -86,6 +86,10 @@ class DummyStreamService(svc.BaseLLMService):
     def _on_turn_complete(self, transcription: str, assistant_content: str) -> None:
         self.turns.append((transcription, assistant_content))
 
+    @property
+    def _provider_name(self) -> str:
+        return "dummy"
+
 
 
 # --------------------------------------------------------------------------- #
