@@ -13,6 +13,7 @@ A REST API service that generates software effort estimates from meeting transcr
 - **Multi-turn sessions** — optional conversation continuation. OpenAI uses server-side `previous_response_id`; Anthropic replays the full history on every call (stateless).
 - **Provider-specific multi-turn** — Anthropic history is stored client-side and grows turn-by-turn; `reset()` starts a new thread.
 - **Pre-call requirements extraction** — optional first LLM call that distills the raw transcript into structured requirements before the main estimation call.
+- **Exact-match Redis cache** — optional caching layer that returns stored results for identical requests without calling the LLM. Cache key is a SHA-256 hash of the full input + all relevant parameters; a TTL of 24 h is applied by default. Every response includes a `cache_hit` field.
 - **Streamlit chat UI** — interactive chat interface to paste transcripts and receive estimates directly in the browser, with full token/cost metadata per response.
 
 ---
@@ -31,12 +32,15 @@ estimator-cag/
 │   └── services/
 │       ├── base_llm_service.py        # Abstract base with shared estimation pipeline
 │       ├── openai_llm_service.py      # OpenAI implementation (Responses API)
-│       └── anthropic_llm_service.py   # Anthropic implementation (Messages API, stateless multi-turn)
+│       ├── anthropic_llm_service.py   # Anthropic implementation (Messages API, stateless multi-turn)
+│       ├── cache_service.py           # CachedLLMService decorator (Redis exact-match cache)
+│       └── factory.py                 # Provider factory; wraps service with cache when enabled
 ├── tests/
 │   ├── integration/          # HTTP-level tests via FastAPI TestClient
 │   └── unit/                 # Unit tests for the LLM service and examples module
 ├── main.py                   # Uvicorn entry point
 ├── streamlit_app.py          # Streamlit chat UI entry point
+├── docker-compose.yml        # App + Redis services
 ├── pyproject.toml
 └── requirements.txt
 ```
@@ -72,7 +76,8 @@ estimator-cag/
   "total_cost_usd": 0.000279,
   "response_id": "resp_abc123",
   "estimated_input_tokens": 615,
-  "estimated_precall_cost_usd": 0.0000923
+  "estimated_precall_cost_usd": 0.0000923,
+  "cache_hit": false
 }
 ```
 
@@ -109,6 +114,7 @@ estimator-cag/
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
 - An OpenAI or Anthropic API key (depending on which provider you use)
+- Redis 7+ (only required when `CACHE_ENABLED=true`; included in `docker-compose.yml`)
 
 ### Install dependencies
 
@@ -142,7 +148,27 @@ LOG_LEVEL=DEBUG
 
 Set `LLM_PROVIDER` to `openai` or `anthropic` to switch between providers. When using OpenAI, `OPENAI_API_KEY` is required; when using Anthropic, `ANTHROPIC_API_KEY` is required.
 
-### Run the server
+**Cache (optional)**
+
+```env
+CACHE_ENABLED=true
+REDIS_URL=redis://localhost:6379
+CACHE_TTL=86400   # seconds; default 24 h
+```
+
+When `CACHE_ENABLED=true` every `POST /api/v1/estimate` call checks Redis before hitting the LLM. Identical requests (same transcription + same parameters) return immediately with `cache_hit: true` and cost $0.
+
+### Run with Docker Compose
+
+The provided `docker-compose.yml` starts both the API and a Redis instance:
+
+```bash
+docker compose up --build
+```
+
+Add `CACHE_ENABLED=true` to your `.env` file to activate the cache when running via Docker.
+
+### Run the server (local)
 
 ```bash
 uv run python main.py
@@ -203,4 +229,10 @@ Each assistant response includes a collapsible **Details** panel with:
 uv run pytest tests/ -v
 ```
 
-The test suite covers 137 cases across unit and integration layers. All external API calls are mocked.
+The test suite covers unit and integration layers. All external API calls are mocked.
+
+To run only the cache tests:
+
+```bash
+uv run pytest tests/unit/test_cache_service.py -v
+```

@@ -9,6 +9,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 from app.config import settings
 from app.context.examples import ExampleFormat
 from app.services.base_llm_service import LLMServiceError
+from app.services.cache_service import CachedLLMService
 from app.services.evaluation import evaluate_estimation_structure
 from app.services.factory import create_llm_service
 
@@ -143,13 +144,15 @@ def _render_details(meta: dict, session_id: str) -> None:
         )
         if show_precall_costs:
             col9, col10 = st.columns(2)
+            _precall_cost = meta.get("pre_call_cost_usd")
+            _est_precall_cost = meta.get("estimated_precall_cost_usd")
             col9.metric(
                 "Pre-call cost",
-                f"${meta['pre_call_cost_usd']:.6f}",
+                f"${_precall_cost:.6f}" if _precall_cost is not None else "—",
             )
             col10.metric(
                 "Estimated pre-call cost",
-                f"${meta['estimated_precall_cost_usd']:.6f}",
+                f"${_est_precall_cost:.6f}" if _est_precall_cost is not None else "—",
             )
 
         st.divider()
@@ -161,6 +164,10 @@ def _render_details(meta: dict, session_id: str) -> None:
             run_items.append(("Finish reason", meta["finish_reason"]))
         if "truncated" in meta:
             run_items.append(("Truncated", str(meta.get("truncated"))))
+        if "cache_hit" in meta:
+            run_items.append(("Cache", "✅ HIT" if meta["cache_hit"] else "❌ MISS"))
+        if "response_time_s" in meta:
+            run_items.append(("Response time", f"{meta['response_time_s']} s"))
         run_cols = st.columns(len(run_items))
         for col, (label, value) in zip(run_cols, run_items):
             col.metric(label, value)
@@ -223,10 +230,66 @@ def _render_details(meta: dict, session_id: str) -> None:
             st.subheader("Extracted requirements (pre-call)")
             st.markdown(meta["requirements"])
 
+        # Stale report — only for cache hits
+        cache_key = meta.get("cache_key")
+        if meta.get("cache_hit") and cache_key:
+            st.divider()
+            stale_flag_key = f"stale_done_{cache_key}"
+            if st.session_state.get(stale_flag_key):
+                st.info("Marcado como obsoleto. Se eliminó de la caché.", icon="🗑️")
+            else:
+                if st.button(
+                    "👎 Marcar como obsoleto",
+                    key=f"stale_btn_{cache_key}",
+                    help="Elimina esta respuesta de la caché y registra un informe de respuesta obsoleta.",
+                ):
+                    svc = st.session_state.get("service")
+                    if isinstance(svc, CachedLLMService):
+                        loop = asyncio.new_event_loop()
+                        loop.run_until_complete(svc.report_stale(cache_key))
+                        loop.close()
+                    st.session_state[stale_flag_key] = True
+                    st.rerun()
+
 
 def _get_session_id() -> str:
     ctx = get_script_run_ctx()
     return ctx.session_id if ctx and ctx.session_id else "unknown"
+
+
+def _render_cache_metrics_sidebar() -> None:
+    """Show aggregate cache statistics in a sidebar expander."""
+    if not settings.cache_enabled:
+        return
+    svc = st.session_state.get("service")
+    if not isinstance(svc, CachedLLMService):
+        return
+    with st.sidebar.expander("📊 Cache Metrics", expanded=False):
+        if st.button("🔄 Refresh", key="cache_metrics_refresh"):
+            st.session_state.pop("_cache_metrics", None)
+        if "_cache_metrics" not in st.session_state:
+            loop = asyncio.new_event_loop()
+            st.session_state["_cache_metrics"] = loop.run_until_complete(svc.get_metrics())
+            loop.close()
+        m = st.session_state["_cache_metrics"]
+        if not m:
+            st.caption("Redis no disponible.")
+            return
+        c1, c2 = st.columns(2)
+        c1.metric("Hit rate", f"{m['hit_rate_pct']} %")
+        c2.metric("Total requests", m["total"])
+        c3, c4 = st.columns(2)
+        c3.metric("Hits", m["hits"])
+        c4.metric("Misses", m["misses"])
+        st.metric("Cost avoided", f"${m['cost_avoided_usd']:.6f}")
+        c5, c6 = st.columns(2)
+        c5.metric("Avg latency HIT", f"{m['avg_latency_hit_ms']} ms" if m["avg_latency_hit_ms"] is not None else "—")
+        c6.metric("Avg latency MISS", f"{m['avg_latency_miss_ms']} ms" if m["avg_latency_miss_ms"] is not None else "—")
+        if m["speedup_x"] is not None:
+            st.metric("Speedup (MISS / HIT)", f"{int(m['speedup_x'])}x")
+        c7, c8 = st.columns(2)
+        c7.metric("Stale reports", m["stale_reports"])
+        c8.metric("Stale rate", f"{m['stale_rate_pct']} %")
 
 
 def _sync_stream(service, transcript: str, kwargs: dict) -> Generator[str, None, None]:
@@ -408,6 +471,8 @@ with st.expander("LLM Options", expanded=False):
             st.session_state.service.reset()
             st.rerun()
 
+_render_cache_metrics_sidebar()
+
 # ── Build call kwargs ─────────────────────────────────────────────────────────
 
 _call_kwargs: dict = {
@@ -454,6 +519,8 @@ if transcript:
                 st.session_state.service._build_pre_call_system_prompt() if pre_call else None
             )
 
+            import time
+            _t0 = time.perf_counter()
             if use_stream:
                 estimation = st.write_stream(
                     _sync_stream(st.session_state.service, transcript, _call_kwargs)
@@ -473,6 +540,7 @@ if transcript:
                 estimation = result["estimation"]
                 st.markdown(estimation)
                 meta = {k: v for k, v in result.items() if k != "estimation"}
+            meta["response_time_s"] = round(time.perf_counter() - _t0, 2)
 
             finish_reason = meta.get("finish_reason", "unknown")
             validation = evaluate_estimation_structure(str(estimation), finish_reason)

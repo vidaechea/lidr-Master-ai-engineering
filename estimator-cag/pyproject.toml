@@ -10,6 +10,7 @@ dependencies = [
     "litellm>=1.40.0",
     "openai>=2.32.0",
     "pydantic-settings>=2.14.0",
+    "redis[asyncio]>=7.4.0",
     "streamlit>=1.45.0",
     "structlog>=25.5.0",
     "tiktoken>=0.12.0",
