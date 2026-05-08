@@ -1,5 +1,6 @@
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.context.examples import ESTIMATION_EXAMPLES
 from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem
@@ -64,3 +65,38 @@ async def create_estimation(
         else None
     )
     return EstimationResponse(**result, validation=validation)
+
+
+@router.post("/estimate/stream")
+async def create_estimation_stream(
+    request: EstimationRequest,
+    service: BaseLLMService = Depends(get_llm_service),
+) -> StreamingResponse:
+    transcription_length = len(request.transcription)
+    log.info("estimation_stream_requested", transcription_chars=transcription_length)
+
+    async def generate():
+        try:
+            async for delta in service.estimate_stream(
+                request.transcription,
+                model=request.model,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                top_k=request.top_k,
+                reasoning_effort=request.reasoning_effort,
+                max_output_tokens=request.max_output_tokens,
+                pre_call=request.pre_call,
+                example_format=request.example_format,
+                num_examples=request.num_examples,
+            ):
+                yield delta
+        except LLMServiceError as exc:
+            log.warning(
+                "estimation_stream_failed",
+                error_type=exc.type,
+                status_code=exc.status_code,
+                detail=exc.message,
+            )
+            raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
+    return StreamingResponse(generate(), media_type="text/plain")
