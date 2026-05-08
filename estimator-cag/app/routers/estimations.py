@@ -46,7 +46,7 @@ async def create_estimation(
     except LLMServiceError as exc:
         log.warning(
             "estimation_failed",
-            error_type=exc.type,
+            error_type=exc.error_type,
             status_code=exc.status_code,
             detail=exc.message,
         )
@@ -93,7 +93,7 @@ async def create_estimation_stream(
         except LLMServiceError as exc:
             log.warning(
                 "estimation_stream_failed",
-                error_type=exc.type,
+                error_type=exc.error_type,
                 status_code=exc.status_code,
                 detail=exc.message,
             )

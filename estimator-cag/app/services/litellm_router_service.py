@@ -20,7 +20,7 @@ import tiktoken
 from litellm import Router
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService, LLMServiceError
+from app.services.base_llm_service import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
 
 log = structlog.get_logger(__name__)
 
@@ -31,12 +31,12 @@ _FALLBACK_MODEL = "estimator-fb"
 
 # Pricing baseline: gpt-4o-mini (primary model).
 # Cost is an approximation; the router may transparently use Anthropic on fallback.
-_MODEL_INFO: dict[str, Any] = {
-    "input_price": 0.15,
-    "output_price": 0.60,
-    "context_window": 128_000,
-    "reasoning": False,
-}
+_MODEL_INFO = ModelInfo(
+    input_price=0.15,
+    output_price=0.60,
+    context_window=128_000,
+    reasoning=False,
+)
 
 
 class LiteLLMRouterService(BaseLLMService):
@@ -46,6 +46,17 @@ class LiteLLMRouterService(BaseLLMService):
     load-balances between them and retries on failure, so the application layer
     is fully decoupled from the underlying provider choice.
     """
+
+    _LITELLM_ERROR_MAPPING = {
+        **BaseLLMService._build_provider_error_mapping(
+            provider_label="LiteLLM",
+            auth_error_type=litellm.AuthenticationError,
+            rate_limit_type=litellm.RateLimitError,
+            bad_request_type=litellm.BadRequestError,
+            connection_type=litellm.APIConnectionError,
+            internal_error_type=litellm.InternalServerError,
+        )
+    }
 
     def __init__(self) -> None:
         super().__init__()
@@ -91,9 +102,12 @@ class LiteLLMRouterService(BaseLLMService):
     # Abstract method implementations
     # ---------------------------------------------------------------------- #
 
-    def _get_model_info(self, model: Optional[str]) -> tuple[str, dict[str, Any]]:
-        # The caller's model hint is intentionally ignored: the router owns
-        # provider selection.  We always return the logical name + baseline pricing.
+    def _get_model_info(self, model: str | None) -> tuple[str, ModelInfo]:
+        if model is not None:
+            raise ValueError(
+                f"LiteLLMRouterService does not accept a model override (got {model!r}). "
+                "Provider selection is managed by the router."
+            )
         return LOGICAL_MODEL, _MODEL_INFO
 
     def _count_tokens(
@@ -112,7 +126,7 @@ class LiteLLMRouterService(BaseLLMService):
         resolved_model: str,
         system_prompt: str,
         transcription: str,
-        model_info: dict[str, Any],
+        model_info: ModelInfo,
         temperature: Optional[float],
         top_p: Optional[float],
         top_k: Optional[int],
@@ -140,37 +154,29 @@ class LiteLLMRouterService(BaseLLMService):
     async def _call_provider(self, api_params: dict[str, Any]) -> Any:
         try:
             return await self._router.acompletion(**api_params)
-        except litellm.AuthenticationError as exc:
-            raise LLMServiceError(
-                "authentication_error", "Invalid or missing API key.", 401
-            ) from exc
-        except litellm.RateLimitError as exc:
-            raise LLMServiceError(
-                "rate_limit_error", "Rate limit reached or insufficient credit.", 429
-            ) from exc
-        except litellm.BadRequestError as exc:
-            raise LLMServiceError(
-                "bad_request_error", f"Invalid request: {exc}", 400
-            ) from exc
-        except (litellm.APIConnectionError, litellm.InternalServerError) as exc:
-            raise LLMServiceError(
-                "connection_error", f"Connection or server error: {exc}", 503
-            ) from exc
+        except (
+            litellm.AuthenticationError,
+            litellm.RateLimitError,
+            litellm.BadRequestError,
+            litellm.APIConnectionError,
+            litellm.InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._LITELLM_ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
         response: Any,
         *,
         is_reasoning: bool,
-    ) -> dict[str, Any]:
-        return {
-            "estimation": response.choices[0].message.content,
-            "response_id": response.id,
-            "input_tokens": response.usage.prompt_tokens,
-            "output_tokens": response.usage.completion_tokens,
-            "reasoning_tokens": None,
-            "finish_reason": response.choices[0].finish_reason or "stop",
-        }
+    ) -> ParsedResponse:
+        return ParsedResponse(
+            estimation=response.choices[0].message.content,
+            response_id=response.id,
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens,
+            reasoning_tokens=None,
+            finish_reason=response.choices[0].finish_reason or "stop",
+        )
 
     async def _call_provider_stream(
         self,
@@ -192,22 +198,14 @@ class LiteLLMRouterService(BaseLLMService):
                     yield chunk.choices[0].delta.content
         except LLMServiceError:
             raise
-        except litellm.AuthenticationError as exc:
-            raise LLMServiceError(
-                "authentication_error", "Invalid or missing API key.", 401
-            ) from exc
-        except litellm.RateLimitError as exc:
-            raise LLMServiceError(
-                "rate_limit_error", "Rate limit reached or insufficient credit.", 429
-            ) from exc
-        except litellm.BadRequestError as exc:
-            raise LLMServiceError(
-                "bad_request_error", f"Invalid request: {exc}", 400
-            ) from exc
-        except (litellm.APIConnectionError, litellm.InternalServerError) as exc:
-            raise LLMServiceError(
-                "connection_error", f"Connection or server error: {exc}", 503
-            ) from exc
+        except (
+            litellm.AuthenticationError,
+            litellm.RateLimitError,
+            litellm.BadRequestError,
+            litellm.APIConnectionError,
+            litellm.InternalServerError,
+        ) as exc:
+            self._raise_service_error(exc, self._LITELLM_ERROR_MAPPING)
 
         self._stream_partial = {
             "response_id": last_id,

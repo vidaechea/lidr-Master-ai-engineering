@@ -139,14 +139,16 @@ class TestGetModelInfo:
         _, info = service._get_model_info(None)
         assert info["context_window"] > 0
 
-    def test_always_returns_logical_model_regardless_of_input(self):
-        """The router decides the actual model — the caller always uses LOGICAL_MODEL."""
+    def test_raises_value_error_when_model_override_is_provided(self):
+        """Passing a model hint must be rejected — the router owns provider selection."""
         service = LiteLLMRouterService()
-        resolved, _ = service._get_model_info("gpt-4o-mini")
-        assert resolved == LOGICAL_MODEL
+        with pytest.raises(ValueError, match="does not accept a model override"):
+            service._get_model_info("gpt-4")
 
-        resolved2, _ = service._get_model_info("claude-opus-4-7")
-        assert resolved2 == LOGICAL_MODEL
+    def test_raises_value_error_includes_model_name_in_message(self):
+        service = LiteLLMRouterService()
+        with pytest.raises(ValueError, match="gpt-4o"):
+            service._get_model_info("gpt-4o")
 
 
 # --------------------------------------------------------------------------- #

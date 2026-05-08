@@ -487,11 +487,11 @@ if transcript:
 
         except LLMServiceError as exc:
             st.error(
-                f"**{exc.type}** (HTTP {exc.status_code})\n\n{exc.message}",
+                f"**{exc.error_type}** (HTTP {exc.status_code})\n\n{exc.message}",
                 icon="🚨",
             )
             st.session_state.messages.append(
-                {"role": "assistant", "content": f"**Error {exc.status_code} — {exc.type}:** {exc.message}"}
+                {"role": "assistant", "content": f"**Error {exc.status_code} — {exc.error_type}:** {exc.message}"}
             )
         except Exception as exc:
             st.error(f"**Unexpected error:** {exc}", icon="🚨")

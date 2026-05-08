@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import app.services.base_llm_service as svc
-from app.services.base_llm_service import LLMServiceError, estimate, estimate_call_tokens
+from app.services.base_llm_service import LLMServiceError, ModelInfo, ParsedResponse, estimate, estimate_call_tokens
 
 
 class DummyStreamService(svc.BaseLLMService):
@@ -14,13 +14,13 @@ class DummyStreamService(svc.BaseLLMService):
         super().__init__()
         self.turns: list[tuple[str, str]] = []
 
-    def _get_model_info(self, model: str | None) -> tuple[str, dict[str, Any]]:
-        return "dummy-model", {
-            "input_price": 1.0,
-            "output_price": 1.0,
-            "context_window": 10_000,
-            "reasoning": False,
-        }
+    def _get_model_info(self, model: str | None) -> tuple[str, ModelInfo]:
+        return "dummy-model", ModelInfo(
+            input_price=1.0,
+            output_price=1.0,
+            context_window=10_000,
+            reasoning=False,
+        )
 
     def _count_tokens(self, system_prompt: str, user_message: str, model: str) -> int:
         return 5
@@ -55,15 +55,15 @@ class DummyStreamService(svc.BaseLLMService):
             "finish_reason": "stop",
         }
 
-    def _parse_provider_response(self, response: Any, *, is_reasoning: bool) -> dict[str, Any]:
-        return {
-            "estimation": response["estimation"],
-            "response_id": response["response_id"],
-            "input_tokens": response["input_tokens"],
-            "output_tokens": response["output_tokens"],
-            "reasoning_tokens": None,
-            "finish_reason": response.get("finish_reason", "stop"),
-        }
+    def _parse_provider_response(self, response: Any, *, is_reasoning: bool) -> ParsedResponse:
+        return ParsedResponse(
+            estimation=response["estimation"],
+            response_id=response["response_id"],
+            input_tokens=response["input_tokens"],
+            output_tokens=response["output_tokens"],
+            reasoning_tokens=None,
+            finish_reason=response.get("finish_reason", "stop"),
+        )
 
     async def _call_provider_stream(
         self,
@@ -73,14 +73,15 @@ class DummyStreamService(svc.BaseLLMService):
     ) -> AsyncIterator[str]:
         for delta in ("Hello ", "world"):
             yield delta
-        self._stream_partial = {
-            "response_id": "stream-1",
-            "input_tokens": 10,
-            "output_tokens": 5,
-            "reasoning_tokens": None,
-            "finish_reason": "stop",
-            "truncated": False,
-        }
+        self._stream_partial = ParsedResponse(
+            estimation="",
+            response_id="stream-1",
+            input_tokens=10,
+            output_tokens=5,
+            reasoning_tokens=None,
+            finish_reason="stop",
+            truncated=False,
+        )
 
     def _on_turn_complete(self, transcription: str, assistant_content: str) -> None:
         self.turns.append((transcription, assistant_content))
@@ -121,7 +122,7 @@ class TestFacadeValidation:
             with pytest.raises(LLMServiceError) as exc_info:
                 await estimate("test")
         assert exc_info.value.status_code == 413
-        assert "overflow" in exc_info.value.type
+        assert "overflow" in exc_info.value.error_type
 
 
 # --------------------------------------------------------------------------- #
@@ -176,17 +177,17 @@ class TestEstimateStream:
     @pytest.mark.asyncio
     async def test_stream_context_overflow_raises(self) -> None:
         service = DummyStreamService()
-        tiny_context = {
-            "input_price": 1.0,
-            "output_price": 1.0,
-            "context_window": 6,
-            "reasoning": False,
-        }
+        tiny_context = ModelInfo(
+            input_price=1.0,
+            output_price=1.0,
+            context_window=6,
+            reasoning=False,
+        )
         with patch.object(service, "_get_model_info", return_value=("dummy-model", tiny_context)):
             with pytest.raises(LLMServiceError) as exc_info:
                 async for _ in service.estimate_stream("hello", max_output_tokens=5):
                     pass
-        assert exc_info.value.type == "context_overflow"
+        assert exc_info.value.error_type == "context_overflow"
 
     @pytest.mark.asyncio
     async def test_stream_error_is_propagated(self) -> None:
@@ -200,4 +201,4 @@ class TestEstimateStream:
             with pytest.raises(LLMServiceError) as exc_info:
                 async for _ in service.estimate_stream("hello"):
                     pass
-        assert exc_info.value.type == "stream_error"
+        assert exc_info.value.error_type == "stream_error"

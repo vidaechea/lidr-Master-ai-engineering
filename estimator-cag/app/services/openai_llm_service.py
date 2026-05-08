@@ -12,75 +12,75 @@ from openai import (
 )
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService, LLMServiceError
+from app.services.base_llm_service import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
 
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
 # --------------------------------------------------------------------------- #
-MODELS: dict[str, dict[str, Any]] = {
-    "gpt-3.5-turbo": {
-        "input_price": 0.50,
-        "output_price": 1.50,
-        "encoding": "cl100k_base",
-        "context_window": 16_385,
-        "reasoning": False,
-    },
-    "gpt-4-turbo": {
-        "input_price": 10.0,
-        "output_price": 30.0,
-        "encoding": "cl100k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "gpt-4o-mini": {
-        "input_price": 0.15,
-        "output_price": 0.60,
-        "encoding": "o200k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "gpt-5.4-mini": {
-        "input_price": 0.75,
-        "output_price": 4.50,
-        "encoding": "o200k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "gpt-5.4": {
-        "input_price": 2.50,
-        "output_price": 15.00,
-        "encoding": "o200k_base",
-        "context_window": 128_000,
-        "reasoning": False,
-    },
-    "o3-mini": {
-        "input_price": 1.10,
-        "output_price": 4.40,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
-    "o3": {
-        "input_price": 10.0,
-        "output_price": 40.0,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
-    "o4-mini": {
-        "input_price": 1.10,
-        "output_price": 4.40,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
-    "o4-mini-2025-04-16": {
-        "input_price": 1.10,
-        "output_price": 4.40,
-        "encoding": "o200k_base",
-        "context_window": 200_000,
-        "reasoning": True,
-    },
+MODELS: dict[str, ModelInfo] = {
+    "gpt-3.5-turbo": ModelInfo(
+        input_price=0.50,
+        output_price=1.50,
+        encoding="cl100k_base",
+        context_window=16_385,
+        reasoning=False,
+    ),
+    "gpt-4-turbo": ModelInfo(
+        input_price=10.0,
+        output_price=30.0,
+        encoding="cl100k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "gpt-4o-mini": ModelInfo(
+        input_price=0.15,
+        output_price=0.60,
+        encoding="o200k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "gpt-5.4-mini": ModelInfo(
+        input_price=0.75,
+        output_price=4.50,
+        encoding="o200k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "gpt-5.4": ModelInfo(
+        input_price=2.50,
+        output_price=15.00,
+        encoding="o200k_base",
+        context_window=128_000,
+        reasoning=False,
+    ),
+    "o3-mini": ModelInfo(
+        input_price=1.10,
+        output_price=4.40,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
+    "o3": ModelInfo(
+        input_price=10.0,
+        output_price=40.0,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
+    "o4-mini": ModelInfo(
+        input_price=1.10,
+        output_price=4.40,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
+    "o4-mini-2025-04-16": ModelInfo(
+        input_price=1.10,
+        output_price=4.40,
+        encoding="o200k_base",
+        context_window=200_000,
+        reasoning=True,
+    ),
 }
 
 DEFAULT_MODEL: str = (
@@ -125,7 +125,7 @@ class OpenAILLMService(BaseLLMService):
 
     def _get_model_info(
         self, model: Optional[str]
-    ) -> tuple[str, dict[str, Any]]:
+    ) -> tuple[str, ModelInfo]:
         resolved = model or DEFAULT_MODEL
         info = MODELS.get(resolved)
         if info is None:
@@ -140,7 +140,7 @@ class OpenAILLMService(BaseLLMService):
         user_message: str,
         model: str,
     ) -> int:
-        encoding_name = (MODELS.get(model) or {}).get("encoding")
+        encoding_name = MODELS[model].encoding if model in MODELS else None
         if encoding_name:
             encoding = tiktoken.get_encoding(encoding_name)
         else:
@@ -161,7 +161,7 @@ class OpenAILLMService(BaseLLMService):
         resolved_model: str,
         system_prompt: str,
         transcription: str,
-        model_info: dict[str, Any],
+        model_info: ModelInfo,
         temperature: Optional[float],
         top_p: Optional[float],
         top_k: Optional[int],
@@ -178,7 +178,7 @@ class OpenAILLMService(BaseLLMService):
             "store": continue_conversation,
         }
 
-        if model_info["reasoning"]:
+        if model_info.reasoning:
             params["reasoning"] = {"effort": reasoning_effort}
             params["text"] = {"format": {"type": "text"}}
         else:
@@ -209,7 +209,7 @@ class OpenAILLMService(BaseLLMService):
         response: Any,
         *,
         is_reasoning: bool,
-    ) -> dict[str, Any]:
+    ) -> ParsedResponse:
         if response.status != "completed":
             raise LLMServiceError(
                 response.status,
@@ -221,14 +221,14 @@ class OpenAILLMService(BaseLLMService):
         if is_reasoning and usage.output_tokens_details:
             reasoning_tokens = usage.output_tokens_details.reasoning_tokens
 
-        return {
-            "estimation": response.output_text,
-            "response_id": response.id,
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "reasoning_tokens": reasoning_tokens,
-            "finish_reason": "stop",
-        }
+        return ParsedResponse(
+            estimation=response.output_text,
+            response_id=response.id,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            finish_reason="stop",
+        )
 
     async def _call_provider_stream(
         self,
@@ -269,11 +269,12 @@ class OpenAILLMService(BaseLLMService):
         if is_reasoning and usage.output_tokens_details:
             reasoning_tokens = usage.output_tokens_details.reasoning_tokens
 
-        self._stream_partial = {
-            "response_id": final_response.id,
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "reasoning_tokens": reasoning_tokens,
-            "finish_reason": "stop",
-            "truncated": False,
-        }
+        self._stream_partial = ParsedResponse(
+            estimation="",
+            response_id=final_response.id,
+            input_tokens=usage.input_tokens,
+            output_tokens=usage.output_tokens,
+            reasoning_tokens=reasoning_tokens,
+            finish_reason="stop",
+            truncated=False,
+        )
