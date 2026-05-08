@@ -340,7 +340,7 @@ async def test_get_metrics_returns_correct_hit_rate():
     assert m["misses"] == 1
     assert m["total"] == 4
     assert m["hit_rate_pct"] == 75.0
-    assert m["cost_avoided_usd"] == 0.000015 or abs(m["cost_avoided_usd"] - 0.015) < 1e-9
+    assert m["cost_avoided_usd"] == pytest.approx(0.015, abs=1e-6)
     assert m["avg_latency_hit_ms"] == 10.0   # 30 / 3
     assert m["avg_latency_miss_ms"] == 1500.0
     assert m["speedup_x"] == 150             # 1500 / 10
