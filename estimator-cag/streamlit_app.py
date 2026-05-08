@@ -30,9 +30,13 @@ _ANTHROPIC_MODELS = [
     "claude-haiku-4-5-20251001",
     "claude-opus-4-7",
 ]
+_LITELLM_MODELS = [
+    "gpt-4o-mini → claude-haiku (auto-failover)",
+]
 _MODELS_BY_PROVIDER: dict[str, list[str]] = {
     "openai": _OPENAI_MODELS,
     "anthropic": _ANTHROPIC_MODELS,
+    "litellm": _LITELLM_MODELS,
 }
 
 # Models that support reasoning / extended thinking
@@ -287,9 +291,10 @@ with st.expander("LLM Options", expanded=False):
         st.subheader("Model")
         provider = st.selectbox(
             "Provider",
-            options=["openai", "anthropic"],
-            index=["openai", "anthropic"].index(st.session_state.active_provider),
-            help="LLM provider. Changing it recreates the service and clears the conversation.",
+            options=["openai", "anthropic", "litellm"],
+            index=["openai", "anthropic", "litellm"].index(st.session_state.active_provider),
+            help="LLM provider. 'litellm' usa un Router con failover automático entre proveedores.",
+
         )
         if provider != st.session_state.active_provider:
             settings.llm_provider = provider  # type: ignore[assignment]
@@ -382,6 +387,11 @@ with st.expander("LLM Options", expanded=False):
 
     with col_d:
         st.subheader("Session")
+        use_stream = st.toggle(
+            "Streaming response",
+            value=True,
+            help="When enabled, tokens are shown as they arrive (streaming). Disable for a single synchronous response.",
+        )
         continue_conversation = st.toggle(
             "Multi-turn (continue conversation)",
             value=False,
@@ -436,21 +446,34 @@ if transcript:
 
     with st.chat_message("assistant"):
         try:
-            estimation = st.write_stream(
-                _sync_stream(st.session_state.service, transcript, _call_kwargs)
-            )
             system_prompt = st.session_state.service._build_system_prompt(
                 fmt=output_format,
                 num_examples=int(num_examples),
             )
-            pre_call_prompt = None
-            if pre_call:
-                pre_call_prompt = st.session_state.service._build_pre_call_system_prompt()
-            meta = {
-                k: v
-                for k, v in st.session_state.service._last_stream_result.items()
-                if k != "estimation"
-            }
+            pre_call_prompt = (
+                st.session_state.service._build_pre_call_system_prompt() if pre_call else None
+            )
+
+            if use_stream:
+                estimation = st.write_stream(
+                    _sync_stream(st.session_state.service, transcript, _call_kwargs)
+                )
+                meta = {
+                    k: v
+                    for k, v in st.session_state.service._last_stream_result.items()
+                    if k != "estimation"
+                }
+            else:
+                with st.spinner("Generating estimation…"):
+                    loop = asyncio.new_event_loop()
+                    result = loop.run_until_complete(
+                        st.session_state.service.estimate(transcript, **_call_kwargs)
+                    )
+                    loop.close()
+                estimation = result["estimation"]
+                st.markdown(estimation)
+                meta = {k: v for k, v in result.items() if k != "estimation"}
+
             finish_reason = meta.get("finish_reason", "unknown")
             validation = evaluate_estimation_structure(str(estimation), finish_reason)
             meta["validation"] = validation.model_dump()
@@ -464,11 +487,11 @@ if transcript:
 
         except LLMServiceError as exc:
             st.error(
-                f"**{exc.type}** (HTTP {exc.status_code})\n\n{exc.message}",
+                f"**{exc.error_type}** (HTTP {exc.status_code})\n\n{exc.message}",
                 icon="🚨",
             )
             st.session_state.messages.append(
-                {"role": "assistant", "content": f"**Error {exc.status_code} — {exc.type}:** {exc.message}"}
+                {"role": "assistant", "content": f"**Error {exc.status_code} — {exc.error_type}:** {exc.message}"}
             )
         except Exception as exc:
             st.error(f"**Unexpected error:** {exc}", icon="🚨")

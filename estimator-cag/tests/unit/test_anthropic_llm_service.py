@@ -244,8 +244,8 @@ class TestEstimateSuccess:
         info = MODELS[DEFAULT_MODEL]
         expected = round(
             (
-                mock_response.usage.input_tokens * info["input_price"]
-                + mock_response.usage.output_tokens * info["output_price"]
+                mock_response.usage.input_tokens * info.input_price
+                + mock_response.usage.output_tokens * info.output_price
                 # cache tokens are 0 in mock_response — no adjustment expected
             )
             / 1_000_000,
@@ -315,7 +315,7 @@ class TestEstimateApiErrors:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("Build something")
-        assert exc_info.value.type == "tool_use"
+        assert exc_info.value.error_type == "tool_use"
         assert exc_info.value.message
 
 
@@ -380,7 +380,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 401
-        assert exc_info.value.type == "authentication_error"
+        assert exc_info.value.error_type == "authentication_error"
 
     async def test_rate_limit_error_raises_429(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
@@ -392,7 +392,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 429
-        assert exc_info.value.type == "rate_limit_error"
+        assert exc_info.value.error_type == "rate_limit_error"
 
     async def test_bad_request_error_raises_400(self, service):
         exc = BadRequestError(message="Bad input", response=MagicMock(), body={})
@@ -401,7 +401,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 400
-        assert exc_info.value.type == "bad_request_error"
+        assert exc_info.value.error_type == "bad_request_error"
         assert "Bad input" in exc_info.value.message
 
     async def test_connection_error_raises_503(self, service):
@@ -412,7 +412,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 503
-        assert exc_info.value.type == "connection_error"
+        assert exc_info.value.error_type == "connection_error"
 
     async def test_internal_server_error_raises_503(self, service):
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
@@ -424,7 +424,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 503
-        assert exc_info.value.type == "connection_error"
+        assert exc_info.value.error_type == "connection_error"
 
 
 # --------------------------------------------------------------------------- #
@@ -552,7 +552,7 @@ class TestEstimateValidation:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 413
-        assert "overflow" in exc_info.value.type
+        assert "overflow" in exc_info.value.error_type
 
 
 # --------------------------------------------------------------------------- #
@@ -698,12 +698,12 @@ class TestExtendedThinking:
     REASONING_MODEL = "claude-opus-4-7"
 
     def test_reasoning_model_is_flagged_in_registry(self):
-        assert MODELS[self.REASONING_MODEL]["reasoning"] is True
+        assert MODELS[self.REASONING_MODEL].reasoning is True
 
     def test_non_reasoning_models_not_flagged(self):
         for name, info in MODELS.items():
             if name != self.REASONING_MODEL:
-                assert info["reasoning"] is False, f"{name} should have reasoning=False"
+                assert info.reasoning is False, f"{name} should have reasoning=False"
 
     async def test_thinking_param_sent_for_reasoning_model(self, service):
         """_build_api_params must include thinking block for reasoning models."""
@@ -840,9 +840,9 @@ class TestPromptCaching:
         info = MODELS[DEFAULT_MODEL]
         expected = round(
             (
-                500 * info["input_price"]
-                + 200 * info["output_price"]
-                + cache_write * info["input_price"] * _CACHE_WRITE_PRICE_MULTIPLIER
+                500 * info.input_price
+                + 200 * info.output_price
+                + cache_write * info.input_price * _CACHE_WRITE_PRICE_MULTIPLIER
             )
             / 1_000_000,
             8,
@@ -863,9 +863,9 @@ class TestPromptCaching:
         info = MODELS[DEFAULT_MODEL]
         expected = round(
             (
-                500 * info["input_price"]
-                + 200 * info["output_price"]
-                + cache_read * info["input_price"] * _CACHE_READ_PRICE_MULTIPLIER
+                500 * info.input_price
+                + 200 * info.output_price
+                + cache_read * info.input_price * _CACHE_READ_PRICE_MULTIPLIER
             )
             / 1_000_000,
             8,
@@ -897,7 +897,7 @@ class TestPromptCaching:
         mock_response = _make_response_mock(input_tokens=800, output_tokens=300)
         info = MODELS[DEFAULT_MODEL]
         expected = round(
-            (800 * info["input_price"] + 300 * info["output_price"]) / 1_000_000, 8
+            (800 * info.input_price + 300 * info.output_price) / 1_000_000, 8
         )
         with patch("app.services.anthropic_llm_service._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)

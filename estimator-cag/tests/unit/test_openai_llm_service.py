@@ -194,8 +194,8 @@ class TestEstimateSuccess:
         info = MODELS[DEFAULT_MODEL]
         expected = round(
             (
-                mock_response.usage.input_tokens * info["input_price"]
-                + mock_response.usage.output_tokens * info["output_price"]
+                mock_response.usage.input_tokens * info.input_price
+                + mock_response.usage.output_tokens * info.output_price
             )
             / 1_000_000,
             8,
@@ -295,7 +295,7 @@ class TestCallProviderStream:
                 async for _ in service._call_provider_stream({"model": "gpt"}, is_reasoning=False):
                     pass
 
-        assert exc_info.value.type == "stream_error"
+        assert exc_info.value.error_type == "stream_error"
 
     @pytest.mark.asyncio
     async def test_stream_maps_provider_errors(self, service: OpenAILLMService) -> None:
@@ -307,7 +307,7 @@ class TestCallProviderStream:
                 async for _ in service._call_provider_stream({"model": "gpt"}, is_reasoning=False):
                     pass
 
-        assert exc_info.value.type == "authentication_error"
+        assert exc_info.value.error_type == "authentication_error"
 
 
 # --------------------------------------------------------------------------- #
@@ -364,7 +364,7 @@ class TestEstimateValidation:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 413
-        assert "overflow" in exc_info.value.type
+        assert "overflow" in exc_info.value.error_type
 
     async def test_no_error_key_on_success(self, service):
         mock_response = _make_response_mock()
@@ -385,7 +385,7 @@ class TestEstimateApiErrors:
             mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("Build something")
-        assert exc_info.value.type == "failed"
+        assert exc_info.value.error_type == "failed"
 
     async def test_error_has_message(self, service):
         mock_response = _make_response_mock(status="incomplete")
@@ -544,7 +544,7 @@ class TestEstimateMultiTurn:
     async def test_total_cost_accumulates_across_turns(self, service):
         mock_response = _make_response_mock(input_tokens=100, output_tokens=50)
         info = MODELS[DEFAULT_MODEL]
-        turn_cost = (100 * info["input_price"] + 50 * info["output_price"]) / 1_000_000
+        turn_cost = (100 * info.input_price + 50 * info.output_price) / 1_000_000
 
         with patch("app.services.openai_llm_service._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
@@ -652,7 +652,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 401
-        assert exc_info.value.type == "authentication_error"
+        assert exc_info.value.error_type == "authentication_error"
 
     async def test_rate_limit_error_raises_429(self, service):
         with patch("app.services.openai_llm_service._get_client") as mock_client:
@@ -664,7 +664,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 429
-        assert exc_info.value.type == "rate_limit_error"
+        assert exc_info.value.error_type == "rate_limit_error"
 
     async def test_bad_request_error_raises_400(self, service):
         exc = BadRequestError(message="Bad input", response=MagicMock(), body={})
@@ -673,7 +673,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 400
-        assert exc_info.value.type == "bad_request_error"
+        assert exc_info.value.error_type == "bad_request_error"
         assert "Bad input" in exc_info.value.message
 
     async def test_connection_error_raises_503(self, service):
@@ -684,7 +684,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 503
-        assert exc_info.value.type == "connection_error"
+        assert exc_info.value.error_type == "connection_error"
 
     async def test_internal_server_error_raises_503(self, service):
         with patch("app.services.openai_llm_service._get_client") as mock_client:
@@ -696,7 +696,7 @@ class TestEstimateProviderExceptions:
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 503
-        assert exc_info.value.type == "connection_error"
+        assert exc_info.value.error_type == "connection_error"
 
 
 # --------------------------------------------------------------------------- #
@@ -788,12 +788,12 @@ class TestEstimatePreCall:
         info = MODELS[DEFAULT_MODEL]
 
         expected_pre_cost = (
-            pre_response.usage.input_tokens * info["input_price"]
-            + pre_response.usage.output_tokens * info["output_price"]
+            pre_response.usage.input_tokens * info.input_price
+            + pre_response.usage.output_tokens * info.output_price
         ) / 1_000_000
         expected_est_cost = (
-            est_response.usage.input_tokens * info["input_price"]
-            + est_response.usage.output_tokens * info["output_price"]
+            est_response.usage.input_tokens * info.input_price
+            + est_response.usage.output_tokens * info.output_price
         ) / 1_000_000
         expected_total = round(expected_pre_cost + expected_est_cost, 8)
 

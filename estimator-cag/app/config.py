@@ -2,7 +2,7 @@ from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-LLMProvider = Literal["openai", "anthropic"]
+LLMProvider = Literal["openai", "anthropic", "litellm"]
 
 LLMModel = Literal[
     # OpenAI
@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "DEBUG"
     example_fixture: Optional[Literal["short", "long"]] = None
+
+    # LiteLLM Router failover policy
+    router_num_retries: int = 2
+    router_timeout: float = 30.0
+    router_retry_after: int = 5
+    router_allowed_fails: int = 2
+    router_cooldown_time: int = 60
 
 
 settings = Settings()
