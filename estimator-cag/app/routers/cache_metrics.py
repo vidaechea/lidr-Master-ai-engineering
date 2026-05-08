@@ -62,7 +62,7 @@ async def _read_stats() -> dict:
 @router.get("/metrics")
 async def get_cache_metrics():
     if not settings.cache_enabled:
-        return {"error": "Cache not enabled"}
+        raise HTTPException(status_code=400, detail="Cache not enabled")
     return await _read_stats()
 
 
