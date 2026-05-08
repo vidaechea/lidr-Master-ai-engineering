@@ -24,6 +24,7 @@ def create_llm_service() -> BaseLLMService:
 
     Raises ValueError for any provider not present in _PROVIDER_REGISTRY.
     To add a new provider, register it in _PROVIDER_REGISTRY — no branching needed.
+    If cache_enabled is True, wraps the service with CachedLLMService.
     """
     provider = settings.llm_provider
 
@@ -34,5 +35,12 @@ def create_llm_service() -> BaseLLMService:
         )
 
     service_class = _load_service_class(_PROVIDER_REGISTRY[provider])
+    service: BaseLLMService = service_class()
     log.info("llm_service_created", provider=provider)
-    return service_class()
+
+    if settings.cache_enabled:
+        from app.services.cache_service import CachedLLMService
+        service = CachedLLMService(inner=service)
+        log.info("cache_enabled", redis_url=settings.redis_url, ttl=settings.cache_ttl)
+
+    return service

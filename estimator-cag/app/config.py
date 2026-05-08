@@ -40,5 +40,10 @@ class Settings(BaseSettings):
     router_allowed_fails: int = 2
     router_cooldown_time: int = 60
 
+    # Cache
+    cache_enabled: bool = False
+    redis_url: str = "redis://localhost:6379"
+    cache_ttl: int = 86400  # 24 hours
+
 
 settings = Settings()

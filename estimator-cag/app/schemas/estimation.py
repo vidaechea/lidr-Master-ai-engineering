@@ -143,3 +143,4 @@ class EstimationResponse(BaseModel):
     validation: StructureCheck | None = None
     requirements: str | None = None
     pre_call_cost_usd: float | None = None
+    cache_hit: bool = False
