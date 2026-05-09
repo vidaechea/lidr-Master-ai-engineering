@@ -472,3 +472,70 @@ class TestEstimationValidation:
             )
         assert without_flag.json()["validation"] is not None
         assert with_flag.json()["validation"] is not None
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/v1/estimate — output_format field
+# --------------------------------------------------------------------------- #
+class TestOutputFormat:
+    def test_accepts_phases_table(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "phases_table"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_line_items(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "line_items"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_narrative(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "narrative"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_legacy_markdown(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "markdown"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_legacy_json(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "json"},
+            )
+        assert response.status_code == 200
+
+    def test_returns_422_on_invalid_output_format(self, client: TestClient):
+        response = client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION, "output_format": "fancy_pdf"},
+        )
+        assert response.status_code == 422
+
+    def test_default_output_format_is_phases_table(self, client: TestClient):
+        """Omitting output_format should default to phases_table without error."""
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200

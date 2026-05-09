@@ -37,6 +37,24 @@ class ExampleFormat(str, Enum):
     NARRATIVE = "narrative"
 
 
+class OutputFormat(str, Enum):
+    PHASES_TABLE = "phases_table"
+    LINE_ITEMS = "line_items"
+    NARRATIVE = "narrative"
+    MARKDOWN = "markdown"
+    JSON = "json"
+
+    def to_example_format(self) -> "ExampleFormat":
+        _map: dict["OutputFormat", ExampleFormat] = {
+            OutputFormat.PHASES_TABLE: ExampleFormat.MARKDOWN,
+            OutputFormat.LINE_ITEMS: ExampleFormat.MARKDOWN,
+            OutputFormat.NARRATIVE: ExampleFormat.NARRATIVE,
+            OutputFormat.MARKDOWN: ExampleFormat.MARKDOWN,
+            OutputFormat.JSON: ExampleFormat.JSON,
+        }
+        return _map[self]
+
+
 class ExampleItem(BaseModel):
     title: str
     meeting_summary: str
@@ -107,12 +125,13 @@ class EstimationRequest(BaseModel):
             "the raw transcription before the main estimation call."
         ),
     )
-    example_format: ExampleFormat = Field(
-        default=ExampleFormat.MARKDOWN,
+    output_format: OutputFormat = Field(
+        default=OutputFormat.PHASES_TABLE,
         description=(
-            "Format used for the few-shot examples in the system prompt. "
-            "Controls the output style: 'markdown' (table-based), 'json' (structured JSON), "
-            "or 'narrative' (plain text prose)."
+            "Desired output structure for the estimation. "
+            "'phases_table' and 'markdown' produce a table-based estimate, "
+            "'line_items' and 'json' produce a structured breakdown, "
+            "'narrative' produces plain prose."
         ),
     )
     num_examples: int = Field(

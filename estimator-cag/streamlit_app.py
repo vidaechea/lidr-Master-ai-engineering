@@ -7,8 +7,7 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from app.config import settings
-from app.context.examples import ExampleFormat
-from app.schemas.estimation import DetailLevel, ProjectType
+from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
 from app.services.base_llm_service import LLMServiceError
 from app.services.cache_service import CachedLLMService
 from app.services.evaluation import evaluate_estimation_structure
@@ -414,14 +413,6 @@ with st.expander("LLM Options", expanded=False):
 
     with col_c:
         st.subheader("Generation")
-        output_format = st.radio(
-            "Output format",
-            options=[ExampleFormat.MARKDOWN, ExampleFormat.JSON, ExampleFormat.NARRATIVE],
-            format_func=lambda f: f.value,
-            index=0,
-            horizontal=True,
-            help="Controls the output style by changing the format of the few-shot examples in the prompt. 'markdown' produces a table-based estimate, 'json' structured JSON, 'narrative' plain prose.",
-        )
         num_examples = st.slider(
             "Number of examples",
             min_value=0, max_value=5, value=3, step=1,
@@ -474,7 +465,6 @@ _call_kwargs: dict = {
     "max_output_tokens": int(max_output_tokens),
     "continue_conversation": continue_conversation,
     "pre_call": pre_call,
-    "example_format": output_format,
     "num_examples": int(num_examples),
 }
 if temperature is not None:
@@ -493,7 +483,7 @@ with st.form("estimation_form"):
         max_chars=2000,
         height=160,
     )
-    _col_pt, _col_dl = st.columns(2)
+    _col_pt, _col_dl, _col_of = st.columns(3)
     with _col_pt:
         project_type = st.selectbox(
             "Project type",
@@ -505,6 +495,12 @@ with st.form("estimation_form"):
             "Detail level",
             options=[dl.value for dl in DetailLevel],
             format_func=lambda v: v.title(),
+        )
+    with _col_of:
+        output_format = st.selectbox(
+            "Output format",
+            options=list(OutputFormat),
+            format_func=lambda f: f.value.replace("_", " ").title(),
         )
     submitted = st.form_submit_button("\U0001f4ca Estimate", use_container_width=True)
 
@@ -526,10 +522,12 @@ if submitted:
     _context_parts = [
         f"**Project type:** {project_type.replace('_', ' ').title()}",
         f"**Detail level:** {detail_level.title()}",
+        f"**Output format:** {output_format.value.replace('_', ' ').title()}",
         "",
         description.strip(),
     ]
     transcript = "\n".join(_context_parts)
+    _call_kwargs["example_format"] = output_format.to_example_format()
     st.session_state.messages.append({"role": "user", "content": transcript})
     with st.chat_message("user"):
         st.markdown(transcript)
@@ -537,7 +535,7 @@ if submitted:
     with st.chat_message("assistant"):
         try:
             system_prompt = st.session_state.service._build_system_prompt(
-                fmt=output_format,
+                fmt=output_format.to_example_format(),
                 num_examples=int(num_examples),
             )
             pre_call_prompt = (

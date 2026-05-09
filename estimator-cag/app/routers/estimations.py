@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.context.examples import ESTIMATION_EXAMPLES
-from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem
+from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem, OutputFormat
 from app.services.base_llm_service import BaseLLMService, LLMServiceError
 from app.services.evaluation import evaluate_estimation_structure
 from app.services.factory import create_llm_service
@@ -12,17 +12,42 @@ log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="", tags=["estimations"])
 
+_OUTPUT_FORMAT_INSTRUCTIONS: dict[OutputFormat, str] = {
+    OutputFormat.PHASES_TABLE: (
+        "Output format: phases table — Organize the estimate as a markdown table "
+        "grouped by project phase (e.g., Discovery, Design, Development, Testing, Deployment). "
+        "Include a subtotals row per phase and a final totals section."
+    ),
+    OutputFormat.LINE_ITEMS: (
+        "Output format: line items — Produce a single flat markdown table where each row "
+        "is one individual feature or task. Do not group by phase. "
+        "List each deliverable as its own line item."
+    ),
+    OutputFormat.NARRATIVE: (
+        "Output format: narrative — Write the estimate as flowing prose without tables. "
+        "Describe the scope, effort, team composition, and timeline in clear paragraphs."
+    ),
+    OutputFormat.MARKDOWN: (
+        "Output format: markdown — Produce a well-structured markdown estimate with "
+        "a breakdown table, totals, team, and timeline sections."
+    ),
+    OutputFormat.JSON: (
+        "Output format: JSON — Return the estimate as a JSON object with fields: "
+        "breakdown (array of {task, hours, cost_eur}), total_hours, total_cost_eur, "
+        "team (array of strings), duration_weeks (integer). No markdown, only the JSON object."
+    ),
+}
+
 
 def _enrich_transcription(request: EstimationRequest) -> str:
-    """Prepend structured project context when project_type / detail_level are provided."""
+    """Prepend structured project context and output format instructions."""
     parts: list[str] = []
     if request.project_type:
         parts.append(f"Project type: {request.project_type.value}")
     if request.detail_level:
         parts.append(f"Detail level: {request.detail_level.value}")
-    if parts:
-        return "\n".join(parts) + "\n\n---\n\n" + request.transcription
-    return request.transcription
+    parts.append(_OUTPUT_FORMAT_INSTRUCTIONS[request.output_format])
+    return "\n".join(parts) + "\n\n---\n\n" + request.transcription
 
 
 def get_llm_service() -> BaseLLMService:
@@ -54,7 +79,7 @@ async def create_estimation(
             reasoning_effort=request.reasoning_effort,
             max_output_tokens=request.max_output_tokens,
             pre_call=request.pre_call,
-            example_format=request.example_format,
+            example_format=request.output_format.to_example_format(),
             num_examples=request.num_examples,
         )
     except LLMServiceError as exc:
@@ -101,7 +126,7 @@ async def create_estimation_stream(
                 reasoning_effort=request.reasoning_effort,
                 max_output_tokens=request.max_output_tokens,
                 pre_call=request.pre_call,
-                example_format=request.example_format,
+                example_format=request.output_format.to_example_format(),
                 num_examples=request.num_examples,
             ):
                 yield delta
