@@ -16,7 +16,6 @@ from openai import (
 
 import app.services.openai_llm_service as openai_svc
 from app.config import settings
-from app.context.examples import EXAMPLE_HEADER_TEMPLATE
 from app.services.base_llm_service import LLMServiceError
 from app.services.openai_llm_service import (
     DEFAULT_MODEL,
@@ -323,7 +322,7 @@ class TestEstimateSystemPrompt:
             await service.estimate("Build something")
 
         call_kwargs = create_mock.call_args.kwargs
-        assert EXAMPLE_HEADER_TEMPLATE.format(index=1) in call_kwargs["instructions"]
+        assert "--- Example 1 ---" in call_kwargs["instructions"]
 
     async def test_input_param_equals_transcription(self, service):
         transcription = "Build a real-time chat application"
@@ -779,8 +778,6 @@ class TestEstimatePreCall:
 
     async def test_first_call_uses_pre_call_system_prompt(self, service):
         """The first call must NOT include the CAG examples header."""
-        from app.context.examples import EXAMPLE_HEADER_TEMPLATE
-
         create_mock = AsyncMock(side_effect=[
             self._make_pre_call_response(),
             self._make_estimation_response(),
@@ -790,13 +787,11 @@ class TestEstimatePreCall:
             await service.estimate("Original raw transcription text", pre_call=True)
 
         first_call_instructions = create_mock.call_args_list[0].kwargs["instructions"]
-        assert EXAMPLE_HEADER_TEMPLATE.format(index=1) not in first_call_instructions
+        assert "--- Example 1 ---" not in first_call_instructions
         assert "requirements" in first_call_instructions.lower()
 
     async def test_second_call_uses_estimation_system_prompt(self, service):
         """The second call must include the CAG examples header."""
-        from app.context.examples import EXAMPLE_HEADER_TEMPLATE
-
         create_mock = AsyncMock(side_effect=[
             self._make_pre_call_response(),
             self._make_estimation_response(),
@@ -806,7 +801,7 @@ class TestEstimatePreCall:
             await service.estimate("Original raw transcription text", pre_call=True)
 
         second_call_instructions = create_mock.call_args_list[1].kwargs["instructions"]
-        assert EXAMPLE_HEADER_TEMPLATE.format(index=1) in second_call_instructions
+        assert "--- Example 1 ---" in second_call_instructions
 
     async def test_estimation_key_contains_main_call_output(self, service):
         """The 'estimation' key must come from the second call, not the pre-call."""

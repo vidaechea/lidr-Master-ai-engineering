@@ -10,7 +10,7 @@ import structlog
 from typing_extensions import Unpack
 
 from app.config import settings
-from app.context.examples import ExampleFormat
+from app.schemas.estimation import ExampleFormat
 from app.services.base_llm_service import BaseLLMService, LLMServiceError, _EstimationKwargs
 
 log = structlog.get_logger(__name__)

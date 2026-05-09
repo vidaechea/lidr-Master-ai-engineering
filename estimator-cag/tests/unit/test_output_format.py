@@ -1,6 +1,6 @@
 import pytest
 
-from app.context.examples import ExampleFormat
+from app.schemas.estimation import ExampleFormat
 from app.schemas.estimation import OutputFormat
 
 

@@ -535,11 +535,12 @@ if submitted:
     with st.chat_message("assistant"):
         try:
             system_prompt = st.session_state.service._build_system_prompt(
+                transcript,
                 fmt=output_format.to_example_format(),
                 num_examples=int(num_examples),
             )
             pre_call_prompt = (
-                st.session_state.service._build_pre_call_system_prompt() if pre_call else None
+                st.session_state.service._build_pre_call_system_prompt(transcript) if pre_call else None
             )
 
             import time

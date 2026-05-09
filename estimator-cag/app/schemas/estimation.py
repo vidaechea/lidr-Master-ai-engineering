@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Literal, Optional
@@ -15,8 +16,22 @@ def _load_example_transcription(fixture: str | None, fixtures_dir: Path = _FIXTU
         return None
     return (fixtures_dir / f"{fixture}_transcription.txt").read_text(encoding="utf-8")
 
-
 _EXAMPLE_TRANSCRIPTION = _load_example_transcription(_settings.example_fixture)
+
+
+@dataclass
+class EstimationExample:
+    """Structured data container for an estimation example."""
+
+    title: str
+    meeting_summary: str
+    breakdown: list[tuple[str, int, int]]
+    total_hours: int
+    total_cost: int
+    team: list[str]
+    duration_weeks: int
+    estimation_markdown: str
+
 
 class ProjectType(str, Enum):
     MOBILE_APP = "mobile_app"
@@ -24,18 +39,15 @@ class ProjectType(str, Enum):
     INTERNAL_TOOL = "internal_tool"
     DATA_PIPELINE = "data_pipeline"
 
-
 class DetailLevel(str, Enum):
     SUMMARY = "summary"
     MEDIUM = "medium"
     DETAILED = "detailed"
 
-
 class ExampleFormat(str, Enum):
     MARKDOWN = "markdown"
     JSON = "json"
     NARRATIVE = "narrative"
-
 
 class OutputFormat(str, Enum):
     PHASES_TABLE = "phases_table"
@@ -54,12 +66,10 @@ class OutputFormat(str, Enum):
         }
         return _map[self]
 
-
 class ExampleItem(BaseModel):
     title: str
     meeting_summary: str
     estimation_markdown: str
-
 
 class EstimationRequest(BaseModel):
     model_config = ConfigDict(
@@ -149,7 +159,6 @@ class EstimationRequest(BaseModel):
         description="Desired level of detail for the estimation output.",
     )
 
-
 class StructureCheck(BaseModel):
     """Level-1 structural evaluation of the generated estimation."""
 
@@ -167,7 +176,6 @@ class StructureCheck(BaseModel):
     finish_reason_ok: bool
     score: float
     issues: list[str]
-
 
 class EstimationResponse(BaseModel):
     estimation: str

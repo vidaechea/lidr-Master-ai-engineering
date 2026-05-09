@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.config import settings
-from app.context.examples import ExampleFormat
+from app.schemas.estimation import ExampleFormat
 from app.services.base_llm_service import ModelInfo, ParsedResponse
 from app.services.cache_service import CachedLLMService
 from app.services.base_llm_service import BaseLLMService

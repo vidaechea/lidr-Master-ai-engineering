@@ -7,10 +7,12 @@ from typing import Any, TypedDict
 import structlog
 from typing_extensions import Unpack
 
-from app.context.examples import ExampleFormat, format_examples_for_prompt, select_examples
+from app.prompts.loader import format_examples_for_prompt, get_examples, render_estimation_prompt, render_pre_call_prompt
+from app.schemas.estimation import ExampleFormat, OutputFormat, DetailLevel, ProjectType
 
 log = structlog.get_logger(__name__)
 
+_PRE_CALL_MAX_OUTPUT_TOKENS = 1_024
 
 class _EstimationKwargs(TypedDict, total=False):
     model: str | None
@@ -24,7 +26,6 @@ class _EstimationKwargs(TypedDict, total=False):
     example_format: ExampleFormat
     num_examples: int
 
-
 @dataclass
 class ModelInfo:
     input_price: float
@@ -35,7 +36,6 @@ class ModelInfo:
     cache_write_price_multiplier: float = 0.0
     cache_read_price_multiplier: float = 0.0
     thinking_api: str | None = None
-
 
 @dataclass
 class ParsedResponse:
@@ -49,7 +49,6 @@ class ParsedResponse:
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
     fallback_provider: str | None = None
-
 
 @dataclass
 class CallContext:
@@ -66,51 +65,12 @@ class CallContext:
     pre_call: bool
     provider: str = "unknown"
 
-
 class LLMServiceError(Exception):
     def __init__(self, error_type: str, message: str, status_code: int = 500) -> None:
         super().__init__(message)
         self.error_type = error_type
         self.message = message
         self.status_code = status_code
-
-_SYSTEM_PROMPT_TEMPLATE = """\
-You are an expert software estimator.
-Your task is to analyze meeting transcriptions and produce detailed effort \
-estimates for software projects, broken down by task with hours, team \
-composition, and timeline.
-
-Use the following examples as reference for the expected format and level \
-of detail:
-
-{examples}
-
-Now estimate the new project based on the meeting transcription provided \
-by the user.
-"""
-
-_PRE_CALL_MAX_OUTPUT_TOKENS = 1_024
-
-_PRE_CALL_SYSTEM_PROMPT = """\
-You are an expert business analyst specializing in software requirements.
-Your task is to analyze a raw meeting transcription and extract a clean, \
-structured list of software requirements.
-
-Filter out:
-- Small talk and pleasantries
-- Off-topic discussions
-- Repetitions and redundant statements
-- Administrative details unrelated to the software
-
-Output a clear, structured document with:
-- Numbered list of functional requirements
-- Any non-functional requirements (performance, security, scalability)
-- Constraints and limitations mentioned
-- Deadlines or budget information if present
-
-Be concise and precise. Each requirement must be a clear, actionable statement.
-"""
-
 
 class BaseLLMService(ABC):
 
@@ -128,14 +88,32 @@ class BaseLLMService(ABC):
 
     def _build_system_prompt(
         self,
+        transcription: str,
+        *,
         fmt: ExampleFormat = ExampleFormat.MARKDOWN,
         num_examples: int = 3,
     ) -> str:
-        examples = select_examples(num_examples)
-        return _SYSTEM_PROMPT_TEMPLATE.format(examples=format_examples_for_prompt(examples, fmt))
+        """Build system prompt from Jinja2 template."""
+        from app.prompts.loader import _ENV
+        
+        template_root = "estimation/v1"
+        system_template = _ENV.get_template(f"{template_root}/system.j2")
 
-    def _build_pre_call_system_prompt(self) -> str:
-        return _PRE_CALL_SYSTEM_PROMPT
+        context = {
+            "output_format": OutputFormat.MARKDOWN.value,
+            "detail_level": None,
+            "project_description": transcription,
+            "project_type": None,
+            "num_examples": num_examples,
+        }
+
+        system_prompt = system_template.render(**context).strip()
+        return system_prompt
+
+    def _build_pre_call_system_prompt(self, transcription: str) -> str:
+        """Build pre-call system prompt from Jinja2 template."""
+        system_prompt, _ = render_pre_call_prompt(transcription)
+        return system_prompt
 
     def _estimate_precall_cost(
         self,
@@ -211,7 +189,7 @@ class BaseLLMService(ABC):
         top_k: int | None,
         reasoning_effort: str,
     ) -> dict[str, Any]:
-        pre_call_system_prompt = self._build_pre_call_system_prompt()
+        pre_call_system_prompt = self._build_pre_call_system_prompt(transcription)
         api_params = self._build_api_params(
             resolved_model=resolved_model,
             system_prompt=pre_call_system_prompt,
@@ -366,7 +344,7 @@ class BaseLLMService(ABC):
         example_format: ExampleFormat,
         num_examples: int,
     ) -> tuple[str, int]:
-        system_prompt = self._build_system_prompt(fmt=example_format, num_examples=num_examples)
+        system_prompt = self._build_system_prompt(transcription, fmt=example_format, num_examples=num_examples)
         input_tokens_est = self._count_tokens(system_prompt, transcription, resolved_model)
         total_tokens_est = input_tokens_est + max_output_tokens
         if total_tokens_est >= context_window:
@@ -407,7 +385,7 @@ class BaseLLMService(ABC):
         self._validate_sampling_params(temperature, top_p)
 
         resolved_model, model_info = self._get_model_info(model)
-        pre_call_system_prompt = self._build_pre_call_system_prompt()
+        pre_call_system_prompt = self._build_pre_call_system_prompt(transcription)
         estimated_precall_cost_usd: float = round(
             self._estimate_precall_cost(
                 pre_call_system_prompt, transcription, resolved_model, model_info.input_price,

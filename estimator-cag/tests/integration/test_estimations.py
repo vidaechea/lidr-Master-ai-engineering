@@ -3,7 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.context.examples import ESTIMATION_EXAMPLES
+from app.prompts.loader import get_examples
+
+ESTIMATION_EXAMPLES = get_examples()
 
 FAKE_OUTPUT = (
     "## Estimate: E-commerce Platform\n\n"
