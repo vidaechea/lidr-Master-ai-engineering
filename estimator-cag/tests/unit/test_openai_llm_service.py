@@ -427,13 +427,13 @@ class TestEstimateParamRouting:
 
 
 # --------------------------------------------------------------------------- #
-# estimate — parameters ignored by OpenAI (top_k, verbosity)
+# estimate — parameters ignored by OpenAI (top_k)
 # --------------------------------------------------------------------------- #
 
 class TestEstimateIgnoredParams:
-    """top_k and verbosity are accepted by the base contract but have no meaning
-    for the OpenAI Responses API.  They must be silently ignored — never
-    forwarded to responses.create — and must never raise a TypeError."""
+    """top_k is accepted by the base contract but has no meaning for the OpenAI
+    Responses API.  It must be silently ignored — never forwarded to
+    responses.create — and must never raise a TypeError."""
 
     async def test_top_k_does_not_raise(self, service):
         mock_response = _make_response_mock()
@@ -450,43 +450,6 @@ class TestEstimateIgnoredParams:
             await service.estimate("test", top_k=40)
         assert "top_k" not in create_mock.call_args.kwargs
 
-    async def test_verbosity_low_does_not_raise(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.openai_llm_service._get_client") as mock_client:
-            mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("test", verbosity="low")
-        assert "estimation" in result
-
-    async def test_verbosity_medium_does_not_raise(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.openai_llm_service._get_client") as mock_client:
-            mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("test", verbosity="medium")
-        assert "estimation" in result
-
-    async def test_verbosity_high_does_not_raise(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.openai_llm_service._get_client") as mock_client:
-            mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("test", verbosity="high")
-        assert "estimation" in result
-
-    async def test_verbosity_not_forwarded_to_api(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.openai_llm_service._get_client") as mock_client:
-            create_mock = AsyncMock(return_value=mock_response)
-            mock_client.return_value.responses.create = create_mock
-            await service.estimate("test", verbosity="high")
-        assert "verbosity" not in create_mock.call_args.kwargs
-
-    async def test_top_k_and_verbosity_together_do_not_raise(self, service):
-        """Both ignored params can be combined without conflict."""
-        mock_response = _make_response_mock()
-        with patch("app.services.openai_llm_service._get_client") as mock_client:
-            mock_client.return_value.responses.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("test", top_k=50, verbosity="medium")
-        assert "estimation" in result
-
     def test_build_api_params_accepts_top_k_keyword(self, service):
         """Direct call to _build_api_params with top_k must not raise TypeError."""
         resolved_model = DEFAULT_MODEL
@@ -500,12 +463,10 @@ class TestEstimateIgnoredParams:
             top_p=None,
             top_k=40,
             reasoning_effort="medium",
-            verbosity="low",
             max_output_tokens=1024,
             continue_conversation=False,
         )
         assert "top_k" not in params
-        assert "verbosity" not in params
 
 
 # --------------------------------------------------------------------------- #

@@ -205,7 +205,6 @@ The sidebar expander exposes all call parameters without writing code:
 | **Generation** | Output format | `markdown` (table-based), `json` (structured), or `narrative` (prose). Controls the few-shot examples injected into the system prompt. |
 | | Number of examples | 0–5 few-shot examples in the system prompt. 0 = zero-shot. |
 | | Max output tokens | Hard cap on generated tokens (256–32 768). |
-| | Verbosity | `low`, `medium`, or `high`. Passed to providers that support it; silently ignored by others. |
 | | Reasoning effort | `low`, `medium`, or `high`. Only active for reasoning models. |
 | **Session** | Multi-turn toggle | Continues the conversation across messages. OpenAI uses `previous_response_id`; Anthropic replays the full history. |
 | | Pre-call toggle | Runs a cheap requirements-extraction step before the main estimation call. Improves quality on long or noisy transcripts. |
@@ -236,3 +235,17 @@ To run only the cache tests:
 ```bash
 uv run pytest tests/unit/test_cache_service.py -v
 ```
+
+---
+
+## Design decisions
+
+### `verbosity` parameter removed
+
+The `verbosity` parameter (`low` / `medium` / `high`) was present in the `_EstimationKwargs` contract and exposed as a UI slider, but was never forwarded to any provider API:
+
+- **OpenAI Responses API** has no verbosity knob.
+- **Anthropic Messages API** has no verbosity knob.
+- **LiteLLM Router** passed it through but the underlying providers ignored it.
+
+The parameter was dead code: accepted silently, never used, tested only to confirm it had no effect. It was removed from the service contract, all provider implementations, the Streamlit UI, and the test suite to eliminate the false impression of a working feature. The `detail_level` field on `EstimationRequest` (`summary` / `medium` / `detailed`) now serves the same intent by injecting the requested level of detail directly into the prompt as structured context.

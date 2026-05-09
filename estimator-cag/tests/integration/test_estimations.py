@@ -159,8 +159,35 @@ class TestCreateEstimation:
         assert response.status_code == 422
 
     def test_returns_422_when_transcription_is_too_short(self, client: TestClient):
-        """Transcriptions shorter than 50 characters are rejected — documents the current contract."""
+        """Transcriptions shorter than 20 characters are rejected."""
         response = client.post("/api/v1/estimate", json={"transcription": "Too short."})
+        assert response.status_code == 422
+
+    def test_accepts_project_type_and_detail_level(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={
+                    "transcription": VALID_TRANSCRIPTION,
+                    "project_type": "web_saas",
+                    "detail_level": "detailed",
+                },
+            )
+        assert response.status_code == 200
+
+    def test_returns_422_on_invalid_project_type(self, client: TestClient):
+        response = client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION, "project_type": "invalid_type"},
+        )
+        assert response.status_code == 422
+
+    def test_returns_422_on_invalid_detail_level(self, client: TestClient):
+        response = client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION, "detail_level": "ultra"},
+        )
         assert response.status_code == 422
 
 

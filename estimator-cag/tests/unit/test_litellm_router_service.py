@@ -185,7 +185,6 @@ def _default_params(service: LiteLLMRouterService, **overrides) -> dict[str, Any
         top_p=None,
         top_k=None,
         reasoning_effort="medium",
-        verbosity="low",
         max_output_tokens=2048,
         continue_conversation=False,
     )

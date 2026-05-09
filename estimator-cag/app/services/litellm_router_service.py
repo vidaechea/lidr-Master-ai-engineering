@@ -135,7 +135,6 @@ class LiteLLMRouterService(BaseLLMService):
         top_p: Optional[float],
         top_k: Optional[int],
         reasoning_effort: str,
-        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:

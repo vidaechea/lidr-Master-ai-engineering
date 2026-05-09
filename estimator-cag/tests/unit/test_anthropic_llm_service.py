@@ -477,64 +477,6 @@ class TestEstimateParamRouting:
 
 
 # --------------------------------------------------------------------------- #
-# estimate — verbosity (ignored by Anthropic)
-# --------------------------------------------------------------------------- #
-
-class TestEstimateIgnoredParams:
-    """verbosity is part of the base contract but the Anthropic Messages API
-    has no equivalent parameter.  It must be silently dropped — never forwarded
-    to messages.create — and must never raise a TypeError."""
-
-    async def test_verbosity_low_does_not_raise(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
-            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("test", verbosity="low")
-        assert "estimation" in result
-
-    async def test_verbosity_medium_does_not_raise(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
-            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("test", verbosity="medium")
-        assert "estimation" in result
-
-    async def test_verbosity_high_does_not_raise(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
-            mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
-            result = await service.estimate("test", verbosity="high")
-        assert "estimation" in result
-
-    async def test_verbosity_not_forwarded_to_api(self, service):
-        mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
-            create_mock = AsyncMock(return_value=mock_response)
-            mock_client.return_value.messages.create = create_mock
-            await service.estimate("test", verbosity="high")
-        assert "verbosity" not in create_mock.call_args.kwargs
-
-    def test_build_api_params_accepts_verbosity_keyword(self, service):
-        """Direct call to _build_api_params with verbosity must not raise TypeError."""
-        resolved_model = DEFAULT_MODEL
-        info = MODELS[resolved_model]
-        params = service._build_api_params(
-            resolved_model=resolved_model,
-            system_prompt="system",
-            transcription="user message",
-            model_info=info,
-            temperature=None,
-            top_p=None,
-            top_k=None,
-            reasoning_effort="medium",
-            verbosity="high",
-            max_output_tokens=1024,
-            continue_conversation=False,
-        )
-        assert "verbosity" not in params
-
-
-# --------------------------------------------------------------------------- #
 # estimate — PRE-CALL validation (inherited from BaseLLMService)
 # --------------------------------------------------------------------------- #
 

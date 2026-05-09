@@ -36,7 +36,6 @@ class DummyStreamService(svc.BaseLLMService):
         top_p: float | None,
         top_k: int | None,
         reasoning_effort: str,
-        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:

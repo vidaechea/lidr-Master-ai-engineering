@@ -18,7 +18,6 @@ class _EstimationKwargs(TypedDict, total=False):
     top_p: float | None
     top_k: int | None
     reasoning_effort: str
-    verbosity: str
     max_output_tokens: int
     continue_conversation: bool
     pre_call: bool
@@ -222,7 +221,6 @@ class BaseLLMService(ABC):
             top_p=top_p,
             top_k=top_k,
             reasoning_effort=reasoning_effort,
-            verbosity="low",
             max_output_tokens=_PRE_CALL_MAX_OUTPUT_TOKENS,
             continue_conversation=False,
         )
@@ -303,7 +301,6 @@ class BaseLLMService(ABC):
         top_p: float | None,
         top_k: int | None,
         reasoning_effort: str,
-        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]: ...
@@ -401,7 +398,6 @@ class BaseLLMService(ABC):
         top_p: float | None = None,
         top_k: int | None = None,
         reasoning_effort: str = "medium",
-        verbosity: str = "low",
         max_output_tokens: int = 2_048,
         continue_conversation: bool = False,
         pre_call: bool = False,
@@ -450,7 +446,6 @@ class BaseLLMService(ABC):
             top_p=top_p,
             top_k=top_k,
             reasoning_effort=reasoning_effort,
-            verbosity=verbosity,
             max_output_tokens=max_output_tokens,
             continue_conversation=continue_conversation,
         )

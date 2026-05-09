@@ -12,6 +12,19 @@ log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="", tags=["estimations"])
 
+
+def _enrich_transcription(request: EstimationRequest) -> str:
+    """Prepend structured project context when project_type / detail_level are provided."""
+    parts: list[str] = []
+    if request.project_type:
+        parts.append(f"Project type: {request.project_type.value}")
+    if request.detail_level:
+        parts.append(f"Detail level: {request.detail_level.value}")
+    if parts:
+        return "\n".join(parts) + "\n\n---\n\n" + request.transcription
+    return request.transcription
+
+
 def get_llm_service() -> BaseLLMService:
     return create_llm_service()
 
@@ -30,9 +43,10 @@ async def create_estimation(
 ) -> EstimationResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
+    transcription = _enrich_transcription(request)
     try:
         result = await service.estimate(
-            request.transcription,
+            transcription,
             model=request.model,
             temperature=request.temperature,
             top_p=request.top_p,
@@ -74,11 +88,12 @@ async def create_estimation_stream(
 ) -> StreamingResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_stream_requested", transcription_chars=transcription_length)
+    transcription = _enrich_transcription(request)
 
     async def generate():
         try:
             async for delta in service.estimate_stream(
-                request.transcription,
+                transcription,
                 model=request.model,
                 temperature=request.temperature,
                 top_p=request.top_p,

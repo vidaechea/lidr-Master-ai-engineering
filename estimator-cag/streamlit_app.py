@@ -8,6 +8,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from app.config import settings
 from app.context.examples import ExampleFormat
+from app.schemas.estimation import DetailLevel, ProjectType
 from app.services.base_llm_service import LLMServiceError
 from app.services.cache_service import CachedLLMService
 from app.services.evaluation import evaluate_estimation_structure
@@ -431,14 +432,6 @@ with st.expander("LLM Options", expanded=False):
             min_value=256, max_value=32_768, value=2_048, step=256,
             help="Hard cap on the number of tokens the model can generate. Higher values allow longer responses but increase cost and latency.",
         )
-        verbosity = "low"
-        if provider != "openai":
-            verbosity = st.select_slider(
-                "Verbosity",
-                options=["low", "medium", "high"],
-                value="low",
-                help="Controls the level of detail in the response.",
-            )
         model_supports_reasoning = model in _REASONING_MODELS
         reasoning_effort = st.select_slider(
             "Reasoning effort",
@@ -478,7 +471,6 @@ _render_cache_metrics_sidebar()
 _call_kwargs: dict = {
     "model": model,
     "reasoning_effort": reasoning_effort,
-    "verbosity": verbosity,
     "max_output_tokens": int(max_output_tokens),
     "continue_conversation": continue_conversation,
     "pre_call": pre_call,
@@ -492,7 +484,31 @@ if top_p is not None:
 if top_k is not None:
     _call_kwargs["top_k"] = int(top_k)
 
-# ── Chat messages ─────────────────────────────────────────────────────────────
+# ── Estimation form ───────────────────────────────────────────────────────────
+
+with st.form("estimation_form"):
+    description = st.text_area(
+        "Project description",
+        placeholder="Describe the project to estimate (20\u20132000 characters)\u2026",
+        max_chars=2000,
+        height=160,
+    )
+    _col_pt, _col_dl = st.columns(2)
+    with _col_pt:
+        project_type = st.selectbox(
+            "Project type",
+            options=[pt.value for pt in ProjectType],
+            format_func=lambda v: v.replace("_", " ").title(),
+        )
+    with _col_dl:
+        detail_level = st.selectbox(
+            "Detail level",
+            options=[dl.value for dl in DetailLevel],
+            format_func=lambda v: v.title(),
+        )
+    submitted = st.form_submit_button("\U0001f4ca Estimate", use_container_width=True)
+
+# ── Messages history ──────────────────────────────────────────────────────────
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -500,11 +516,20 @@ for message in st.session_state.messages:
         if message["role"] == "assistant" and "meta" in message:
             _render_details(message["meta"], session_id)
 
-# ── Chat input + streaming response ───────────────────────────────────────────
+# ── Handle form submission ────────────────────────────────────────────────────
 
-transcript = st.chat_input("Paste your meeting transcript here…")
+if submitted:
+    if len(description.strip()) < 20:
+        st.error("Project description must be at least 20 characters.", icon="\u26a0\ufe0f")
+        st.stop()
 
-if transcript:
+    _context_parts = [
+        f"**Project type:** {project_type.replace('_', ' ').title()}",
+        f"**Detail level:** {detail_level.title()}",
+        "",
+        description.strip(),
+    ]
+    transcript = "\n".join(_context_parts)
     st.session_state.messages.append({"role": "user", "content": transcript})
     with st.chat_message("user"):
         st.markdown(transcript)

@@ -18,6 +18,19 @@ def _load_example_transcription(fixture: str | None, fixtures_dir: Path = _FIXTU
 
 _EXAMPLE_TRANSCRIPTION = _load_example_transcription(_settings.example_fixture)
 
+class ProjectType(str, Enum):
+    MOBILE_APP = "mobile_app"
+    WEB_SAAS = "web_saas"
+    INTERNAL_TOOL = "internal_tool"
+    DATA_PIPELINE = "data_pipeline"
+
+
+class DetailLevel(str, Enum):
+    SUMMARY = "summary"
+    MEDIUM = "medium"
+    DETAILED = "detailed"
+
+
 class ExampleFormat(str, Enum):
     MARKDOWN = "markdown"
     JSON = "json"
@@ -49,8 +62,8 @@ class EstimationRequest(BaseModel):
 
     transcription: str = Field(
         ...,
-        min_length=50,
-        description="Meeting transcription text to estimate",
+        min_length=20,
+        description="Meeting transcription or project description to estimate",
     )
     evaluate: bool = Field(
         default=True,
@@ -107,6 +120,14 @@ class EstimationRequest(BaseModel):
         ge=0,
         le=5,
         description="Number of few-shot examples to include in the system prompt (0–5).",
+    )
+    project_type: ProjectType | None = Field(
+        default=None,
+        description="Type of project being estimated. Injected as context before the transcription.",
+    )
+    detail_level: DetailLevel | None = Field(
+        default=None,
+        description="Desired level of detail for the estimation output.",
     )
 
 
