@@ -84,6 +84,8 @@ class CachedLLMService(BaseLLMService):
                 "example_format": kwargs.get("example_format", ExampleFormat.MARKDOWN),
                 "num_examples": kwargs.get("num_examples", 3),
                 "pre_call": kwargs.get("pre_call", False),
+                "system_prompt": kwargs.get("system_prompt"),
+                "user_prompt": kwargs.get("user_prompt"),
             },
             sort_keys=True,
             default=str,

@@ -182,7 +182,7 @@ class EstimationResponse(BaseModel):
     model: str
     input_tokens: int
     output_tokens: int
-    reasoning_tokens: Optional[int]
+    reasoning_tokens: Optional[int] = None
     turn_cost_usd: float
     total_cost_usd: float
     response_id: str
@@ -192,3 +192,4 @@ class EstimationResponse(BaseModel):
     requirements: str | None = None
     pre_call_cost_usd: float | None = None
     cache_hit: bool = False
+    prompt_version: str = "v1"

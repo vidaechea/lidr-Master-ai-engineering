@@ -25,6 +25,8 @@ class _EstimationKwargs(TypedDict, total=False):
     pre_call: bool
     example_format: ExampleFormat
     num_examples: int
+    system_prompt: str
+    user_prompt: str
 
 @dataclass
 class ModelInfo:
@@ -381,6 +383,8 @@ class BaseLLMService(ABC):
         pre_call: bool = False,
         example_format: ExampleFormat = ExampleFormat.MARKDOWN,
         num_examples: int = 3,
+        system_prompt: str | None = None,
+        user_prompt: str | None = None,
     ) -> CallContext:
         self._validate_sampling_params(temperature, top_p)
 
@@ -407,18 +411,46 @@ class BaseLLMService(ABC):
             )
             transcription = requirements
 
-        system_prompt, input_tokens_est = self._build_prompt_and_check_overflow(
-            transcription,
-            resolved_model=resolved_model,
-            context_window=model_info.context_window,
-            max_output_tokens=max_output_tokens,
-            example_format=example_format,
-            num_examples=num_examples,
-        )
+        # Use pre-rendered prompts if provided, otherwise build them
+        if system_prompt is not None and user_prompt is not None:
+            computed_system_prompt = system_prompt
+            # For pre-rendered prompts, estimate tokens based on system and user prompts
+            input_tokens_est = self._count_tokens(computed_system_prompt, user_prompt, resolved_model)
+        else:
+            computed_system_prompt, input_tokens_est = self._build_prompt_and_check_overflow(
+                transcription,
+                resolved_model=resolved_model,
+                context_window=model_info.context_window,
+                max_output_tokens=max_output_tokens,
+                example_format=example_format,
+                num_examples=num_examples,
+            )
+            user_prompt = transcription
+        
+        total_tokens_est = input_tokens_est + max_output_tokens
+        if total_tokens_est >= model_info.context_window:
+            log.warning(
+                "context_overflow",
+                model=resolved_model,
+                estimated_input_tokens=input_tokens_est,
+                max_output_tokens=max_output_tokens,
+                context_window=model_info.context_window,
+            )
+            raise LLMServiceError(
+                "context_overflow",
+                (
+                    f"Estimated request size ({input_tokens_est} input tokens + "
+                    f"{max_output_tokens} max output tokens = {total_tokens_est} total) "
+                    f"meets or exceeds the context window for model "
+                    f"'{resolved_model}' ({model_info.context_window} tokens)."
+                ),
+                413,
+            )
+        
         api_params = self._build_api_params(
             resolved_model=resolved_model,
-            system_prompt=system_prompt,
-            transcription=transcription,
+            system_prompt=computed_system_prompt,
+            transcription=user_prompt,
             model_info=model_info,
             temperature=temperature,
             top_p=top_p,
@@ -433,7 +465,7 @@ class BaseLLMService(ABC):
             api_params=api_params,
             pre_call_cost=pre_call_cost,
             requirements=requirements,
-            transcription=transcription,
+            transcription=user_prompt,
             estimated_precall_cost_usd=estimated_precall_cost_usd,
             input_tokens_est=input_tokens_est,
             is_reasoning=model_info.reasoning,

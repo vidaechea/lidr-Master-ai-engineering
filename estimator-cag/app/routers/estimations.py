@@ -1,8 +1,8 @@
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-
-from app.prompts.loader import get_examples
+from app.config import settings
+from app.prompts.loader import get_examples, render_estimation_prompt
 from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem, OutputFormat
 from app.services.base_llm_service import BaseLLMService, LLMServiceError
 from app.services.evaluation import evaluate_estimation_structure
@@ -11,18 +11,6 @@ from app.services.factory import create_llm_service
 log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="", tags=["estimations"])
-
-
-def _enrich_transcription(request: EstimationRequest) -> str:
-    """Prepend structured project context to transcription.
-    
-    Output format and detail level instructions are handled in the Jinja2 templates.
-    This function only adds project type context if present.
-    """
-    if request.project_type:
-        return f"Project type: {request.project_type.value}\n\n---\n\n{request.transcription}"
-    return request.transcription
-
 
 def get_llm_service() -> BaseLLMService:
     return create_llm_service()
@@ -43,10 +31,12 @@ async def create_estimation(
 ) -> EstimationResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
-    transcription = _enrich_transcription(request)
+    
+    system_prompt, user_prompt = render_estimation_prompt(request, version=settings.prompt_version)
+    
     try:
         result = await service.estimate(
-            transcription,
+            request.transcription,
             model=request.model,
             temperature=request.temperature,
             top_p=request.top_p,
@@ -56,6 +46,8 @@ async def create_estimation(
             pre_call=request.pre_call,
             example_format=request.output_format.to_example_format(),
             num_examples=request.num_examples,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
         )
     except LLMServiceError as exc:
         log.warning(
@@ -78,7 +70,7 @@ async def create_estimation(
         if request.evaluate
         else None
     )
-    return EstimationResponse(**result, validation=validation)
+    return EstimationResponse(**result, validation=validation, prompt_version=settings.prompt_version)
 
 
 @router.post("/estimate/stream")
@@ -88,12 +80,13 @@ async def create_estimation_stream(
 ) -> StreamingResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_stream_requested", transcription_chars=transcription_length)
-    transcription = _enrich_transcription(request)
+    
+    system_prompt, user_prompt = render_estimation_prompt(request, version=settings.prompt_version)
 
     async def generate():
         try:
             async for delta in service.estimate_stream(
-                transcription,
+                request.transcription,
                 model=request.model,
                 temperature=request.temperature,
                 top_p=request.top_p,
@@ -103,6 +96,8 @@ async def create_estimation_stream(
                 pre_call=request.pre_call,
                 example_format=request.output_format.to_example_format(),
                 num_examples=request.num_examples,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
             ):
                 yield delta
         except LLMServiceError as exc:
