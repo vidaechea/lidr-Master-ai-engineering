@@ -8,9 +8,9 @@ import pytest
 
 from app.config import settings
 from app.schemas.estimation import ExampleFormat
-from app.services.base_llm_service import ModelInfo, ParsedResponse
-from app.services.cache_service import CachedLLMService
-from app.services.base_llm_service import BaseLLMService
+from app.services.llm.base import ModelInfo, ParsedResponse, BaseLLMService
+from app.services.cache.cache_service import CachedLLMService
+from app.services.helpers.token_counter import TokenCounter
 
 
 # ---------------------------------------------------------------------------
@@ -31,8 +31,10 @@ class _FakeInnerService(BaseLLMService):
             reasoning=False,
         )
 
-    def _count_tokens(self, system_prompt: str, user_message: str, model: str) -> int:
-        return 5
+    def _create_token_counter(self) -> TokenCounter:
+        mock_counter = MagicMock(spec=TokenCounter)
+        mock_counter.count_tokens.return_value = 5
+        return mock_counter
 
     def _build_api_params(self, **kwargs: Any) -> dict[str, Any]:
         return {}

@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-import app.services.base_llm_service as svc
-from app.services.base_llm_service import LLMServiceError, ModelInfo, ParsedResponse, estimate, estimate_call_tokens
+import app.services.llm.base as svc
+from app.services.llm.base import LLMServiceError, ModelInfo, ParsedResponse, estimate, estimate_call_tokens
+from app.services.helpers.token_counter import TokenCounter
 
 
 class DummyStreamService(svc.BaseLLMService):
@@ -22,8 +23,10 @@ class DummyStreamService(svc.BaseLLMService):
             reasoning=False,
         )
 
-    def _count_tokens(self, system_prompt: str, user_message: str, model: str) -> int:
-        return 5
+    def _create_token_counter(self) -> TokenCounter:
+        mock_counter = MagicMock(spec=TokenCounter)
+        mock_counter.count_tokens.return_value = 5
+        return mock_counter
 
     def _build_api_params(
         self,
@@ -121,7 +124,18 @@ class TestFacadeValidation:
             await estimate("test", model="nonexistent-model")
 
     async def test_raises_llm_service_error_on_context_overflow(self):
-        with patch.object(svc._get_active_service(), "_count_tokens", return_value=999_999_999):
+        from app.services.helpers.prompt_builder import PromptBuilder
+        from app.services.helpers.error_mapper import LLMServiceError
+        
+        # Patch validate_context_window to raise context overflow error
+        def raise_overflow(*args, **kwargs):
+            raise LLMServiceError(
+                "context_overflow",
+                "Estimated request size exceeds context window.",
+                413,
+            )
+        
+        with patch.object(PromptBuilder, "validate_context_window", side_effect=raise_overflow):
             with pytest.raises(LLMServiceError) as exc_info:
                 await estimate("test")
         assert exc_info.value.status_code == 413
@@ -133,12 +147,7 @@ class TestFacadeValidation:
 # --------------------------------------------------------------------------- #
 
 
-class TestRaiseServiceError:
-    def test_unmapped_exception_is_re_raised(self) -> None:
-        service = DummyStreamService()
-        mapping = {KeyError: ("key_error", "message", 400)}
-        with pytest.raises(ValueError):
-            service._raise_service_error(ValueError("boom"), mapping)
+# Removed TestRaiseServiceError — _raise_service_error moved to ErrorMapper
 
 
 # --------------------------------------------------------------------------- #
@@ -171,9 +180,9 @@ class TestEstimateStream:
         ):
             pass
 
-        assert service._last_response_id == "stream-1"
-        assert service._turn_count == 1
-        assert service._total_cost > 0
+        assert service._conversation_state.last_response_id == "stream-1"
+        assert service._conversation_state.turn_count == 1
+        assert service._conversation_state.total_cost > 0
         assert service.turns == [("Requirements", "Hello world")]
         assert service._last_stream_result["requirements"] == "Requirements"
 

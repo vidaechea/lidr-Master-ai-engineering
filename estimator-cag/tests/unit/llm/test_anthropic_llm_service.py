@@ -13,9 +13,9 @@ from anthropic import (
     RateLimitError,
 )
 
-import app.services.anthropic_llm_service as anthropic_svc
+import app.services.llm.anthropic as anthropic_svc
 from app.config import settings
-from app.services.anthropic_llm_service import (
+from app.services.llm.anthropic import (
     DEFAULT_MODEL,
     MODELS,
     _CACHE_READ_PRICE_MULTIPLIER,
@@ -24,7 +24,7 @@ from app.services.anthropic_llm_service import (
     _THINKING_BUDGET,
     AnthropicLLMService,
 )
-from app.services.base_llm_service import LLMServiceError
+from app.services.llm.base import LLMServiceError
 
 FAKE_OUTPUT = "## Estimate: E-commerce Platform\n\n1. Backend: 60 hours\n\n**Total: 60 hours**"
 FAKE_RESPONSE_ID = "msg_abc123"
@@ -144,7 +144,7 @@ def clear_env_model():
     Without this fixture, a locally set LLM_MODEL (e.g. claude-opus-4-7) would
     override DEFAULT_MODEL and break assertions that expect the default.
     """
-    import app.services.anthropic_llm_service as svc_mod
+    import app.services.llm.anthropic as svc_mod
     original = svc_mod.settings.llm_model
     svc_mod.settings.llm_model = ""
     yield
@@ -158,31 +158,35 @@ def service() -> AnthropicLLMService:
 
 
 # --------------------------------------------------------------------------- #
-# _count_tokens — character-based heuristic
+# Token counting — character-based heuristic
 # --------------------------------------------------------------------------- #
 
 class TestCountTokens:
     def test_returns_positive_integer(self, service):
-        tokens = service._count_tokens("You are an expert.", "Build a CRUD app.", DEFAULT_MODEL)
+        counter = service._create_token_counter()
+        tokens = counter.count_tokens("You are an expert.", "Build a CRUD app.", DEFAULT_MODEL)
         assert isinstance(tokens, int)
         assert tokens > 0
 
     def test_longer_inputs_produce_more_tokens(self, service):
-        short = service._count_tokens("system", "short", DEFAULT_MODEL)
-        long = service._count_tokens("system", "short " * 200, DEFAULT_MODEL)
+        counter = service._create_token_counter()
+        short = counter.count_tokens("system", "short", DEFAULT_MODEL)
+        long = counter.count_tokens("system", "short " * 200, DEFAULT_MODEL)
         assert long > short
 
     def test_estimate_based_on_char_ratio(self, service):
+        counter = service._create_token_counter()
         system = "a" * 350
         user = "b" * 350
         # total_chars = 700, ceil(700 / 3.5) = 200
         expected = max(1, math.ceil(700 / _CHARS_PER_TOKEN))
-        assert service._count_tokens(system, user, DEFAULT_MODEL) == expected
+        assert counter.count_tokens(system, user, DEFAULT_MODEL) == expected
 
     def test_model_argument_ignored_for_heuristic(self, service):
         """Token count must be the same regardless of model — heuristic is model-agnostic."""
-        t1 = service._count_tokens("text", "message", "claude-haiku-4-5-20251001")
-        t2 = service._count_tokens("text", "message", "claude-opus-4-7")
+        counter = service._create_token_counter()
+        t1 = counter.count_tokens("text", "message", "claude-haiku-4-5-20251001")
+        t2 = counter.count_tokens("text", "message", "claude-opus-4-7")
         assert t1 == t2
 
 
@@ -196,31 +200,31 @@ class TestEstimateSuccess:
         return _make_response_mock()
 
     async def test_returns_dict(self, service, mock_response):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert isinstance(result, dict)
 
     async def test_content_equals_first_content_block(self, service, mock_response):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["estimation"] == FAKE_OUTPUT
 
     async def test_model_key_matches_resolved_model(self, service, mock_response):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["model"] == DEFAULT_MODEL
 
     async def test_response_id_matches(self, service, mock_response):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["response_id"] == FAKE_RESPONSE_ID
 
     async def test_token_counts_come_from_usage(self, service, mock_response):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["input_tokens"] == mock_response.usage.input_tokens
@@ -228,13 +232,13 @@ class TestEstimateSuccess:
 
     async def test_reasoning_tokens_none_for_non_reasoning_model(self, service, mock_response):
         """Non-reasoning models never expose reasoning tokens."""
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["reasoning_tokens"] is None
 
     async def test_turn_cost_is_positive_float(self, service, mock_response):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert isinstance(result["turn_cost_usd"], float)
@@ -251,7 +255,7 @@ class TestEstimateSuccess:
             / 1_000_000,
             8,
         )
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["turn_cost_usd"] == expected
@@ -259,7 +263,7 @@ class TestEstimateSuccess:
     async def test_stop_sequence_also_succeeds(self, service):
         """stop_sequence is an accepted success stop_reason alongside end_turn."""
         mock_response = _make_response_mock(stop_reason="stop_sequence")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert "error" not in result
@@ -295,7 +299,7 @@ class TestEstimateApiErrors:
     async def test_max_tokens_returns_content_with_truncated_flag(self, service):
         """max_tokens is a warning: partial content is returned, not discarded."""
         mock_response = _make_response_mock(stop_reason="max_tokens")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build something")
         assert "error" not in result
@@ -304,14 +308,14 @@ class TestEstimateApiErrors:
 
     async def test_non_truncated_response_has_truncated_false(self, service):
         mock_response = _make_response_mock(stop_reason="end_turn")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build something")
         assert result.get("truncated") is False
 
     async def test_unknown_stop_reason_raises_llm_service_error(self, service):
         mock_response = _make_response_mock(stop_reason="tool_use")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("Build something")
@@ -333,7 +337,7 @@ class TestCallProviderStream:
             stop_reason="end_turn",
         )
         dummy_stream = _DummyStream(["Hello ", "world"], final)
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.stream = MagicMock(return_value=dummy_stream)
             deltas: list[str] = []
             async for delta in service._call_provider_stream({"model": DEFAULT_MODEL}, is_reasoning=False):
@@ -354,7 +358,7 @@ class TestCallProviderStream:
         )
         final = _StreamFinal(id="msg_stream", usage=usage, stop_reason="max_tokens")
         dummy_stream = _DummyStream(["OK"], final)
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.stream = MagicMock(return_value=dummy_stream)
             async for _ in service._call_provider_stream({"model": DEFAULT_MODEL}, is_reasoning=True):
                 pass
@@ -371,7 +375,7 @@ class TestCallProviderStream:
 
 class TestEstimateProviderExceptions:
     async def test_authentication_error_raises_401(self, service):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=AuthenticationError(
                     message="Invalid key", response=MagicMock(), body={}
@@ -383,7 +387,7 @@ class TestEstimateProviderExceptions:
         assert exc_info.value.error_type == "authentication_error"
 
     async def test_rate_limit_error_raises_429(self, service):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=RateLimitError(
                     message="Rate limit", response=MagicMock(), body={}
@@ -396,7 +400,7 @@ class TestEstimateProviderExceptions:
 
     async def test_bad_request_error_raises_400(self, service):
         exc = BadRequestError(message="Bad input", response=MagicMock(), body={})
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(side_effect=exc)
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
@@ -405,7 +409,7 @@ class TestEstimateProviderExceptions:
         assert "Bad input" in exc_info.value.message
 
     async def test_connection_error_raises_503(self, service):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=APIConnectionError(request=MagicMock())
             )
@@ -415,7 +419,7 @@ class TestEstimateProviderExceptions:
         assert exc_info.value.error_type == "connection_error"
 
     async def test_internal_server_error_raises_503(self, service):
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=InternalServerError(
                     message="Server error", response=MagicMock(), body={}
@@ -434,7 +438,7 @@ class TestEstimateProviderExceptions:
 class TestEstimateParamRouting:
     async def test_temperature_sent_when_provided(self, service):
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", temperature=0.7)
@@ -442,7 +446,7 @@ class TestEstimateParamRouting:
 
     async def test_top_p_sent_when_provided(self, service):
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", top_p=0.9)
@@ -450,7 +454,7 @@ class TestEstimateParamRouting:
 
     async def test_top_k_sent_when_provided(self, service):
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", top_k=5)
@@ -459,7 +463,7 @@ class TestEstimateParamRouting:
     async def test_top_k_excludes_temperature(self, service):
         """When top_k is set, temperature must NOT be forwarded to the API."""
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", top_k=5, temperature=0.7)
@@ -469,7 +473,7 @@ class TestEstimateParamRouting:
 
     async def test_temperature_not_sent_when_omitted(self, service):
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test")
@@ -490,7 +494,18 @@ class TestEstimateValidation:
             await service.estimate("test", model="nonexistent-model")
 
     async def test_raises_llm_service_error_on_context_overflow(self, service):
-        with patch.object(service, "_count_tokens", return_value=999_999_999):
+        from app.services.helpers.prompt_builder import PromptBuilder
+        from app.services.helpers.error_mapper import LLMServiceError
+        
+        # Patch validate_context_window to raise context overflow error
+        def raise_overflow(*args, **kwargs):
+            raise LLMServiceError(
+                "context_overflow",
+                "Estimated request size exceeds context window.",
+                413,
+            )
+        
+        with patch.object(PromptBuilder, "validate_context_window", side_effect=raise_overflow):
             with pytest.raises(LLMServiceError) as exc_info:
                 await service.estimate("test")
         assert exc_info.value.status_code == 413
@@ -505,7 +520,7 @@ class TestMultiTurn:
     async def test_single_turn_sends_only_current_message(self, service):
         """continue_conversation=False → messages contains only the new user message."""
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("First call", continue_conversation=False)
@@ -515,7 +530,7 @@ class TestMultiTurn:
     async def test_first_continue_true_sends_single_message(self, service):
         """First call with continue_conversation=True — history empty, single message sent."""
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("Turn one", continue_conversation=True)
@@ -526,7 +541,7 @@ class TestMultiTurn:
         """Second call with continue_conversation=True includes [user, assistant, user]."""
         resp1 = _make_response_mock(output_text="Answer one", response_id="id1")
         resp2 = _make_response_mock(output_text="Answer two", response_id="id2")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(side_effect=[resp1, resp2])
             mock_client.return_value.messages.create = create_mock
             await service.estimate("Turn one", continue_conversation=True)
@@ -543,7 +558,7 @@ class TestMultiTurn:
             _make_response_mock(output_text=f"Answer {i}", response_id=f"id{i}")
             for i in range(3)
         ]
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(side_effect=responses)
             mock_client.return_value.messages.create = create_mock
             for i in range(3):
@@ -557,7 +572,7 @@ class TestMultiTurn:
     async def test_reset_clears_conversation_history(self, service):
         """reset() must wipe the history so the next turn starts from scratch."""
         resp1 = _make_response_mock(output_text="Answer one")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=resp1)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("Turn one", continue_conversation=True)
@@ -565,7 +580,7 @@ class TestMultiTurn:
         service.reset()
         assert service._conversation_history == []
         resp2 = _make_response_mock(output_text="Fresh start")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=resp2)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("After reset", continue_conversation=True)
@@ -574,7 +589,7 @@ class TestMultiTurn:
 
     async def test_history_not_updated_on_api_error(self, service):
         """If the API call fails, conversation history must remain unchanged."""
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(
                 side_effect=RateLimitError(
                     message="Rate limit", response=MagicMock(), body={}
@@ -587,7 +602,7 @@ class TestMultiTurn:
     async def test_continue_false_does_not_append_to_history(self, service):
         """continue_conversation=False must not update conversation history."""
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("Single shot", continue_conversation=False)
@@ -597,7 +612,7 @@ class TestMultiTurn:
         """Even if history exists, continue_conversation=False sends only the new message."""
         resp1 = _make_response_mock(output_text="Answer one")
         resp2 = _make_response_mock(output_text="Answer two")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(side_effect=[resp1, resp2])
             mock_client.return_value.messages.create = create_mock
             await service.estimate("Turn one", continue_conversation=True)
@@ -606,16 +621,17 @@ class TestMultiTurn:
         assert messages == [{"role": "user", "content": "Single shot"}]
 
     async def test_token_estimate_includes_history_chars(self, service):
-        """_count_tokens must account for conversation history in the estimate."""
+        """_create_token_counter must account for conversation history in the estimate."""
         service._conversation_history = [
             {"role": "user", "content": "a" * 700},
             {"role": "assistant", "content": "b" * 700},
         ]
+        counter = service._create_token_counter()
         history_chars = 1400
         sys_chars = 10
         user_chars = 10
         expected = max(1, math.ceil((sys_chars + history_chars + user_chars) / _CHARS_PER_TOKEN))
-        result = service._count_tokens("a" * sys_chars, "b" * user_chars, DEFAULT_MODEL)
+        result = counter.count_tokens("a" * sys_chars, "b" * user_chars, DEFAULT_MODEL)
         assert result == expected
 
     async def test_history_grows_with_each_turn(self, service):
@@ -624,7 +640,7 @@ class TestMultiTurn:
             _make_response_mock(output_text=f"A{i}", response_id=f"id{i}")
             for i in range(3)
         ]
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(side_effect=responses)
             mock_client.return_value.messages.create = create_mock
             for i in range(3):
@@ -650,7 +666,7 @@ class TestExtendedThinking:
     async def test_thinking_param_sent_for_reasoning_model(self, service):
         """_build_api_params must include thinking block for reasoning models."""
         mock_response = _make_response_mock(thinking_text="I reason...")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", model=self.REASONING_MODEL)
@@ -663,7 +679,7 @@ class TestExtendedThinking:
     async def test_thinking_always_uses_high_effort(self, service):
         """Reasoning models always force effort=high regardless of reasoning_effort arg."""
         mock_response = _make_response_mock(thinking_text="I reason...")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", model=self.REASONING_MODEL, reasoning_effort="low")
@@ -672,7 +688,7 @@ class TestExtendedThinking:
     async def test_max_tokens_forced_to_8000_for_reasoning_model(self, service):
         """Reasoning models always use max_tokens=8000 regardless of caller value."""
         mock_response = _make_response_mock(thinking_text="I reason...")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", model=self.REASONING_MODEL, max_output_tokens=1024)
@@ -681,7 +697,7 @@ class TestExtendedThinking:
     async def test_temperature_not_sent_for_reasoning_model(self, service):
         """Extended Thinking is incompatible with custom temperature."""
         mock_response = _make_response_mock(thinking_text="I reason...")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", model=self.REASONING_MODEL, temperature=0.7)
@@ -696,7 +712,7 @@ class TestExtendedThinking:
             output_text="Final answer here.",
             thinking_text="Let me think step by step...",
         )
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
         assert result["estimation"] == "Final answer here."
@@ -707,7 +723,7 @@ class TestExtendedThinking:
             thinking_text="Some reasoning...",
             thinking_tokens=312,
         )
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
         assert result["reasoning_tokens"] == 312
@@ -716,7 +732,7 @@ class TestExtendedThinking:
         """reasoning_tokens is None when usage.thinking_tokens is absent and no thinking blocks."""
         mock_response = _make_response_mock()  # no thinking_text
         mock_response.usage.thinking_tokens = None
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
         assert result["reasoning_tokens"] is None
@@ -726,7 +742,7 @@ class TestExtendedThinking:
         thinking_text = "a" * 350  # 350 chars / 3.5 = 100 tokens
         mock_response = _make_response_mock(thinking_text=thinking_text)
         mock_response.usage.thinking_tokens = None
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("test", model=self.REASONING_MODEL)
         assert result["reasoning_tokens"] == max(1, math.ceil(350 / _CHARS_PER_TOKEN))
@@ -734,7 +750,7 @@ class TestExtendedThinking:
     async def test_non_reasoning_model_has_no_thinking_param(self, service):
         """Non-reasoning models must NOT receive the thinking parameter."""
         mock_response = _make_response_mock()
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             create_mock = AsyncMock(return_value=mock_response)
             mock_client.return_value.messages.create = create_mock
             await service.estimate("test", model="claude-sonnet-4-6")
@@ -749,7 +765,7 @@ class TestPromptCaching:
     async def test_cache_tokens_zero_when_absent_from_usage(self, service):
         """When the API returns no cache fields, both cache token counts must be 0."""
         mock_response = _make_response_mock()  # cache fields default to 0
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["cache_creation_tokens"] == 0
@@ -758,7 +774,7 @@ class TestPromptCaching:
     async def test_cache_creation_tokens_propagated_to_result(self, service):
         """cache_creation_input_tokens from usage must be exposed in the response dict."""
         mock_response = _make_response_mock(cache_creation_input_tokens=1_200)
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["cache_creation_tokens"] == 1_200
@@ -766,7 +782,7 @@ class TestPromptCaching:
     async def test_cache_read_tokens_propagated_to_result(self, service):
         """cache_read_input_tokens from usage must be exposed in the response dict."""
         mock_response = _make_response_mock(cache_read_input_tokens=4_500)
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["cache_read_tokens"] == 4_500
@@ -789,7 +805,7 @@ class TestPromptCaching:
             / 1_000_000,
             8,
         )
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["turn_cost_usd"] == expected
@@ -812,7 +828,7 @@ class TestPromptCaching:
             / 1_000_000,
             8,
         )
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["turn_cost_usd"] == expected
@@ -826,10 +842,10 @@ class TestPromptCaching:
             output_tokens=0,
             cache_read_input_tokens=tokens,
         )
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_no_cache)
             result_no_cache = await service.estimate("test")
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_cached)
             result_cached = await service.estimate("test")
         assert result_cached["turn_cost_usd"] < result_no_cache["turn_cost_usd"]
@@ -841,7 +857,7 @@ class TestPromptCaching:
         expected = round(
             (800 * info.input_price + 300 * info.output_price) / 1_000_000, 8
         )
-        with patch("app.services.anthropic_llm_service._get_client") as mock_client:
+        with patch("app.services.llm.anthropic._get_client") as mock_client:
             mock_client.return_value.messages.create = AsyncMock(return_value=mock_response)
             result = await service.estimate("Build a simple API")
         assert result["turn_cost_usd"] == expected

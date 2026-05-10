@@ -7,11 +7,11 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from app.config import settings
-from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
-from app.services.base_llm_service import LLMServiceError
-from app.services.cache_service import CachedLLMService
-from app.services.evaluation import evaluate_estimation_structure
-from app.services.factory import create_llm_service
+from app.schemas.estimation import DetailLevel, ExampleFormat, OutputFormat, ProjectType
+from app.services.llm.base import LLMServiceError
+from app.services.cache.cache_service import CachedLLMService
+from app.services.helpers.evaluation import evaluate_estimation_structure
+from app.services.llm.factory import create_llm_service
 
 # ── Provider / model registry (mirrors service registries) ───────────────────
 
@@ -502,6 +502,12 @@ with st.form("estimation_form"):
             options=list(OutputFormat),
             format_func=lambda f: f.value.replace("_", " ").title(),
         )
+    with st.container():
+        example_format = st.selectbox(
+            "Example format (few-shot examples)",
+            options=list(ExampleFormat),
+            format_func=lambda f: f.value.replace("_", " ").title(),
+        )
     submitted = st.form_submit_button("\U0001f4ca Estimate", use_container_width=True)
 
 # ── Messages history ──────────────────────────────────────────────────────────
@@ -523,11 +529,12 @@ if submitted:
         f"**Project type:** {project_type.replace('_', ' ').title()}",
         f"**Detail level:** {detail_level.title()}",
         f"**Output format:** {output_format.value.replace('_', ' ').title()}",
+        f"**Example format:** {example_format.value.replace('_', ' ').title()}",
         "",
         description.strip(),
     ]
     transcript = "\n".join(_context_parts)
-    _call_kwargs["example_format"] = output_format.to_example_format()
+    _call_kwargs["example_format"] = example_format
     st.session_state.messages.append({"role": "user", "content": transcript})
     with st.chat_message("user"):
         st.markdown(transcript)
@@ -536,7 +543,7 @@ if submitted:
         try:
             system_prompt = st.session_state.service._build_system_prompt(
                 transcript,
-                fmt=output_format.to_example_format(),
+                fmt=example_format,
                 num_examples=int(num_examples),
             )
             pre_call_prompt = (

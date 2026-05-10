@@ -11,9 +11,21 @@ from typing_extensions import Unpack
 
 from app.config import settings
 from app.schemas.estimation import ExampleFormat
-from app.services.base_llm_service import BaseLLMService, LLMServiceError, _EstimationKwargs
+from app.services.llm.base import BaseLLMService, LLMServiceError, _EstimationKwargs
 
 log = structlog.get_logger(__name__)
+
+# Redis keys for cache statistics — used by metrics calculations
+CACHE_STAT_KEYS = [
+    "cache:stats:hits",
+    "cache:stats:misses",
+    "cache:stats:cost_avoided_usd",
+    "cache:stats:latency_hit_ms_sum",
+    "cache:stats:latency_hit_count",
+    "cache:stats:latency_miss_ms_sum",
+    "cache:stats:latency_miss_count",
+    "cache:stats:stale_reports",
+]
 
 
 class CachedLLMService(BaseLLMService):
@@ -25,11 +37,11 @@ class CachedLLMService(BaseLLMService):
     """
 
     def __init__(self, inner: BaseLLMService) -> None:
-        super().__init__()
         self._inner = inner
         self._redis: aioredis.Redis | None = None
         self._redis_loop: asyncio.AbstractEventLoop | None = None
         self._ttl: int = settings.cache_ttl
+        super().__init__()
 
     @property
     def _provider_name(self) -> str:
@@ -116,24 +128,16 @@ class CachedLLMService(BaseLLMService):
         except Exception as exc:
             log.warning("cache_metrics_record_error", error=str(exc))
 
-    async def get_metrics(self) -> dict[str, Any]:
-        """Return aggregate cache statistics from Redis."""
-        try:
-            r = self._get_redis()
-            values = await r.mget(
-                "cache:stats:hits",
-                "cache:stats:misses",
-                "cache:stats:cost_avoided_usd",
-                "cache:stats:latency_hit_ms_sum",
-                "cache:stats:latency_hit_count",
-                "cache:stats:latency_miss_ms_sum",
-                "cache:stats:latency_miss_count",
-                "cache:stats:stale_reports",
-            )
-        except Exception as exc:
-            log.warning("cache_metrics_read_error", error=str(exc))
-            return {}
-
+    @staticmethod
+    def _compute_metrics_from_values(values: list) -> dict[str, Any]:
+        """Transform raw Redis values into a metric dict (pure function, testable).
+        
+        Args:
+            values: List of 8 Redis values in CACHE_STAT_KEYS order.
+        
+        Returns:
+            Aggregated cache metrics with computed hit rate, latency, and speedup.
+        """
         hits = int(values[0] or 0)
         misses = int(values[1] or 0)
         total = hits + misses
@@ -164,6 +168,17 @@ class CachedLLMService(BaseLLMService):
             "stale_reports": stale,
             "stale_rate_pct": round(stale / total * 100, 1) if total > 0 else 0.0,
         }
+
+    async def get_metrics(self) -> dict[str, Any]:
+        """Return aggregate cache statistics from Redis."""
+        try:
+            r = self._get_redis()
+            values = await r.mget(*CACHE_STAT_KEYS)
+        except Exception as exc:
+            log.warning("cache_metrics_read_error", error=str(exc))
+            return {}
+
+        return self._compute_metrics_from_values(values)
 
     async def report_stale(self, cache_key: str) -> None:
         """Invalidate a cached entry and increment the stale counter."""
@@ -272,8 +287,8 @@ class CachedLLMService(BaseLLMService):
     def _get_model_info(self, model: str | None):  # type: ignore[override]
         return self._inner._get_model_info(model)
 
-    def _count_tokens(self, system_prompt: str, user_message: str, model: str) -> int:
-        return self._inner._count_tokens(system_prompt, user_message, model)
+    def _create_token_counter(self):
+        return self._inner._create_token_counter()
 
     def _build_api_params(self, **kwargs: Any) -> dict[str, Any]:  # type: ignore[override]
         return self._inner._build_api_params(**kwargs)

@@ -161,9 +161,9 @@ def render_estimation_prompt(
     return system_prompt, user_prompt
 
 
-def render_pre_call_prompt(transcription: str, version: str = "v1") -> tuple[str, str]:
-    """Render the system and user prompts for the pre-call requirements extraction."""
-    template_root = f"pre_call/{version}"
+def render_requirements_extraction_prompt(transcription: str, version: str = "v1") -> tuple[str, str]:
+    """Render the system and user prompts for requirements extraction from transcription."""
+    template_root = f"requirements_extraction/{version}"
     system_template = _ENV.get_template(f"{template_root}/system.j2")
     user_template = _ENV.get_template(f"{template_root}/user.j2")
 
@@ -172,3 +172,7 @@ def render_pre_call_prompt(transcription: str, version: str = "v1") -> tuple[str
     system_prompt = system_template.render(**context).strip()
     user_prompt = user_template.render(**context).strip()
     return system_prompt, user_prompt
+
+
+# Deprecated alias for backward compatibility
+render_pre_call_prompt = render_requirements_extraction_prompt

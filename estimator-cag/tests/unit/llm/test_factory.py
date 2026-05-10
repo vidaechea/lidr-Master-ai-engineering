@@ -1,9 +1,9 @@
 """Unit tests for app.services.factory."""
 from app.config import settings
-from app.services.anthropic_llm_service import AnthropicLLMService
-from app.services.factory import create_llm_service
-from app.services.litellm_router_service import LiteLLMRouterService
-from app.services.openai_llm_service import OpenAILLMService
+from app.services.llm.anthropic import AnthropicLLMService
+from app.services.llm.factory import create_llm_service
+from app.services.llm.litellm import LiteLLMRouterService
+from app.services.llm.openai import OpenAILLMService
 
 
 def test_create_llm_service_returns_openai(monkeypatch) -> None:

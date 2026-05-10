@@ -12,7 +12,9 @@ from openai import (
 )
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
+from app.services.llm.base import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
+from app.services.helpers.error_mapper import ErrorMapper
+from app.services.helpers.token_counter import TokenCounter
 
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
@@ -107,13 +109,51 @@ def _get_client() -> AsyncOpenAI:
 
 
 # --------------------------------------------------------------------------- #
+# OpenAI token counter
+# --------------------------------------------------------------------------- #
+class OpenAITokenCounter(TokenCounter):
+    """Token counter for OpenAI models using tiktoken."""
+
+    def count_tokens(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: str,
+    ) -> int:
+        """Count tokens using the appropriate tiktoken encoding.
+        
+        Args:
+            system_prompt: The system/context prompt.
+            user_message: The user-provided message.
+            model: The model name to determine encoding.
+        
+        Returns:
+            Estimated token count including message overhead and priming.
+        """
+        encoding_name = MODELS[model].encoding if model in MODELS else None
+        if encoding_name:
+            encoding = tiktoken.get_encoding(encoding_name)
+        else:
+            try:
+                encoding = tiktoken.encoding_for_model(model)
+            except KeyError:
+                encoding = tiktoken.get_encoding("cl100k_base")
+
+        tokens = 0
+        for text in (system_prompt, user_message):
+            tokens += len(encoding.encode(text)) + _MSG_OVERHEAD
+        tokens += _PRIMING_TOKENS
+        return tokens
+
+
+# --------------------------------------------------------------------------- #
 # OpenAI implementation
 # --------------------------------------------------------------------------- #
 class OpenAILLMService(BaseLLMService):
     """LLM service implementation backed by the OpenAI Responses API."""
 
     _ERROR_MAPPING = {
-        **BaseLLMService._build_provider_error_mapping(
+        **ErrorMapper.build_provider_error_mapping(
             provider_label="OpenAI",
             auth_error_type=AuthenticationError,
             rate_limit_type=RateLimitError,
@@ -138,26 +178,9 @@ class OpenAILLMService(BaseLLMService):
             )
         return resolved, info
 
-    def _count_tokens(
-        self,
-        system_prompt: str,
-        user_message: str,
-        model: str,
-    ) -> int:
-        encoding_name = MODELS[model].encoding if model in MODELS else None
-        if encoding_name:
-            encoding = tiktoken.get_encoding(encoding_name)
-        else:
-            try:
-                encoding = tiktoken.encoding_for_model(model)
-            except KeyError:
-                encoding = tiktoken.get_encoding("cl100k_base")
-
-        tokens = 0
-        for text in (system_prompt, user_message):
-            tokens += len(encoding.encode(text)) + _MSG_OVERHEAD
-        tokens += _PRIMING_TOKENS
-        return tokens
+    def _create_token_counter(self) -> TokenCounter:
+        """Create a token counter for OpenAI models."""
+        return OpenAITokenCounter()
 
     def _build_api_params(
         self,
@@ -190,8 +213,8 @@ class OpenAILLMService(BaseLLMService):
             elif top_p is not None:
                 params["top_p"] = top_p
 
-        if continue_conversation and self._last_response_id:
-            params["previous_response_id"] = self._last_response_id
+        if continue_conversation and self._conversation_state.last_response_id:
+            params["previous_response_id"] = self._conversation_state.last_response_id
 
         return params
 
@@ -205,7 +228,7 @@ class OpenAILLMService(BaseLLMService):
             APIConnectionError,
             InternalServerError,
         ) as exc:
-            self._raise_service_error(exc, self._ERROR_MAPPING)
+            ErrorMapper.map_exception(exc, self._ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
@@ -258,7 +281,7 @@ class OpenAILLMService(BaseLLMService):
             APIConnectionError,
             InternalServerError,
         ) as exc:
-            self._raise_service_error(exc, self._ERROR_MAPPING)
+            ErrorMapper.map_exception(exc, self._ERROR_MAPPING)
 
         if final_response is None:
             raise LLMServiceError(

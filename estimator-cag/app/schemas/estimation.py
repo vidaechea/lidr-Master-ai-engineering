@@ -3,13 +3,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
-
 from app.config import LLMModel
-
 from app.config import settings as _settings
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
-
 
 def _load_example_transcription(fixture: str | None, fixtures_dir: Path = _FIXTURES_DIR) -> str | None:
     if not fixture:
@@ -17,7 +14,6 @@ def _load_example_transcription(fixture: str | None, fixtures_dir: Path = _FIXTU
     return (fixtures_dir / f"{fixture}_transcription.txt").read_text(encoding="utf-8")
 
 _EXAMPLE_TRANSCRIPTION = _load_example_transcription(_settings.example_fixture)
-
 
 @dataclass
 class EstimationExample:
@@ -31,7 +27,6 @@ class EstimationExample:
     team: list[str]
     duration_weeks: int
     estimation_markdown: str
-
 
 class ProjectType(str, Enum):
     MOBILE_APP = "mobile_app"
@@ -53,18 +48,6 @@ class OutputFormat(str, Enum):
     PHASES_TABLE = "phases_table"
     LINE_ITEMS = "line_items"
     NARRATIVE = "narrative"
-    MARKDOWN = "markdown"
-    JSON = "json"
-
-    def to_example_format(self) -> "ExampleFormat":
-        _map: dict["OutputFormat", ExampleFormat] = {
-            OutputFormat.PHASES_TABLE: ExampleFormat.MARKDOWN,
-            OutputFormat.LINE_ITEMS: ExampleFormat.MARKDOWN,
-            OutputFormat.NARRATIVE: ExampleFormat.NARRATIVE,
-            OutputFormat.MARKDOWN: ExampleFormat.MARKDOWN,
-            OutputFormat.JSON: ExampleFormat.JSON,
-        }
-        return _map[self]
 
 class ExampleItem(BaseModel):
     title: str
@@ -84,6 +67,9 @@ class EstimationRequest(BaseModel):
                 "reasoning_effort": "medium",
                 "max_output_tokens": 2048,
                 "pre_call": False,
+                "output_format": "phases_table",
+                "example_format": "markdown",
+                "num_examples": 3,
             }
         }
     )
@@ -137,12 +123,11 @@ class EstimationRequest(BaseModel):
     )
     output_format: OutputFormat = Field(
         default=OutputFormat.PHASES_TABLE,
-        description=(
-            "Desired output structure for the estimation. "
-            "'phases_table' and 'markdown' produce a table-based estimate, "
-            "'line_items' and 'json' produce a structured breakdown, "
-            "'narrative' produces plain prose."
-        ),
+        description="Desired output structure for the estimation.",
+    )
+    example_format: ExampleFormat = Field(
+        default=ExampleFormat.MARKDOWN,
+        description="Format of few-shot examples to include in the system prompt.",
     )
     num_examples: int = Field(
         default=3,

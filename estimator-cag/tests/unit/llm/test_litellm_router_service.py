@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.services.base_llm_service import BaseLLMService, LLMServiceError
-from app.services.litellm_router_service import (
+from app.services.llm.base import BaseLLMService, LLMServiceError
+from app.services.llm.litellm import (
     LOGICAL_MODEL,
     _FALLBACK_MODEL,
     LiteLLMRouterService,
@@ -159,14 +159,16 @@ class TestGetModelInfo:
 class TestCountTokens:
     def test_returns_positive_integer(self):
         service = LiteLLMRouterService()
-        tokens = service._count_tokens("You are an expert.", "Build a CRUD app.", LOGICAL_MODEL)
+        counter = service._create_token_counter()
+        tokens = counter.count_tokens("You are an expert.", "Build a CRUD app.", LOGICAL_MODEL)
         assert isinstance(tokens, int)
         assert tokens > 0
 
     def test_longer_input_produces_more_tokens(self):
         service = LiteLLMRouterService()
-        short = service._count_tokens("system", "short text", LOGICAL_MODEL)
-        long = service._count_tokens("system", "short text " * 200, LOGICAL_MODEL)
+        counter = service._create_token_counter()
+        short = counter.count_tokens("system", "short text", LOGICAL_MODEL)
+        long = counter.count_tokens("system", "short text " * 200, LOGICAL_MODEL)
         assert long > short
 
 

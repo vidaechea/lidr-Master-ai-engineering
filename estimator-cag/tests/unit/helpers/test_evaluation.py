@@ -1,7 +1,7 @@
 """Unit tests for app.services.evaluation — pure regex/parsing, no I/O."""
 import pytest
 
-from app.services.evaluation import _to_int, evaluate_estimation_structure
+from app.services.helpers.evaluation import _to_int, evaluate_estimation_structure
 
 # --------------------------------------------------------------------------- #
 # Fixtures: estimation texts

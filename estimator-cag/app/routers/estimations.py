@@ -3,10 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from app.config import settings
 from app.prompts.loader import get_examples, render_estimation_prompt
-from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem, OutputFormat
-from app.services.base_llm_service import BaseLLMService, LLMServiceError
-from app.services.evaluation import evaluate_estimation_structure
-from app.services.factory import create_llm_service
+from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem, ExampleFormat
+from app.services.llm.base import BaseLLMService, LLMServiceError
+from app.services.helpers.evaluation import evaluate_estimation_structure
+from app.services.llm.factory import create_llm_service
 
 log = structlog.get_logger(__name__)
 
@@ -14,6 +14,34 @@ router = APIRouter(prefix="", tags=["estimations"])
 
 def get_llm_service() -> BaseLLMService:
     return create_llm_service()
+
+def _build_estimate_params(request: EstimationRequest) -> dict:
+    """Build common parameters for LLM service calls."""
+    system_prompt, user_prompt = render_estimation_prompt(request, version=settings.prompt_version)
+    return {
+        "transcription": request.transcription,
+        "model": request.model,
+        "temperature": request.temperature,
+        "top_p": request.top_p,
+        "top_k": request.top_k,
+        "reasoning_effort": request.reasoning_effort,
+        "max_output_tokens": request.max_output_tokens,
+        "pre_call": request.pre_call,
+        "example_format": request.example_format,
+        "num_examples": request.num_examples,
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+    }
+
+def _handle_estimate_error(exc: LLMServiceError, context: str) -> None:
+    """Log and raise HTTP exception for LLM service errors."""
+    log.warning(
+        f"{context}_failed",
+        error_type=exc.error_type,
+        status_code=exc.status_code,
+        detail=exc.message,
+    )
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
 @router.get("/examples", response_model=list[ExampleItem])
 def get_examples_endpoint():
@@ -32,31 +60,11 @@ async def create_estimation(
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
     
-    system_prompt, user_prompt = render_estimation_prompt(request, version=settings.prompt_version)
-    
     try:
-        result = await service.estimate(
-            request.transcription,
-            model=request.model,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            top_k=request.top_k,
-            reasoning_effort=request.reasoning_effort,
-            max_output_tokens=request.max_output_tokens,
-            pre_call=request.pre_call,
-            example_format=request.output_format.to_example_format(),
-            num_examples=request.num_examples,
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-        )
+        result = await service.estimate(**_build_estimate_params(request))
     except LLMServiceError as exc:
-        log.warning(
-            "estimation_failed",
-            error_type=exc.error_type,
-            status_code=exc.status_code,
-            detail=exc.message,
-        )
-        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+        _handle_estimate_error(exc, "estimation")
+    
     log.info(
         "estimation_completed",
         model=result["model"],
@@ -81,32 +89,17 @@ async def create_estimation_stream(
     transcription_length = len(request.transcription)
     log.info("estimation_stream_requested", transcription_chars=transcription_length)
     
-    system_prompt, user_prompt = render_estimation_prompt(request, version=settings.prompt_version)
+    params = _build_estimate_params(request)
 
     async def generate():
         try:
-            async for delta in service.estimate_stream(
-                request.transcription,
-                model=request.model,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                top_k=request.top_k,
-                reasoning_effort=request.reasoning_effort,
-                max_output_tokens=request.max_output_tokens,
-                pre_call=request.pre_call,
-                example_format=request.output_format.to_example_format(),
-                num_examples=request.num_examples,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-            ):
+            async for delta in service.estimate_stream(**params):
                 yield delta
         except LLMServiceError as exc:
-            log.warning(
-                "estimation_stream_failed",
-                error_type=exc.error_type,
-                status_code=exc.status_code,
-                detail=exc.message,
-            )
-            raise HTTPException(status_code=exc.status_code, detail=exc.message)
+            _handle_estimate_error(exc, "estimation_stream")
 
-    return StreamingResponse(generate(), media_type="text/plain")
+    return StreamingResponse(
+        generate(),
+        media_type="text/plain",
+        headers={"X-Prompt-Version": settings.prompt_version},
+    )

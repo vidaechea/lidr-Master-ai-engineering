@@ -19,7 +19,7 @@ class TestRenderEstimationPrompt:
         """Provide a basic estimation request for testing."""
         return EstimationRequest(
             transcription="Test project description for estimation.",
-            output_format=OutputFormat.MARKDOWN,
+            output_format=OutputFormat.PHASES_TABLE,
             num_examples=3,
         )
 
@@ -52,11 +52,6 @@ class TestRenderEstimationPrompt:
         basic_request.output_format = OutputFormat.NARRATIVE
         system, _ = render_estimation_prompt(basic_request)
         assert "narrative" in system.lower() or "prose" in system.lower()
-
-    def test_system_prompt_with_json_format(self, basic_request):
-        basic_request.output_format = OutputFormat.JSON
-        system, _ = render_estimation_prompt(basic_request)
-        assert "json" in system.lower()
 
     def test_system_prompt_with_summary_detail_level(self, basic_request):
         basic_request.detail_level = DetailLevel.SUMMARY
@@ -111,11 +106,11 @@ class TestRenderEstimationPrompt:
 
     def test_multiple_calls_with_different_formats(self, basic_request):
         """Test that different formats produce different prompts."""
-        basic_request.output_format = OutputFormat.MARKDOWN
-        system_md, _ = render_estimation_prompt(basic_request)
+        basic_request.output_format = OutputFormat.PHASES_TABLE
+        system_phases, _ = render_estimation_prompt(basic_request)
 
-        basic_request.output_format = OutputFormat.JSON
-        system_json, _ = render_estimation_prompt(basic_request)
+        basic_request.output_format = OutputFormat.LINE_ITEMS
+        system_items, _ = render_estimation_prompt(basic_request)
 
         # Prompts should be different for different formats
-        assert system_md != system_json
+        assert system_phases != system_items
