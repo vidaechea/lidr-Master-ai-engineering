@@ -140,12 +140,17 @@ def render_estimation_prompt(
     system_template = _ENV.get_template(f"{template_root}/system.j2")
     user_template = _ENV.get_template(f"{template_root}/user.j2")
 
+    examples = get_examples(version)
+    selected_examples = examples[: request.num_examples]
+    formatted_examples = format_examples_for_prompt(selected_examples, fmt=request.example_format)
+
     context = {
         "output_format": request.output_format.value,
         "detail_level": request.detail_level.value if request.detail_level else None,
         "project_description": request.transcription,
         "project_type": request.project_type.value if request.project_type else None,
         "num_examples": request.num_examples,
+        "examples": formatted_examples,
     }
 
     system_prompt = system_template.render(**context).strip()

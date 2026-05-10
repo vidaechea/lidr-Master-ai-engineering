@@ -29,5 +29,7 @@ Detail level: balanced.
 - Use a moderate level of detail suitable for scoping.
 {% endif %}
 
+{% if num_examples > 0 %}
 Few-shot examples:
-{% include "estimation/v1/examples.j2" %}
+{{ examples }}
+{% endif %}

@@ -571,6 +571,7 @@ if submitted:
         detail_level=DetailLevel(detail_level),
         project_type=ProjectType(project_type),
         num_examples=int(num_examples),
+        example_format=example_format,
     )
     _system_prompt, _user_prompt = render_estimation_prompt(_version_req, version=prompt_version)
     _call_kwargs["system_prompt"] = _system_prompt
