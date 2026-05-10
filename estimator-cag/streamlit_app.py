@@ -418,8 +418,8 @@ with st.expander("LLM Options", expanded=False):
         if sampling_mode == "temperature":
             temperature = st.slider(
                 "Temperature",
-                min_value=0.0, max_value=2.0, value=1.0, step=0.05,
-                help="Controls randomness. Lower = more deterministic, higher = more creative. Typical range: 0.5–1.2.",
+                min_value=0.0, max_value=1.0, value=0.0, step=0.05,
+                help="Controls randomness. Lower = more deterministic, higher = more creative. Typical range: 0.5–1.0.",
             )
         elif sampling_mode == "top_p":
             top_p = st.slider(
