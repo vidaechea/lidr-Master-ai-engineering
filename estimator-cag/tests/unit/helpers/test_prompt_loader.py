@@ -150,3 +150,85 @@ class TestRenderEstimationPrompt:
         basic_request.detail_level = DetailLevel.SUMMARY
         system_summary, _ = render_estimation_prompt(basic_request)
         assert ASSUMPTION_PHRASE not in system_summary
+
+
+class TestRenderEstimationPromptV2:
+    """Tests specific to the v2 prompt template."""
+
+    @pytest.fixture
+    def basic_request(self):
+        return EstimationRequest(
+            transcription="Build a SaaS analytics dashboard with role-based access.",
+            output_format=OutputFormat.PHASES_TABLE,
+            num_examples=3,
+        )
+
+    def test_v2_renders_without_error(self, basic_request):
+        system, user = render_estimation_prompt(basic_request, version="v2")
+        assert isinstance(system, str)
+        assert isinstance(user, str)
+        assert len(system) > 0
+        assert len(user) > 0
+
+    def test_v2_system_prompt_differs_from_v1(self, basic_request):
+        system_v1, _ = render_estimation_prompt(basic_request, version="v1")
+        system_v2, _ = render_estimation_prompt(basic_request, version="v2")
+        assert system_v1 != system_v2
+
+    def test_v2_system_prompt_contains_confidence_level_instruction(self, basic_request):
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "confidence" in system.lower()
+
+    def test_v2_system_prompt_contains_senior_consultant_role(self, basic_request):
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "consultant" in system.lower() or "senior" in system.lower()
+
+    def test_v2_system_prompt_contains_numbered_rules(self, basic_request):
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "1." in system and "2." in system
+
+    def test_v2_user_prompt_includes_confidence_instruction(self, basic_request):
+        _, user = render_estimation_prompt(basic_request, version="v2")
+        assert "confidence" in user.lower()
+
+    def test_v2_user_prompt_contains_transcription(self, basic_request):
+        _, user = render_estimation_prompt(basic_request, version="v2")
+        assert basic_request.transcription in user
+
+    def test_v2_includes_examples_when_requested(self, basic_request):
+        basic_request.num_examples = 2
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "Example 1" in system
+        assert "Example 2" in system
+
+    def test_v2_example_count_respected(self, basic_request):
+        basic_request.num_examples = 1
+        system_1, _ = render_estimation_prompt(basic_request, version="v2")
+        basic_request.num_examples = 3
+        system_3, _ = render_estimation_prompt(basic_request, version="v2")
+        assert len(system_3) > len(system_1)
+
+    def test_v2_examples_contain_confidence_level(self, basic_request):
+        basic_request.num_examples = 1
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "Confidence Level" in system
+
+    def test_v2_output_format_phases_table_renders(self, basic_request):
+        basic_request.output_format = OutputFormat.PHASES_TABLE
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "phases" in system.lower() or "phase" in system.lower()
+
+    def test_v2_output_format_json_renders(self, basic_request):
+        basic_request.output_format = OutputFormat.LINE_ITEMS
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "line" in system.lower() or "items" in system.lower()
+
+    def test_v2_detail_level_detailed_renders(self, basic_request):
+        basic_request.detail_level = DetailLevel.DETAILED
+        system, _ = render_estimation_prompt(basic_request, version="v2")
+        assert "granular" in system.lower() or "detailed" in system.lower()
+
+    def test_v2_prompts_are_trimmed(self, basic_request):
+        system, user = render_estimation_prompt(basic_request, version="v2")
+        assert not system.endswith("\n\n")
+        assert not user.endswith("\n\n")

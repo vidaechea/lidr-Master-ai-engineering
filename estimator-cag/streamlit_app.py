@@ -7,7 +7,8 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from app.config import settings
-from app.schemas.estimation import DetailLevel, ExampleFormat, OutputFormat, ProjectType
+from app.prompts.loader import render_estimation_prompt
+from app.schemas.estimation import DetailLevel, ExampleFormat, EstimationRequest, OutputFormat, ProjectType
 from app.services.llm.base import LLMServiceError
 from app.services.cache.cache_service import CachedLLMService
 from app.services.helpers.evaluation import evaluate_estimation_structure
@@ -476,6 +477,12 @@ with st.expander("LLM Options", expanded=False):
             value=False,
             help="Runs a cheaper pre-processing step to extract structured requirements from the transcript before sending it to the estimator. Improves quality for long or noisy transcripts.",
         )
+        prompt_version = st.selectbox(
+            "Prompt version",
+            options=["v1", "v2"],
+            index=0,
+            help="v1 — standard estimator tone. v2 — senior delivery consultant tone with confidence level.",
+        )
         st.write("")
         if st.button("Clear conversation", use_container_width=True):
             st.session_state.messages = []
@@ -556,17 +563,26 @@ if submitted:
     ]
     transcript = "\n".join(_context_parts)
     _call_kwargs["example_format"] = example_format
+
+    # Render versioned system/user prompts and pass them pre-built to the service
+    _version_req = EstimationRequest(
+        transcription=description.strip(),
+        output_format=output_format,
+        detail_level=DetailLevel(detail_level),
+        project_type=ProjectType(project_type),
+        num_examples=int(num_examples),
+    )
+    _system_prompt, _user_prompt = render_estimation_prompt(_version_req, version=prompt_version)
+    _call_kwargs["system_prompt"] = _system_prompt
+    _call_kwargs["user_prompt"] = _user_prompt
+
     st.session_state.messages.append({"role": "user", "content": transcript})
     with st.chat_message("user"):
         st.markdown(transcript)
 
     with st.chat_message("assistant"):
         try:
-            system_prompt = st.session_state.service._build_system_prompt(
-                transcript,
-                fmt=example_format,
-                num_examples=int(num_examples),
-            )
+            system_prompt = _system_prompt
             pre_call_prompt = (
                 st.session_state.service._build_pre_call_system_prompt(transcript) if pre_call else None
             )

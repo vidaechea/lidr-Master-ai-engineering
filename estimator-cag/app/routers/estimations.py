@@ -1,5 +1,5 @@
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.config import settings
 from app.prompts.loader import get_examples, render_estimation_prompt
@@ -15,9 +15,9 @@ router = APIRouter(prefix="", tags=["estimations"])
 def get_llm_service() -> BaseLLMService:
     return create_llm_service()
 
-def _build_estimate_params(request: EstimationRequest) -> dict:
+def _build_estimate_params(request: EstimationRequest, prompt_version: str) -> dict:
     """Build common parameters for LLM service calls."""
-    system_prompt, user_prompt = render_estimation_prompt(request, version=settings.prompt_version)
+    system_prompt, user_prompt = render_estimation_prompt(request, version=prompt_version)
     return {
         "transcription": request.transcription,
         "model": request.model,
@@ -56,12 +56,13 @@ def get_examples_endpoint():
 async def create_estimation(
     request: EstimationRequest,
     service: BaseLLMService = Depends(get_llm_service),
+    prompt_version: str = Query(default=settings.prompt_version, description="Prompt template version to use (e.g. v1, v2)"),
 ) -> EstimationResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
     
     try:
-        result = await service.estimate(**_build_estimate_params(request))
+        result = await service.estimate(**_build_estimate_params(request, prompt_version))
     except LLMServiceError as exc:
         _handle_estimate_error(exc, "estimation")
     
@@ -78,18 +79,19 @@ async def create_estimation(
         if request.evaluate
         else None
     )
-    return EstimationResponse(**result, validation=validation, prompt_version=settings.prompt_version)
+    return EstimationResponse(**result, validation=validation, prompt_version=prompt_version)
 
 
 @router.post("/estimate/stream")
 async def create_estimation_stream(
     request: EstimationRequest,
     service: BaseLLMService = Depends(get_llm_service),
+    prompt_version: str = Query(default=settings.prompt_version, description="Prompt template version to use (e.g. v1, v2)"),
 ) -> StreamingResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_stream_requested", transcription_chars=transcription_length)
     
-    params = _build_estimate_params(request)
+    params = _build_estimate_params(request, prompt_version)
 
     async def generate():
         try:
@@ -101,5 +103,5 @@ async def create_estimation_stream(
     return StreamingResponse(
         generate(),
         media_type="text/plain",
-        headers={"X-Prompt-Version": settings.prompt_version},
+        headers={"X-Prompt-Version": prompt_version},
     )

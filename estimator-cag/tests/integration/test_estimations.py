@@ -575,3 +575,98 @@ class TestOutputFormat:
                 json={"transcription": VALID_TRANSCRIPTION},
             )
         assert response.status_code == 200
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/v1/estimate — prompt_version query parameter
+# --------------------------------------------------------------------------- #
+class TestPromptVersion:
+    def test_v1_returns_200(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v1",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200
+
+    def test_v2_returns_200(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200
+
+    def test_v2_response_contains_prompt_version_field(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.json()["prompt_version"] == "v2"
+
+    def test_v1_response_contains_prompt_version_field(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v1",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.json()["prompt_version"] == "v1"
+
+    def test_default_prompt_version_is_v1(self, client: TestClient):
+        """Omitting prompt_version should default to v1."""
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.json()["prompt_version"] == "v1"
+
+    def test_v1_and_v2_produce_different_system_prompts(self, client: TestClient):
+        """Requests with different prompt_version should call the API with different system prompts."""
+        from unittest.mock import call
+
+        create_mock_v1 = AsyncMock(return_value=_make_responses_mock())
+        create_mock_v2 = AsyncMock(return_value=_make_responses_mock())
+
+        with patch(
+            "app.services.llm.openai._get_client",
+            return_value=MagicMock(responses=MagicMock(create=create_mock_v1)),
+        ):
+            client.post(
+                "/api/v1/estimate?prompt_version=v1",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        system_v1 = create_mock_v1.call_args[1]["instructions"]
+
+        with patch(
+            "app.services.llm.openai._get_client",
+            return_value=MagicMock(responses=MagicMock(create=create_mock_v2)),
+        ):
+            client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        system_v2 = create_mock_v2.call_args[1]["instructions"]
+
+        assert system_v1 != system_v2
+
+    def test_v2_system_prompt_contains_confidence_instruction(self, client: TestClient):
+        """v2 template should inject a confidence-level requirement into the system prompt."""
+        create_mock = AsyncMock(return_value=_make_responses_mock())
+
+        with patch(
+            "app.services.llm.openai._get_client",
+            return_value=MagicMock(responses=MagicMock(create=create_mock)),
+        ):
+            client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        system_prompt = create_mock.call_args[1]["instructions"]
+        assert "confidence" in system_prompt.lower()
