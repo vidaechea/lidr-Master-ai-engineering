@@ -23,14 +23,14 @@ async def _read_stats() -> dict:
     return CachedLLMService._compute_metrics_from_values(values)
 
 
-@router.get("/metrics")
+@router.get("/metrics", responses={400: {"description": "Cache not enabled"}})
 async def get_cache_metrics():
     if not settings.cache_enabled:
         raise HTTPException(status_code=400, detail="Cache not enabled")
     return await _read_stats()
 
 
-@router.post("/stale/{key_hash}")
+@router.post("/stale/{key_hash}", responses={400: {"description": "Cache not enabled"}})
 async def report_stale_entry(key_hash: str):
     if not settings.cache_enabled:
         raise HTTPException(status_code=400, detail="Cache not enabled")

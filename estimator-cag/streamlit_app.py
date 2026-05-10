@@ -245,9 +245,9 @@ def _render_details(meta: dict, session_id: str) -> None:
                 ):
                     svc = st.session_state.get("service")
                     if isinstance(svc, CachedLLMService):
-                        loop = asyncio.new_event_loop()
-                        loop.run_until_complete(svc.report_stale(cache_key))
-                        loop.close()
+                        asyncio.run_coroutine_threadsafe(
+                            svc.report_stale(cache_key), _get_event_loop()
+                        ).result()
                     st.session_state[stale_flag_key] = True
                     st.rerun()
 
@@ -268,9 +268,9 @@ def _render_cache_metrics_sidebar() -> None:
         if st.button("🔄 Refresh", key="cache_metrics_refresh"):
             st.session_state.pop("_cache_metrics", None)
         if "_cache_metrics" not in st.session_state:
-            loop = asyncio.new_event_loop()
-            st.session_state["_cache_metrics"] = loop.run_until_complete(svc.get_metrics())
-            loop.close()
+            st.session_state["_cache_metrics"] = asyncio.run_coroutine_threadsafe(
+                svc.get_metrics(), _get_event_loop()
+            ).result()
         m = st.session_state["_cache_metrics"]
         if not m:
             st.caption("Redis no disponible.")
@@ -292,16 +292,40 @@ def _render_cache_metrics_sidebar() -> None:
         c8.metric("Stale rate", f"{m['stale_rate_pct']} %")
 
 
+def _get_event_loop() -> asyncio.AbstractEventLoop:
+    """Return the persistent background event loop for this Streamlit session.
+
+    A single event loop is kept alive in a dedicated daemon thread for the
+    entire session so that the LLM HTTP clients can reuse their TLS connections
+    across calls (connection pooling).  Creating a new loop per request via
+    ``asyncio.run()`` would invalidate the pool on every estimation.
+    """
+    if "_bg_loop" not in st.session_state:
+        loop = asyncio.new_event_loop()
+
+        def _run(lp: asyncio.AbstractEventLoop) -> None:
+            lp.run_forever()
+
+        t = threading.Thread(target=_run, args=(loop,), daemon=True)
+        t.start()
+        st.session_state["_bg_loop"] = loop
+
+    return st.session_state["_bg_loop"]
+
+
 def _sync_stream(service, transcript: str, kwargs: dict) -> Generator[str, None, None]:
     """Bridge between the async estimate_stream generator and st.write_stream.
 
-    Runs the async generator in a background thread so that Streamlit's
-    synchronous main thread can consume deltas via a queue.
-    A sentinel ``None`` value signals that the stream is finished.
+    Schedules the async generator on the persistent background event loop so
+    that Streamlit's synchronous main thread can consume deltas via a queue.
+    Reusing the same loop preserves the LLM client's HTTP connection pool,
+    avoiding a TLS handshake on every request.
+    A sentinel object signals that the stream is finished.
     """
     _SENTINEL = object()
     delta_queue: queue.Queue = queue.Queue()
     exc_holder: list[BaseException] = []
+    loop = _get_event_loop()
 
     async def _producer() -> None:
         try:
@@ -312,19 +336,13 @@ def _sync_stream(service, transcript: str, kwargs: dict) -> Generator[str, None,
         finally:
             delta_queue.put(_SENTINEL)
 
-    def _run_loop() -> None:
-        asyncio.run(_producer())
-
-    thread = threading.Thread(target=_run_loop, daemon=True)
-    thread.start()
+    asyncio.run_coroutine_threadsafe(_producer(), loop)
 
     while True:
         item = delta_queue.get()
         if item is _SENTINEL:
             break
         yield item
-
-    thread.join()
 
     if exc_holder:
         raise exc_holder[0]
@@ -338,6 +356,10 @@ if "messages" not in st.session_state:
 if "service" not in st.session_state:
     st.session_state.service = create_llm_service()
     st.session_state.active_provider = settings.llm_provider
+
+# Initialise the persistent background event loop early so it's ready before
+# the first estimation request.
+_get_event_loop()
 
 # ── Page header ───────────────────────────────────────────────────────────────
 
@@ -423,6 +445,11 @@ with st.expander("LLM Options", expanded=False):
             min_value=256, max_value=32_768, value=2_048, step=256,
             help="Hard cap on the number of tokens the model can generate. Higher values allow longer responses but increase cost and latency.",
         )
+        example_format = st.selectbox(
+            "Example format (few-shot examples)",
+            options=list(ExampleFormat),
+            format_func=lambda f: f.value.replace("_", " ").title(),
+        )
         model_supports_reasoning = model in _REASONING_MODELS
         reasoning_effort = st.select_slider(
             "Reasoning effort",
@@ -502,12 +529,6 @@ with st.form("estimation_form"):
             options=list(OutputFormat),
             format_func=lambda f: f.value.replace("_", " ").title(),
         )
-    with st.container():
-        example_format = st.selectbox(
-            "Example format (few-shot examples)",
-            options=list(ExampleFormat),
-            format_func=lambda f: f.value.replace("_", " ").title(),
-        )
     submitted = st.form_submit_button("\U0001f4ca Estimate", use_container_width=True)
 
 # ── Messages history ──────────────────────────────────────────────────────────
@@ -563,11 +584,10 @@ if submitted:
                 }
             else:
                 with st.spinner("Generating estimation…"):
-                    loop = asyncio.new_event_loop()
-                    result = loop.run_until_complete(
-                        st.session_state.service.estimate(transcript, **_call_kwargs)
-                    )
-                    loop.close()
+                    result = asyncio.run_coroutine_threadsafe(
+                        st.session_state.service.estimate(transcript, **_call_kwargs),
+                        _get_event_loop(),
+                    ).result()
                 estimation = result["estimation"]
                 st.markdown(estimation)
                 meta = {k: v for k, v in result.items() if k != "estimation"}

@@ -44,7 +44,6 @@ class _FakeInnerService(BaseLLMService):
 
     async def _call_provider_stream(self, api_params, *, is_reasoning):  # type: ignore[override]
         return
-        yield  # make it a generator
 
     def _parse_provider_response(self, response: Any, *, is_reasoning: bool) -> ParsedResponse:
         return ParsedResponse(
@@ -95,8 +94,7 @@ def _make_service(result: dict[str, Any] | None = None) -> CachedLLMService:
 async def test_cache_miss_calls_inner_service():
     """On first call, inner service must be invoked and result stored in Redis."""
     service = _make_service()
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = None  # cache miss
+    mock_redis, _ = _mock_redis_with_pipeline(get_return=None)  # cache miss
 
     service._redis = mock_redis
     service._redis_loop = asyncio.get_event_loop()
@@ -126,8 +124,7 @@ async def test_cache_hit_skips_inner_service():
         "requirements": None,
         "pre_call_cost_usd": None,
     }
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = json.dumps(stored)
+    mock_redis, _ = _mock_redis_with_pipeline(get_return=json.dumps(stored))
 
     service._redis = mock_redis
     service._redis_loop = asyncio.get_event_loop()
@@ -139,8 +136,8 @@ async def test_cache_hit_skips_inner_service():
     assert result["estimation"] == "cached result"
     assert result["input_tokens"] == 0
     assert result["output_tokens"] == 0
-    assert result["turn_cost_usd"] == 0.0
-    assert result["total_cost_usd"] == 0.0
+    assert result["turn_cost_usd"] == 0
+    assert result["total_cost_usd"] == 0
     mock_redis.setex.assert_not_awaited()
 
 
@@ -187,8 +184,7 @@ async def test_ttl_is_set_on_write(monkeypatch):
     service = _make_service()
     service._ttl = settings.cache_ttl
 
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = None
+    mock_redis, _ = _mock_redis_with_pipeline(get_return=None)
 
     service._redis = mock_redis
     service._redis_loop = asyncio.get_event_loop()
@@ -205,7 +201,7 @@ async def test_ttl_is_set_on_write(monkeypatch):
 async def test_cache_read_error_falls_through_to_inner():
     """If Redis raises on get, the inner service is still called (fail-open)."""
     service = _make_service()
-    mock_redis = AsyncMock()
+    mock_redis, _ = _mock_redis_with_pipeline()
     mock_redis.get.side_effect = ConnectionError("redis down")
     mock_redis.setex.side_effect = ConnectionError("redis down")
 
@@ -230,8 +226,7 @@ async def test_cache_key_has_llm_prefix():
 async def test_stream_cache_miss_sets_cache_hit_false():
     """On a stream cache miss, _last_stream_result must have cache_hit=False."""
     service = _make_service()
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = None
+    mock_redis, _ = _mock_redis_with_pipeline(get_return=None)
     service._redis = mock_redis
     service._redis_loop = asyncio.get_event_loop()
 
@@ -263,8 +258,7 @@ async def test_stream_cache_hit_yields_cached_text_and_skips_inner():
         "pre_call_cost_usd": None,
     }
     service = _make_service()
-    mock_redis = AsyncMock()
-    mock_redis.get.return_value = json.dumps(stored)
+    mock_redis, _ = _mock_redis_with_pipeline(get_return=json.dumps(stored))
     service._redis = mock_redis
     service._redis_loop = asyncio.get_event_loop()
 
@@ -277,8 +271,8 @@ async def test_stream_cache_hit_yields_cached_text_and_skips_inner():
     assert service._last_stream_result["cache_hit"] is True
     assert service._last_stream_result["input_tokens"] == 0
     assert service._last_stream_result["output_tokens"] == 0
-    assert service._last_stream_result["turn_cost_usd"] == 0.0
-    assert service._last_stream_result["total_cost_usd"] == 0.0
+    assert service._last_stream_result["turn_cost_usd"] == 0
+    assert service._last_stream_result["total_cost_usd"] == 0
     mock_redis.setex.assert_not_awaited()
 
 
@@ -288,9 +282,12 @@ async def test_stream_cache_hit_yields_cached_text_and_skips_inner():
 
 def _mock_redis_with_pipeline(get_return=None) -> AsyncMock:
     """Build a mock Redis with a working async-context-manager pipeline."""
-    pipe = AsyncMock()
+    # Use MagicMock so pipeline commands (incr, incrbyfloat, delete) are sync,
+    # matching real Redis pipeline behaviour where only execute() is awaited.
+    pipe = MagicMock()
     pipe.__aenter__ = AsyncMock(return_value=pipe)
     pipe.__aexit__ = AsyncMock(return_value=False)
+    pipe.execute = AsyncMock(return_value=[])
 
     mock_redis = AsyncMock()
     mock_redis.get.return_value = get_return
@@ -334,8 +331,6 @@ async def test_get_metrics_returns_correct_hit_rate():
     """get_metrics must compute hit_rate_pct from raw Redis counters."""
     service = _make_service()
     mock_redis = AsyncMock()
-    # hits=3, misses=1, cost=0.015, lat_hit_sum=30, lat_hit_count=3,
-    # lat_miss_sum=1500, lat_miss_count=1, stale=0
     mock_redis.mget.return_value = ["3", "1", "0.015", "30", "3", "1500", "1", "0"]
     service._redis = mock_redis
     service._redis_loop = asyncio.get_event_loop()
@@ -345,13 +340,13 @@ async def test_get_metrics_returns_correct_hit_rate():
     assert m["hits"] == 3
     assert m["misses"] == 1
     assert m["total"] == 4
-    assert m["hit_rate_pct"] == 75.0
+    assert m["hit_rate_pct"] == 75
     assert m["cost_avoided_usd"] == pytest.approx(0.015, abs=1e-6)
-    assert m["avg_latency_hit_ms"] == 10.0   # 30 / 3
-    assert m["avg_latency_miss_ms"] == 1500.0
+    assert m["avg_latency_hit_ms"] == 10   # 30 / 3
+    assert m["avg_latency_miss_ms"] == 1500
     assert m["speedup_x"] == 150             # 1500 / 10
     assert m["stale_reports"] == 0
-    assert m["stale_rate_pct"] == 0.0
+    assert m["stale_rate_pct"] == 0
 
 
 @pytest.mark.asyncio
@@ -367,7 +362,7 @@ async def test_get_metrics_empty_redis_returns_zeros():
 
     assert m["hits"] == 0
     assert m["misses"] == 0
-    assert m["hit_rate_pct"] == 0.0
+    assert m["hit_rate_pct"] == 0
     assert m["avg_latency_hit_ms"] is None
     assert m["avg_latency_miss_ms"] is None
     assert m["speedup_x"] is None
@@ -438,6 +433,6 @@ async def test_estimate_hit_records_cost_avoided():
     result = await service.estimate("some transcription")
 
     assert result["cache_hit"] is True
-    assert result["turn_cost_usd"] == 0.0   # zeroed
+    assert result["turn_cost_usd"] == 0   # zeroed
     # cost_avoided passed to pipeline
     pipe.incrbyfloat.assert_any_call("cache:stats:cost_avoided_usd", 0.002)

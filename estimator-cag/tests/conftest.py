@@ -1,7 +1,13 @@
+import logging
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+
+# Prevent asyncio's 'Using proactor' debug message from writing to a closed
+# stdout stream when litellm's atexit cleanup handler runs after pytest exits.
+logging.getLogger("asyncio").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="session")

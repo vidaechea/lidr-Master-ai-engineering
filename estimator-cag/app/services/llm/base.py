@@ -173,6 +173,23 @@ class BaseLLMService(ABC):
         """Parse provider response into standardized ParsedResponse."""
         ...
 
+    def _build_system_prompt(
+        self,
+        transcription: str,
+        *,
+        fmt: Any = None,
+        num_examples: int = 3,
+    ) -> str:
+        """Build the estimation system prompt via PromptBuilder."""
+        return self._prompt_builder.build_system_prompt(
+            transcription,
+            num_examples=num_examples,
+        )
+
+    def _build_pre_call_system_prompt(self, transcription: str) -> str:
+        """Build the requirements-extraction system prompt via PromptBuilder."""
+        return self._prompt_builder.build_pre_call_system_prompt(transcription)
+
     def _validate_sampling_params(
         self,
         temperature: float | None,
