@@ -114,3 +114,39 @@ class TestRenderEstimationPrompt:
 
         # Prompts should be different for different formats
         assert system_phases != system_items
+
+    # --- Requirements validation tests ---
+
+    def test_user_prompt_wraps_description_in_project_description_block(self, basic_request):
+        """Req 1: the literal transcription text must appear right after 'Project description:'."""
+        description = "My unique project description text for testing."
+        basic_request.transcription = description
+        _, user = render_estimation_prompt(basic_request)
+        assert f"Project description:\n{description}" in user
+
+    def test_phases_table_keyword_present_and_absent_in_narrative(self, basic_request):
+        """Req 2: phases_table format includes phase-grouping keyword; narrative does not."""
+        basic_request.output_format = OutputFormat.PHASES_TABLE
+        system_phases, _ = render_estimation_prompt(basic_request)
+        assert "grouped by project phase" in system_phases
+
+        basic_request.output_format = OutputFormat.NARRATIVE
+        system_narrative, _ = render_estimation_prompt(basic_request)
+        assert "grouped by project phase" not in system_narrative
+
+    def test_detailed_includes_assumptions_instruction_summary_does_not(self, basic_request):
+        """Req 3: detail_level=detailed adds an assumptions instruction; summary does not.
+
+        The system template emits "explicit subtasks and assumptions" only for the
+        'detailed' detail level.  The static header contains 'make reasonable
+        assumptions …' in both cases, so we assert on the specific per-level phrase.
+        """
+        ASSUMPTION_PHRASE = "subtasks and assumptions"
+
+        basic_request.detail_level = DetailLevel.DETAILED
+        system_detailed, _ = render_estimation_prompt(basic_request)
+        assert ASSUMPTION_PHRASE in system_detailed
+
+        basic_request.detail_level = DetailLevel.SUMMARY
+        system_summary, _ = render_estimation_prompt(basic_request)
+        assert ASSUMPTION_PHRASE not in system_summary
