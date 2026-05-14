@@ -1,34 +1,65 @@
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
-
 from app.config import LLMModel
-
 from app.config import settings as _settings
 
 _FIXTURES_DIR = Path(__file__).parent.parent / "fixtures"
-
 
 def _load_example_transcription(fixture: str | None, fixtures_dir: Path = _FIXTURES_DIR) -> str | None:
     if not fixture:
         return None
     return (fixtures_dir / f"{fixture}_transcription.txt").read_text(encoding="utf-8")
 
-
 _EXAMPLE_TRANSCRIPTION = _load_example_transcription(_settings.example_fixture)
+
+@dataclass
+class EstimationExample:
+    """Structured data container for an estimation example."""
+
+    title: str
+    meeting_summary: str
+    breakdown: list[tuple[str, int, int]]
+    total_hours: int
+    total_cost: int
+    team: list[str]
+    duration_weeks: int
+    estimation_markdown: str
+
+class ProjectType(str, Enum):
+    MOBILE_APP = "mobile_app"
+    WEB_SAAS = "web_saas"
+    INTERNAL_TOOL = "internal_tool"
+    DATA_PIPELINE = "data_pipeline"
+
+class DetailLevel(str, Enum):
+    SUMMARY = "summary"
+    MEDIUM = "medium"
+    DETAILED = "detailed"
 
 class ExampleFormat(str, Enum):
     MARKDOWN = "markdown"
     JSON = "json"
     NARRATIVE = "narrative"
 
+class OutputFormat(str, Enum):
+    PHASES_TABLE = "phases_table"
+    LINE_ITEMS = "line_items"
+    NARRATIVE = "narrative"
+
+class ReferenceProject(BaseModel):
+    name: str
+    description: str
+    total_hours: int | None = None
+    total_cost: int | None = None
+
 
 class ExampleItem(BaseModel):
     title: str
     meeting_summary: str
     estimation_markdown: str
-
 
 class EstimationRequest(BaseModel):
     model_config = ConfigDict(
@@ -43,14 +74,17 @@ class EstimationRequest(BaseModel):
                 "reasoning_effort": "medium",
                 "max_output_tokens": 2048,
                 "pre_call": False,
+                "output_format": "phases_table",
+                "example_format": "markdown",
+                "num_examples": 3,
             }
         }
     )
 
     transcription: str = Field(
         ...,
-        min_length=50,
-        description="Meeting transcription text to estimate",
+        min_length=20,
+        description="Meeting transcription or project description to estimate",
     )
     evaluate: bool = Field(
         default=True,
@@ -94,13 +128,13 @@ class EstimationRequest(BaseModel):
             "the raw transcription before the main estimation call."
         ),
     )
+    output_format: OutputFormat = Field(
+        default=OutputFormat.PHASES_TABLE,
+        description="Desired output structure for the estimation.",
+    )
     example_format: ExampleFormat = Field(
         default=ExampleFormat.MARKDOWN,
-        description=(
-            "Format used for the few-shot examples in the system prompt. "
-            "Controls the output style: 'markdown' (table-based), 'json' (structured JSON), "
-            "or 'narrative' (plain text prose)."
-        ),
+        description="Format of few-shot examples to include in the system prompt.",
     )
     num_examples: int = Field(
         default=3,
@@ -108,7 +142,18 @@ class EstimationRequest(BaseModel):
         le=5,
         description="Number of few-shot examples to include in the system prompt (0–5).",
     )
-
+    project_type: ProjectType | None = Field(
+        default=None,
+        description="Type of project being estimated. Injected as context before the transcription.",
+    )
+    detail_level: DetailLevel | None = Field(
+        default=None,
+        description="Desired level of detail for the estimation output.",
+    )
+    reference_projects: list[ReferenceProject] | None = Field(
+        default=None,
+        description="Similar past projects used as context to calibrate the estimation.",
+    )
 
 class StructureCheck(BaseModel):
     """Level-1 structural evaluation of the generated estimation."""
@@ -128,13 +173,12 @@ class StructureCheck(BaseModel):
     score: float
     issues: list[str]
 
-
 class EstimationResponse(BaseModel):
     estimation: str
     model: str
     input_tokens: int
     output_tokens: int
-    reasoning_tokens: Optional[int]
+    reasoning_tokens: Optional[int] = None
     turn_cost_usd: float
     total_cost_usd: float
     response_id: str
@@ -144,3 +188,4 @@ class EstimationResponse(BaseModel):
     requirements: str | None = None
     pre_call_cost_usd: float | None = None
     cache_hit: bool = False
+    prompt_version: str = "v1"

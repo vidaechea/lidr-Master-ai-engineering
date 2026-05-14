@@ -1,10 +1,6 @@
 # lidr-Master-ai-Engineering
 
-Repositorio de prácticas del estudiante **Luis Vidaechea** del programa **Master AI Engineering** de **LIDR** (Laboratorio de Ingeniería de Datos y IA).
-
-## Acerca de este repositorio
-
-Este repositorio contiene las prácticas y proyectos desarrollados durante el Master AI Engineering. Cada sesión o práctica se organiza en directorios independientes con la nomenclatura `session0X`, permitiendo una estructura clara y modular para el aprendizaje progresivo.
+Prácticas y proyectos del estudiante **Luis Vidaechea** — programa **Master AI Engineering** de [LIDR](https://lidr.es).
 
 ## Estructura del repositorio
 
@@ -12,97 +8,56 @@ Este repositorio contiene las prácticas y proyectos desarrollados durante el Ma
 lidr-Master-ai-engineering/
 ├── README.md                 # Este archivo
 ├── .env                      # Variables de entorno (local, no versionado)
-├── .gitignore               # Archivos ignorados por git
-├── requirements.txt         # Dependencias del proyecto
-└── session0X/               # Carpetas de prácticas
-    ├── README.md           # Documentación específica de la sesión
-    ├── *.py                # Scripts Python
-    ├── *.ipynb             # Notebooks de Jupyter
-    └── assets/             # Recursos adicionales (si aplica)
+├── .gitignore
+├── estimator-cag/            # Proyecto: API REST de estimación con CAG
+│   ├── README.md             # Setup completo del proyecto
+│   ├── app/                  # Código FastAPI
+│   ├── tests/
+│   ├── streamlit_app.py      # Chat UI
+│   ├── docker-compose.yml    # App + Redis
+│   └── pyproject.toml
+└── session01/                # Sesión 01: Clientes API OpenAI y Anthropic
+    ├── README.md             # Documentación y uso detallado
+    ├── *.py                  # Scripts Python
+    └── *.ipynb               # Notebooks Jupyter
 ```
 
-## Sesiones disponibles
+## Proyectos
 
-### [Session 01: API Clients for OpenAI and Anthropic](session01/)
+### [estimator-cag](estimator-cag/) — API REST de estimación de esfuerzo
 
-Desarrollo de clientes Python reutilizables para las APIs de OpenAI y Anthropic con:
-- ✅ Clientes minimalistas y limpios
-- ✅ Soporte para múltiples modelos
-- ✅ Tracking de costos
-- ✅ Soporte para Google Colab y desarrollo local
+API FastAPI que genera estimaciones de esfuerzo de software a partir de transcripciones de reuniones, usando un enfoque **Context-Augmented Generation (CAG)**.
 
-**Documentación completa**: Ver [session01/README.md](session01/README.md)
+**Funcionalidades principales:**
+- Pipeline CAG con ejemplos de referencia inyectados en el system prompt
+- Soporte multi-proveedor: OpenAI y Anthropic
+- Caché exacta con Redis (SHA-256, TTL configurable)
+- Previsión de tokens y coste antes de cada llamada
+- Sesiones multi-turn con historial
+- Chat UI con Streamlit
 
-## Requisitos generales
+**Levantar el proyecto → ver [estimator-cag/README.md](estimator-cag/README.md)**
 
-- Python 3.8+
-- Gestor de paquetes (`pip`, `uv`, etc.)
-- Virtual environment
-- Claves API según la sesión (OpenAI, Anthropic, etc.)
+---
 
-## Setup inicial
+### [session01](session01/) — Clientes API OpenAI y Anthropic
 
-### 1. Clonar el repositorio
+Clientes Python reutilizables con tracking de costos y soporte para Google Colab y desarrollo local.
 
-```bash
-git clone <repository-url>
-cd lidr-Master-ai-engineering
-```
+**Levantar el proyecto → ver [session01/README.md](session01/README.md)**
 
-### 2. Crear virtual environment
+---
 
-```bash
-python -m venv .venv
-source .venv/bin/activate  # En Windows: .venv\Scripts\activate
-```
+## Convenciones
 
-### 3. Instalar dependencias
-
-```bash
-pip install -r requirements.txt
-```
-
-O con `uv`:
-```bash
-uv sync
-```
-
-### 4. Configurar variables de entorno
-
-Crear archivo `.env` en la raíz del proyecto:
-```env
-# Agregar según la sesión requerida
-OPENAI_API_KEY=sk-proj-your-key
-ANTHROPIC_API_KEY=sk-ant-your-key
-```
-
-## Navegación por sesiones
-
-Cada sesión es independiente y tiene su propia documentación. Para acceder a una sesión:
-
-```bash
-cd sessionXX/
-cat README.md  # Leer documentación específica
-```
-
-## Convenciones del proyecto
-
-- 📁 **Nombres de carpetas**: `session0X` (ej: `session01`, `session02`, etc.)
-- 📄 **Archivos Python**: `session_0X_descripcion.py`
-- 📓 **Notebooks**: `session_0X_descripcion.ipynb`
-- 📚 **Documentación**: `README.md` en cada sesión
-- 🔐 **Secretos**: Nunca versionados (`.env` en `.gitignore`)
-
-## Recursos útiles
-
-- [Master AI Engineering - LIDR](https://lidr.es)
-- [Python Documentation](https://docs.python.org/3/)
-- [Git Documentation](https://git-scm.com/doc)
+- 📁 Sesiones: `session0X/`
+- 📄 Scripts: `session_0X_descripcion.py`
+- 📓 Notebooks: `session_0X_descripcion.ipynb`
+- 🔐 Secretos: nunca versionados (`.env` en `.gitignore`)
 
 ## Autor
 
-**Luis Vidaechea**  
-Master AI Engineering - LIDR
+**Luis Vidaechea** — Master AI Engineering, LIDR
 
 ## Licencia
 
@@ -110,5 +65,5 @@ MIT
 
 ---
 
-**Última actualización**: 20 de Abril de 2026
+**Última actualización**: 10 de Mayo de 2026
 

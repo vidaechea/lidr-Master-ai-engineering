@@ -64,7 +64,7 @@ def _patch_litellm_router(mock_response: MagicMock):
         {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
     ]
     return patch(
-        "app.services.litellm_router_service.Router",
+        "app.services.llm.litellm.Router",
         return_value=mock_router,
     )
 
@@ -197,7 +197,7 @@ class TestCreateEstimationLiteLLMPreCall:
             {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
         ]
         return patch(
-            "app.services.litellm_router_service.Router",
+            "app.services.llm.litellm.Router",
             return_value=mock_router,
         ), mock_router
 
@@ -263,11 +263,20 @@ class TestCreateEstimationLiteLLMPreCall:
 
 class TestCreateEstimationLiteLLMErrors:
     def test_returns_413_on_context_overflow(self, litellm_client: TestClient):
-        from app.services.litellm_router_service import LiteLLMRouterService
+        from app.services.helpers.prompt_builder import PromptBuilder
+        from app.services.helpers.error_mapper import LLMServiceError
+
+        # Patch validate_context_window to raise context overflow error
+        def raise_overflow(*args, **kwargs):
+            raise LLMServiceError(
+                "context_overflow",
+                "Estimated request size exceeds context window.",
+                413,
+            )
 
         mock_response = _make_litellm_response()
         with _patch_litellm_router(mock_response):
-            with patch.object(LiteLLMRouterService, "_count_tokens", return_value=999_999_999):
+            with patch.object(PromptBuilder, "validate_context_window", side_effect=raise_overflow):
                 response = litellm_client.post(
                     "/api/v1/estimate",
                     json={"transcription": VALID_TRANSCRIPTION},
@@ -287,7 +296,7 @@ class TestCreateEstimationLiteLLMErrors:
             {"model_name": "estimator", "litellm_params": {"model": "gpt-4o-mini"}},
             {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
         ]
-        with patch("app.services.litellm_router_service.Router", return_value=mock_router):
+        with patch("app.services.llm.litellm.Router", return_value=mock_router):
             response = litellm_client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -307,7 +316,7 @@ class TestCreateEstimationLiteLLMErrors:
             {"model_name": "estimator", "litellm_params": {"model": "gpt-4o-mini"}},
             {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
         ]
-        with patch("app.services.litellm_router_service.Router", return_value=mock_router):
+        with patch("app.services.llm.litellm.Router", return_value=mock_router):
             response = litellm_client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},

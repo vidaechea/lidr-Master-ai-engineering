@@ -20,7 +20,9 @@ import tiktoken
 from litellm import Router
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
+from app.services.llm.base import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
+from app.services.helpers.error_mapper import ErrorMapper
+from app.services.helpers.token_counter import TokenCounter
 
 log = structlog.get_logger(__name__)
 
@@ -39,6 +41,32 @@ _MODEL_INFO = ModelInfo(
 )
 
 
+# --------------------------------------------------------------------------- #
+# LiteLLM token counter
+# --------------------------------------------------------------------------- #
+class LiteLLMTokenCounter(TokenCounter):
+    """Token counter for LiteLLM (uses tiktoken for the primary model)."""
+
+    def count_tokens(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: str,
+    ) -> int:
+        """Count tokens using tiktoken (OpenAI gpt-4o-mini encoding).
+        
+        Since LiteLLM may transparently fall back to Anthropic, we use
+        OpenAI's encoding as a conservative estimate.
+        """
+        encoding = tiktoken.get_encoding("o200k_base")
+        tokens = 0
+        for text in (system_prompt, user_message):
+            tokens += len(encoding.encode(text))
+        # Add message overhead and priming tokens (OpenAI convention)
+        tokens += 6
+        return tokens
+
+
 class LiteLLMRouterService(BaseLLMService):
     """LLM service backed by ``litellm.Router`` with automatic provider fallback.
 
@@ -48,7 +76,7 @@ class LiteLLMRouterService(BaseLLMService):
     """
 
     _LITELLM_ERROR_MAPPING = {
-        **BaseLLMService._build_provider_error_mapping(
+        **ErrorMapper.build_provider_error_mapping(
             provider_label="LiteLLM",
             auth_error_type=litellm.AuthenticationError,
             rate_limit_type=litellm.RateLimitError,
@@ -114,15 +142,9 @@ class LiteLLMRouterService(BaseLLMService):
             )
         return LOGICAL_MODEL, _MODEL_INFO
 
-    def _count_tokens(
-        self,
-        system_prompt: str,
-        user_message: str,
-        model: str,
-    ) -> int:
-        enc = tiktoken.get_encoding("cl100k_base")
-        # 4 tokens overhead per message role + 2 priming tokens
-        return len(enc.encode(system_prompt)) + len(enc.encode(user_message)) + 10
+    def _create_token_counter(self) -> TokenCounter:
+        """Create a token counter for LiteLLM."""
+        return LiteLLMTokenCounter()
 
     def _build_api_params(
         self,
@@ -135,7 +157,6 @@ class LiteLLMRouterService(BaseLLMService):
         top_p: Optional[float],
         top_k: Optional[int],
         reasoning_effort: str,
-        verbosity: str,
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
@@ -174,7 +195,7 @@ class LiteLLMRouterService(BaseLLMService):
                 fallback_exhausted=True,
                 max_retries=settings.router_num_retries,
             )
-            self._raise_service_error(exc, self._LITELLM_ERROR_MAPPING)
+            ErrorMapper.map_exception(exc, self._LITELLM_ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
@@ -245,7 +266,7 @@ class LiteLLMRouterService(BaseLLMService):
                 fallback_exhausted=True,
                 max_retries=settings.router_num_retries,
             )
-            self._raise_service_error(exc, self._LITELLM_ERROR_MAPPING)
+            ErrorMapper.map_exception(exc, self._LITELLM_ERROR_MAPPING)
 
         fallback_provider: str | None = None
         if actual_model and "gpt-4o-mini" not in actual_model:

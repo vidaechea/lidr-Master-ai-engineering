@@ -12,7 +12,9 @@ from anthropic import (
 )
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
+from app.services.llm.base import BaseLLMService, LLMServiceError, ModelInfo, ParsedResponse
+from app.services.helpers.error_mapper import ErrorMapper
+from app.services.helpers.token_counter import TokenCounter
 
 # --------------------------------------------------------------------------- #
 # Model registry — pricing in USD per 1 M tokens
@@ -81,13 +83,46 @@ def _get_client() -> AsyncAnthropic:
 
 
 # --------------------------------------------------------------------------- #
+# Anthropic token counter
+# --------------------------------------------------------------------------- #
+class AnthropicTokenCounter(TokenCounter):
+    """Token counter for Anthropic models.
+    
+    Uses a character-based heuristic since Anthropic does not provide
+    an offline tokenizer.
+    """
+
+    def __init__(self, conversation_history: list[dict[str, str]] | None = None) -> None:
+        self._conversation_history = conversation_history or []
+
+    def count_tokens(
+        self,
+        system_prompt: str,
+        user_message: str,
+        model: str,
+    ) -> int:
+        """Estimate token count using a character-based heuristic.
+
+        Anthropic does not provide an offline tokenizer. The approximation
+        (total_chars / 3.5) is conservative enough to avoid underestimating
+        context usage in the pre-call overflow check.
+
+        When a conversation is in progress, history characters are included so
+        the overflow guard accounts for the full messages array sent to the API.
+        """
+        history_chars = sum(len(m["content"]) for m in self._conversation_history)
+        total_chars = len(system_prompt) + history_chars + len(user_message)
+        return max(1, math.ceil(total_chars / _CHARS_PER_TOKEN))
+
+
+# --------------------------------------------------------------------------- #
 # Anthropic implementation
 # --------------------------------------------------------------------------- #
 class AnthropicLLMService(BaseLLMService):
     """LLM service implementation backed by the Anthropic Messages API."""
 
     _ERROR_MAPPING = {
-        **BaseLLMService._build_provider_error_mapping(
+        **ErrorMapper.build_provider_error_mapping(
             provider_label="Anthropic",
             auth_error_type=AuthenticationError,
             rate_limit_type=RateLimitError,
@@ -98,10 +133,10 @@ class AnthropicLLMService(BaseLLMService):
     }
 
     def __init__(self) -> None:
-        super().__init__()
         # Full conversation history for stateless multi-turn sessions.
         # Anthropic does not store history server-side; we send it on every call.
         self._conversation_history: list[dict[str, str]] = []
+        super().__init__()
 
     @property
     def _provider_name(self) -> str:
@@ -125,24 +160,9 @@ class AnthropicLLMService(BaseLLMService):
             )
         return resolved, info
 
-    def _count_tokens(
-        self,
-        system_prompt: str,
-        user_message: str,
-        model: str,
-    ) -> int:
-        """Estimate token count using a character-based heuristic.
-
-        Anthropic does not provide an offline tokenizer. The approximation
-        (total_chars / 3.5) is conservative enough to avoid underestimating
-        context usage in the pre-call overflow check.
-
-        When a conversation is in progress, history characters are included so
-        the overflow guard accounts for the full messages array sent to the API.
-        """
-        history_chars = sum(len(m["content"]) for m in self._conversation_history)
-        total_chars = len(system_prompt) + history_chars + len(user_message)
-        return max(1, math.ceil(total_chars / _CHARS_PER_TOKEN))
+    def _create_token_counter(self) -> TokenCounter:
+        """Create a token counter with access to conversation history."""
+        return AnthropicTokenCounter(self._conversation_history)
 
     def _build_api_params(
         self,
@@ -155,7 +175,6 @@ class AnthropicLLMService(BaseLLMService):
         top_p: Optional[float],
         top_k: Optional[int] = None,
         reasoning_effort: str,
-        verbosity: str,  # not supported by Anthropic — ignored
         max_output_tokens: int,
         continue_conversation: bool,
     ) -> dict[str, Any]:
@@ -207,7 +226,7 @@ class AnthropicLLMService(BaseLLMService):
             APIConnectionError,
             InternalServerError,
         ) as exc:
-            self._raise_service_error(exc, self._ERROR_MAPPING)
+            ErrorMapper.map_exception(exc, self._ERROR_MAPPING)
 
     def _parse_provider_response(
         self,
@@ -287,7 +306,7 @@ class AnthropicLLMService(BaseLLMService):
             APIConnectionError,
             InternalServerError,
         ) as exc:
-            self._raise_service_error(exc, self._ERROR_MAPPING)
+            ErrorMapper.map_exception(exc, self._ERROR_MAPPING)
 
         reasoning_tokens: int | None = None
         if is_reasoning:
