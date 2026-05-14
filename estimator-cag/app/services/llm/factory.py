@@ -1,14 +1,14 @@
 import structlog
 
 from app.config import settings
-from app.services.base_llm_service import BaseLLMService
+from app.services.llm.base import BaseLLMService
 
 log = structlog.get_logger(__name__)
 
 _PROVIDER_REGISTRY: dict[str, str] = {
-    "openai": "app.services.openai_llm_service.OpenAILLMService",
-    "anthropic": "app.services.anthropic_llm_service.AnthropicLLMService",
-    "litellm": "app.services.litellm_router_service.LiteLLMRouterService",
+    "openai": "app.services.llm.openai.OpenAILLMService",
+    "anthropic": "app.services.llm.anthropic.AnthropicLLMService",
+    "litellm": "app.services.llm.litellm.LiteLLMRouterService",
 }
 
 
@@ -39,7 +39,7 @@ def create_llm_service() -> BaseLLMService:
     log.info("llm_service_created", provider=provider)
 
     if settings.cache_enabled:
-        from app.services.cache_service import CachedLLMService
+        from app.services.cache.cache_service import CachedLLMService
         service = CachedLLMService(inner=service)
         log.info("cache_enabled", redis_url=settings.redis_url, ttl=settings.cache_ttl)
 

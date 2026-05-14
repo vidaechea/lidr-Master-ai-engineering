@@ -1,12 +1,12 @@
 import structlog
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
-
-from app.context.examples import ESTIMATION_EXAMPLES
-from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem
-from app.services.base_llm_service import BaseLLMService, LLMServiceError
-from app.services.evaluation import evaluate_estimation_structure
-from app.services.factory import create_llm_service
+from app.config import settings
+from app.prompts.loader import get_examples, render_estimation_prompt
+from app.schemas.estimation import EstimationRequest, EstimationResponse, ExampleItem, ExampleFormat
+from app.services.llm.base import BaseLLMService, LLMServiceError
+from app.services.helpers.evaluation import evaluate_estimation_structure
+from app.services.llm.factory import create_llm_service
 
 log = structlog.get_logger(__name__)
 
@@ -15,42 +15,57 @@ router = APIRouter(prefix="", tags=["estimations"])
 def get_llm_service() -> BaseLLMService:
     return create_llm_service()
 
+def _build_estimate_params(request: EstimationRequest, prompt_version: str) -> dict:
+    """Build common parameters for LLM service calls."""
+    system_prompt, user_prompt = render_estimation_prompt(request, version=prompt_version)
+    return {
+        "transcription": request.transcription,
+        "model": request.model,
+        "temperature": request.temperature,
+        "top_p": request.top_p,
+        "top_k": request.top_k,
+        "reasoning_effort": request.reasoning_effort,
+        "max_output_tokens": request.max_output_tokens,
+        "pre_call": request.pre_call,
+        "example_format": request.example_format,
+        "num_examples": request.num_examples,
+        "system_prompt": system_prompt,
+        "user_prompt": user_prompt,
+    }
+
+def _handle_estimate_error(exc: LLMServiceError, context: str) -> None:
+    """Log and raise HTTP exception for LLM service errors."""
+    log.warning(
+        f"{context}_failed",
+        error_type=exc.error_type,
+        status_code=exc.status_code,
+        detail=exc.message,
+    )
+    raise HTTPException(status_code=exc.status_code, detail=exc.message)
+
 @router.get("/examples", response_model=list[ExampleItem])
-def get_examples():
-    log.debug("examples_requested", count=len(ESTIMATION_EXAMPLES))
+def get_examples_endpoint():
+    examples = get_examples()
+    log.debug("examples_requested", count=len(examples))
     return [
         ExampleItem(title=ex.title, meeting_summary=ex.meeting_summary, estimation_markdown=ex.estimation_markdown)
-        for ex in ESTIMATION_EXAMPLES
+        for ex in examples
     ]
 
 @router.post("/estimate")
 async def create_estimation(
     request: EstimationRequest,
     service: BaseLLMService = Depends(get_llm_service),
+    prompt_version: str = Query(default=settings.prompt_version, description="Prompt template version to use (e.g. v1, v2)"),
 ) -> EstimationResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_requested", transcription_chars=transcription_length)
+    
     try:
-        result = await service.estimate(
-            request.transcription,
-            model=request.model,
-            temperature=request.temperature,
-            top_p=request.top_p,
-            top_k=request.top_k,
-            reasoning_effort=request.reasoning_effort,
-            max_output_tokens=request.max_output_tokens,
-            pre_call=request.pre_call,
-            example_format=request.example_format,
-            num_examples=request.num_examples,
-        )
+        result = await service.estimate(**_build_estimate_params(request, prompt_version))
     except LLMServiceError as exc:
-        log.warning(
-            "estimation_failed",
-            error_type=exc.error_type,
-            status_code=exc.status_code,
-            detail=exc.message,
-        )
-        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+        _handle_estimate_error(exc, "estimation")
+    
     log.info(
         "estimation_completed",
         model=result["model"],
@@ -64,39 +79,29 @@ async def create_estimation(
         if request.evaluate
         else None
     )
-    return EstimationResponse(**result, validation=validation)
+    return EstimationResponse(**result, validation=validation, prompt_version=prompt_version)
 
 
 @router.post("/estimate/stream")
 async def create_estimation_stream(
     request: EstimationRequest,
     service: BaseLLMService = Depends(get_llm_service),
+    prompt_version: str = Query(default=settings.prompt_version, description="Prompt template version to use (e.g. v1, v2)"),
 ) -> StreamingResponse:
     transcription_length = len(request.transcription)
     log.info("estimation_stream_requested", transcription_chars=transcription_length)
+    
+    params = _build_estimate_params(request, prompt_version)
 
     async def generate():
         try:
-            async for delta in service.estimate_stream(
-                request.transcription,
-                model=request.model,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                top_k=request.top_k,
-                reasoning_effort=request.reasoning_effort,
-                max_output_tokens=request.max_output_tokens,
-                pre_call=request.pre_call,
-                example_format=request.example_format,
-                num_examples=request.num_examples,
-            ):
+            async for delta in service.estimate_stream(**params):
                 yield delta
         except LLMServiceError as exc:
-            log.warning(
-                "estimation_stream_failed",
-                error_type=exc.error_type,
-                status_code=exc.status_code,
-                detail=exc.message,
-            )
-            raise HTTPException(status_code=exc.status_code, detail=exc.message)
+            _handle_estimate_error(exc, "estimation_stream")
 
-    return StreamingResponse(generate(), media_type="text/plain")
+    return StreamingResponse(
+        generate(),
+        media_type="text/plain",
+        headers={"X-Prompt-Version": prompt_version},
+    )

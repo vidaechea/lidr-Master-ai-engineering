@@ -3,7 +3,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.context.examples import ESTIMATION_EXAMPLES
+from app.prompts.loader import get_examples
+
+ESTIMATION_EXAMPLES = get_examples()
 
 FAKE_OUTPUT = (
     "## Estimate: E-commerce Platform\n\n"
@@ -41,7 +43,7 @@ def _make_responses_mock(
 def _patch_responses_api(mock_response: MagicMock):
     """Context manager: patches _get_client so responses.create returns mock_response."""
     return patch(
-        "app.services.openai_llm_service._get_client",
+        "app.services.llm.openai._get_client",
         return_value=MagicMock(
             responses=MagicMock(create=AsyncMock(return_value=mock_response))
         ),
@@ -159,8 +161,35 @@ class TestCreateEstimation:
         assert response.status_code == 422
 
     def test_returns_422_when_transcription_is_too_short(self, client: TestClient):
-        """Transcriptions shorter than 50 characters are rejected — documents the current contract."""
+        """Transcriptions shorter than 20 characters are rejected."""
         response = client.post("/api/v1/estimate", json={"transcription": "Too short."})
+        assert response.status_code == 422
+
+    def test_accepts_project_type_and_detail_level(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={
+                    "transcription": VALID_TRANSCRIPTION,
+                    "project_type": "web_saas",
+                    "detail_level": "detailed",
+                },
+            )
+        assert response.status_code == 200
+
+    def test_returns_422_on_invalid_project_type(self, client: TestClient):
+        response = client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION, "project_type": "invalid_type"},
+        )
+        assert response.status_code == 422
+
+    def test_returns_422_on_invalid_detail_level(self, client: TestClient):
+        response = client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION, "detail_level": "ultra"},
+        )
         assert response.status_code == 422
 
 
@@ -169,9 +198,18 @@ class TestCreateEstimation:
 # --------------------------------------------------------------------------- #
 class TestCreateEstimationErrors:
     def test_returns_413_on_context_overflow(self, client: TestClient):
-        from app.services.openai_llm_service import OpenAILLMService
+        from app.services.helpers.prompt_builder import PromptBuilder
+        from app.services.helpers.error_mapper import LLMServiceError
 
-        with patch.object(OpenAILLMService, "_count_tokens", return_value=999_999_999):
+        # Patch validate_context_window to raise context overflow error
+        def raise_overflow(*args, **kwargs):
+            raise LLMServiceError(
+                "context_overflow",
+                "Estimated request size exceeds context window.",
+                413,
+            )
+
+        with patch.object(PromptBuilder, "validate_context_window", side_effect=raise_overflow):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -179,9 +217,18 @@ class TestCreateEstimationErrors:
         assert response.status_code == 413
 
     def test_error_detail_mentions_overflow(self, client: TestClient):
-        from app.services.openai_llm_service import OpenAILLMService
+        from app.services.helpers.prompt_builder import PromptBuilder
+        from app.services.helpers.error_mapper import LLMServiceError
 
-        with patch.object(OpenAILLMService, "_count_tokens", return_value=999_999_999):
+        # Patch validate_context_window to raise context overflow error
+        def raise_overflow(*args, **kwargs):
+            raise LLMServiceError(
+                "context_overflow",
+                "Estimated request size exceeds context window.",
+                413,
+            )
+
+        with patch.object(PromptBuilder, "validate_context_window", side_effect=raise_overflow):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -217,7 +264,7 @@ def _patch_responses_api_two_calls(
     calls return pre_call_response first, then estimation_response."""
     create_mock = AsyncMock(side_effect=[pre_call_response, estimation_response])
     return patch(
-        "app.services.openai_llm_service._get_client",
+        "app.services.llm.openai._get_client",
         return_value=MagicMock(responses=MagicMock(create=create_mock)),
     ), create_mock
 
@@ -445,3 +492,181 @@ class TestEstimationValidation:
             )
         assert without_flag.json()["validation"] is not None
         assert with_flag.json()["validation"] is not None
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/v1/estimate — output_format field
+# --------------------------------------------------------------------------- #
+class TestOutputFormat:
+    def test_accepts_phases_table(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "phases_table"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_line_items(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "line_items"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_narrative(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "output_format": "narrative"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_example_format_markdown(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "example_format": "markdown"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_example_format_json(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "example_format": "json"},
+            )
+        assert response.status_code == 200
+
+    def test_accepts_example_format_narrative(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "example_format": "narrative"},
+            )
+        assert response.status_code == 200
+
+    def test_returns_422_on_markdown_as_output_format(self, client: TestClient):
+        response = client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION, "output_format": "markdown"},
+        )
+        assert response.status_code == 422
+
+    def test_returns_422_on_json_as_output_format(self, client: TestClient):
+        response = client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION, "output_format": "json"},
+        )
+        assert response.status_code == 422
+
+    def test_default_output_format_is_phases_table(self, client: TestClient):
+        """Omitting output_format should default to phases_table without error."""
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/v1/estimate — prompt_version query parameter
+# --------------------------------------------------------------------------- #
+class TestPromptVersion:
+    def test_v1_returns_200(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v1",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200
+
+    def test_v2_returns_200(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200
+
+    def test_v2_response_contains_prompt_version_field(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.json()["prompt_version"] == "v2"
+
+    def test_v1_response_contains_prompt_version_field(self, client: TestClient):
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate?prompt_version=v1",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.json()["prompt_version"] == "v1"
+
+    def test_default_prompt_version_is_v1(self, client: TestClient):
+        """Omitting prompt_version should default to v1."""
+        mock_response = _make_responses_mock()
+        with _patch_responses_api(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.json()["prompt_version"] == "v1"
+
+    def test_v1_and_v2_produce_different_system_prompts(self, client: TestClient):
+        """Requests with different prompt_version should call the API with different system prompts."""
+        from unittest.mock import call
+
+        create_mock_v1 = AsyncMock(return_value=_make_responses_mock())
+        create_mock_v2 = AsyncMock(return_value=_make_responses_mock())
+
+        with patch(
+            "app.services.llm.openai._get_client",
+            return_value=MagicMock(responses=MagicMock(create=create_mock_v1)),
+        ):
+            client.post(
+                "/api/v1/estimate?prompt_version=v1",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        system_v1 = create_mock_v1.call_args[1]["instructions"]
+
+        with patch(
+            "app.services.llm.openai._get_client",
+            return_value=MagicMock(responses=MagicMock(create=create_mock_v2)),
+        ):
+            client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        system_v2 = create_mock_v2.call_args[1]["instructions"]
+
+        assert system_v1 != system_v2
+
+    def test_v2_system_prompt_contains_confidence_instruction(self, client: TestClient):
+        """v2 template should inject a confidence-level requirement into the system prompt."""
+        create_mock = AsyncMock(return_value=_make_responses_mock())
+
+        with patch(
+            "app.services.llm.openai._get_client",
+            return_value=MagicMock(responses=MagicMock(create=create_mock)),
+        ):
+            client.post(
+                "/api/v1/estimate?prompt_version=v2",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        system_prompt = create_mock.call_args[1]["instructions"]
+        assert "confidence" in system_prompt.lower()

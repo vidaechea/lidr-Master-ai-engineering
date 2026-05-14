@@ -45,5 +45,8 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379"
     cache_ttl: int = 86400  # 24 hours
 
+    # Prompt version
+    prompt_version: str = "v1"
+
 
 settings = Settings()

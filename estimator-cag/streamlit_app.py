@@ -7,11 +7,12 @@ import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from app.config import settings
-from app.context.examples import ExampleFormat
-from app.services.base_llm_service import LLMServiceError
-from app.services.cache_service import CachedLLMService
-from app.services.evaluation import evaluate_estimation_structure
-from app.services.factory import create_llm_service
+from app.prompts.loader import render_estimation_prompt
+from app.schemas.estimation import DetailLevel, ExampleFormat, EstimationRequest, OutputFormat, ProjectType, ReferenceProject
+from app.services.llm.base import LLMServiceError
+from app.services.cache.cache_service import CachedLLMService
+from app.services.helpers.evaluation import evaluate_estimation_structure
+from app.services.llm.factory import create_llm_service
 
 # ── Provider / model registry (mirrors service registries) ───────────────────
 
@@ -106,6 +107,10 @@ def _render_details(meta: dict, session_id: str) -> None:
         if meta.get("system_prompt"):
             with st.expander("System prompt", expanded=False):
                 st.code(meta["system_prompt"], language="text")
+
+        if meta.get("user_prompt"):
+            with st.expander("User prompt", expanded=False):
+                st.code(meta["user_prompt"], language="markdown")
 
         if meta.get("pre_call_prompt"):
             with st.expander("Pre-call prompt", expanded=False):
@@ -245,9 +250,9 @@ def _render_details(meta: dict, session_id: str) -> None:
                 ):
                     svc = st.session_state.get("service")
                     if isinstance(svc, CachedLLMService):
-                        loop = asyncio.new_event_loop()
-                        loop.run_until_complete(svc.report_stale(cache_key))
-                        loop.close()
+                        asyncio.run_coroutine_threadsafe(
+                            svc.report_stale(cache_key), _get_event_loop()
+                        ).result()
                     st.session_state[stale_flag_key] = True
                     st.rerun()
 
@@ -268,9 +273,9 @@ def _render_cache_metrics_sidebar() -> None:
         if st.button("🔄 Refresh", key="cache_metrics_refresh"):
             st.session_state.pop("_cache_metrics", None)
         if "_cache_metrics" not in st.session_state:
-            loop = asyncio.new_event_loop()
-            st.session_state["_cache_metrics"] = loop.run_until_complete(svc.get_metrics())
-            loop.close()
+            st.session_state["_cache_metrics"] = asyncio.run_coroutine_threadsafe(
+                svc.get_metrics(), _get_event_loop()
+            ).result()
         m = st.session_state["_cache_metrics"]
         if not m:
             st.caption("Redis no disponible.")
@@ -292,16 +297,40 @@ def _render_cache_metrics_sidebar() -> None:
         c8.metric("Stale rate", f"{m['stale_rate_pct']} %")
 
 
+def _get_event_loop() -> asyncio.AbstractEventLoop:
+    """Return the persistent background event loop for this Streamlit session.
+
+    A single event loop is kept alive in a dedicated daemon thread for the
+    entire session so that the LLM HTTP clients can reuse their TLS connections
+    across calls (connection pooling).  Creating a new loop per request via
+    ``asyncio.run()`` would invalidate the pool on every estimation.
+    """
+    if "_bg_loop" not in st.session_state:
+        loop = asyncio.new_event_loop()
+
+        def _run(lp: asyncio.AbstractEventLoop) -> None:
+            lp.run_forever()
+
+        t = threading.Thread(target=_run, args=(loop,), daemon=True)
+        t.start()
+        st.session_state["_bg_loop"] = loop
+
+    return st.session_state["_bg_loop"]
+
+
 def _sync_stream(service, transcript: str, kwargs: dict) -> Generator[str, None, None]:
     """Bridge between the async estimate_stream generator and st.write_stream.
 
-    Runs the async generator in a background thread so that Streamlit's
-    synchronous main thread can consume deltas via a queue.
-    A sentinel ``None`` value signals that the stream is finished.
+    Schedules the async generator on the persistent background event loop so
+    that Streamlit's synchronous main thread can consume deltas via a queue.
+    Reusing the same loop preserves the LLM client's HTTP connection pool,
+    avoiding a TLS handshake on every request.
+    A sentinel object signals that the stream is finished.
     """
     _SENTINEL = object()
     delta_queue: queue.Queue = queue.Queue()
     exc_holder: list[BaseException] = []
+    loop = _get_event_loop()
 
     async def _producer() -> None:
         try:
@@ -312,19 +341,13 @@ def _sync_stream(service, transcript: str, kwargs: dict) -> Generator[str, None,
         finally:
             delta_queue.put(_SENTINEL)
 
-    def _run_loop() -> None:
-        asyncio.run(_producer())
-
-    thread = threading.Thread(target=_run_loop, daemon=True)
-    thread.start()
+    asyncio.run_coroutine_threadsafe(_producer(), loop)
 
     while True:
         item = delta_queue.get()
         if item is _SENTINEL:
             break
         yield item
-
-    thread.join()
 
     if exc_holder:
         raise exc_holder[0]
@@ -338,6 +361,10 @@ if "messages" not in st.session_state:
 if "service" not in st.session_state:
     st.session_state.service = create_llm_service()
     st.session_state.active_provider = settings.llm_provider
+
+# Initialise the persistent background event loop early so it's ready before
+# the first estimation request.
+_get_event_loop()
 
 # ── Page header ───────────────────────────────────────────────────────────────
 
@@ -395,8 +422,8 @@ with st.expander("LLM Options", expanded=False):
         if sampling_mode == "temperature":
             temperature = st.slider(
                 "Temperature",
-                min_value=0.0, max_value=2.0, value=1.0, step=0.05,
-                help="Controls randomness. Lower = more deterministic, higher = more creative. Typical range: 0.5–1.2.",
+                min_value=0.0, max_value=1.0, value=0.0, step=0.05,
+                help="Controls randomness. Lower = more deterministic, higher = more creative. Typical range: 0.5–1.0.",
             )
         elif sampling_mode == "top_p":
             top_p = st.slider(
@@ -413,14 +440,6 @@ with st.expander("LLM Options", expanded=False):
 
     with col_c:
         st.subheader("Generation")
-        output_format = st.radio(
-            "Output format",
-            options=[ExampleFormat.MARKDOWN, ExampleFormat.JSON, ExampleFormat.NARRATIVE],
-            format_func=lambda f: f.value,
-            index=0,
-            horizontal=True,
-            help="Controls the output style by changing the format of the few-shot examples in the prompt. 'markdown' produces a table-based estimate, 'json' structured JSON, 'narrative' plain prose.",
-        )
         num_examples = st.slider(
             "Number of examples",
             min_value=0, max_value=5, value=3, step=1,
@@ -431,14 +450,11 @@ with st.expander("LLM Options", expanded=False):
             min_value=256, max_value=32_768, value=2_048, step=256,
             help="Hard cap on the number of tokens the model can generate. Higher values allow longer responses but increase cost and latency.",
         )
-        verbosity = "low"
-        if provider != "openai":
-            verbosity = st.select_slider(
-                "Verbosity",
-                options=["low", "medium", "high"],
-                value="low",
-                help="Controls the level of detail in the response.",
-            )
+        example_format = st.selectbox(
+            "Example format (few-shot examples)",
+            options=list(ExampleFormat),
+            format_func=lambda f: f.value.replace("_", " ").title(),
+        )
         model_supports_reasoning = model in _REASONING_MODELS
         reasoning_effort = st.select_slider(
             "Reasoning effort",
@@ -465,6 +481,12 @@ with st.expander("LLM Options", expanded=False):
             value=False,
             help="Runs a cheaper pre-processing step to extract structured requirements from the transcript before sending it to the estimator. Improves quality for long or noisy transcripts.",
         )
+        prompt_version = st.selectbox(
+            "Prompt version",
+            options=["v1", "v2"],
+            index=0,
+            help="v1 — standard estimator tone. v2 — senior delivery consultant tone with confidence level.",
+        )
         st.write("")
         if st.button("Clear conversation", use_container_width=True):
             st.session_state.messages = []
@@ -478,11 +500,9 @@ _render_cache_metrics_sidebar()
 _call_kwargs: dict = {
     "model": model,
     "reasoning_effort": reasoning_effort,
-    "verbosity": verbosity,
     "max_output_tokens": int(max_output_tokens),
     "continue_conversation": continue_conversation,
     "pre_call": pre_call,
-    "example_format": output_format,
     "num_examples": int(num_examples),
 }
 if temperature is not None:
@@ -492,7 +512,56 @@ if top_p is not None:
 if top_k is not None:
     _call_kwargs["top_k"] = int(top_k)
 
-# ── Chat messages ─────────────────────────────────────────────────────────────
+# ── Estimation form ───────────────────────────────────────────────────────────
+
+with st.form("estimation_form"):
+    description = st.text_area(
+        "Project description",
+        placeholder="Describe the project to estimate (20\u20132000 characters)\u2026",
+        max_chars=2000,
+        height=160,
+    )
+    _col_pt, _col_dl, _col_of = st.columns(3)
+    with _col_pt:
+        project_type = st.selectbox(
+            "Project type",
+            options=[pt.value for pt in ProjectType],
+            format_func=lambda v: v.replace("_", " ").title(),
+        )
+    with _col_dl:
+        detail_level = st.selectbox(
+            "Detail level",
+            options=[dl.value for dl in DetailLevel],
+            format_func=lambda v: v.title(),
+        )
+    with _col_of:
+        output_format = st.selectbox(
+            "Output format",
+            options=list(OutputFormat),
+            format_func=lambda f: f.value.replace("_", " ").title(),
+        )
+
+    st.divider()
+    st.markdown("**Reference projects** *(optional)*")
+    num_ref = st.number_input(
+        "Number of reference projects",
+        min_value=0, max_value=5, value=0, step=1,
+        help="Add past similar projects to help the model calibrate the estimate.",
+    )
+    _ref_entries: list[dict] = []
+    for _i in range(int(num_ref)):
+        st.markdown(f"_Project {_i + 1}_")
+        _rc1, _rc2, _rc3, _rc4 = st.columns([3, 5, 2, 2])
+        _ref_entries.append({
+            "name": _rc1.text_input("Name", key=f"ref_name_{_i}", placeholder="e.g. HR Tool v1"),
+            "description": _rc2.text_input("Description", key=f"ref_desc_{_i}", placeholder="e.g. Basic HR CRUD app"),
+            "total_hours": _rc3.number_input("Hours", min_value=0, value=0, step=10, key=f"ref_hours_{_i}"),
+            "total_cost": _rc4.number_input("Cost (EUR)", min_value=0, value=0, step=500, key=f"ref_cost_{_i}"),
+        })
+
+    submitted = st.form_submit_button("\U0001f4ca Estimate", use_container_width=True)
+
+# ── Messages history ──────────────────────────────────────────────────────────
 
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
@@ -500,23 +569,57 @@ for message in st.session_state.messages:
         if message["role"] == "assistant" and "meta" in message:
             _render_details(message["meta"], session_id)
 
-# ── Chat input + streaming response ───────────────────────────────────────────
+# ── Handle form submission ────────────────────────────────────────────────────
 
-transcript = st.chat_input("Paste your meeting transcript here…")
+if submitted:
+    if len(description.strip()) < 20:
+        st.error("Project description must be at least 20 characters.", icon="\u26a0\ufe0f")
+        st.stop()
 
-if transcript:
+    _context_parts = [
+        f"**Project type:** {project_type.replace('_', ' ').title()}",
+        f"**Detail level:** {detail_level.title()}",
+        f"**Output format:** {output_format.value.replace('_', ' ').title()}",
+        f"**Example format:** {example_format.value.replace('_', ' ').title()}",
+        "",
+        description.strip(),
+    ]
+    transcript = "\n".join(_context_parts)
+    _call_kwargs["example_format"] = example_format
+
+    # Render versioned system/user prompts and pass them pre-built to the service
+    _reference_projects = [
+        ReferenceProject(
+            name=r["name"],
+            description=r["description"],
+            total_hours=r["total_hours"] or None,
+            total_cost=r["total_cost"] or None,
+        )
+        for r in _ref_entries
+        if r["name"].strip() and r["description"].strip()
+    ] or None
+    _version_req = EstimationRequest(
+        transcription=description.strip(),
+        output_format=output_format,
+        detail_level=DetailLevel(detail_level),
+        project_type=ProjectType(project_type),
+        num_examples=int(num_examples),
+        example_format=example_format,
+        reference_projects=_reference_projects,
+    )
+    _system_prompt, _user_prompt = render_estimation_prompt(_version_req, version=prompt_version)
+    _call_kwargs["system_prompt"] = _system_prompt
+    _call_kwargs["user_prompt"] = _user_prompt
+
     st.session_state.messages.append({"role": "user", "content": transcript})
     with st.chat_message("user"):
         st.markdown(transcript)
 
     with st.chat_message("assistant"):
         try:
-            system_prompt = st.session_state.service._build_system_prompt(
-                fmt=output_format,
-                num_examples=int(num_examples),
-            )
+            system_prompt = _system_prompt
             pre_call_prompt = (
-                st.session_state.service._build_pre_call_system_prompt() if pre_call else None
+                st.session_state.service._build_pre_call_system_prompt(transcript) if pre_call else None
             )
 
             import time
@@ -532,11 +635,10 @@ if transcript:
                 }
             else:
                 with st.spinner("Generating estimation…"):
-                    loop = asyncio.new_event_loop()
-                    result = loop.run_until_complete(
-                        st.session_state.service.estimate(transcript, **_call_kwargs)
-                    )
-                    loop.close()
+                    result = asyncio.run_coroutine_threadsafe(
+                        st.session_state.service.estimate(transcript, **_call_kwargs),
+                        _get_event_loop(),
+                    ).result()
                 estimation = result["estimation"]
                 st.markdown(estimation)
                 meta = {k: v for k, v in result.items() if k != "estimation"}
@@ -546,6 +648,7 @@ if transcript:
             validation = evaluate_estimation_structure(str(estimation), finish_reason)
             meta["validation"] = validation.model_dump()
             meta["system_prompt"] = system_prompt
+            meta["user_prompt"] = _user_prompt
             meta["pre_call_prompt"] = pre_call_prompt
             _render_details(meta, session_id)
 

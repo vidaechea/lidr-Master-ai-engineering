@@ -16,6 +16,8 @@ services:
     environment:
       - UVICORN_HOST=0.0.0.0
       - UVICORN_PORT=8000
+    volumes:
+      - .:/app
     depends_on:
       - redis
     restart: unless-stopped
