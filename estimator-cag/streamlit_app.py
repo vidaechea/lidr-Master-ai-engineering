@@ -8,7 +8,7 @@ from streamlit.runtime.scriptrunner import get_script_run_ctx
 
 from app.config import settings
 from app.prompts.loader import render_estimation_prompt
-from app.schemas.estimation import DetailLevel, ExampleFormat, EstimationRequest, OutputFormat, ProjectType
+from app.schemas.estimation import DetailLevel, ExampleFormat, EstimationRequest, OutputFormat, ProjectType, ReferenceProject
 from app.services.llm.base import LLMServiceError
 from app.services.cache.cache_service import CachedLLMService
 from app.services.helpers.evaluation import evaluate_estimation_structure
@@ -107,6 +107,10 @@ def _render_details(meta: dict, session_id: str) -> None:
         if meta.get("system_prompt"):
             with st.expander("System prompt", expanded=False):
                 st.code(meta["system_prompt"], language="text")
+
+        if meta.get("user_prompt"):
+            with st.expander("User prompt", expanded=False):
+                st.code(meta["user_prompt"], language="markdown")
 
         if meta.get("pre_call_prompt"):
             with st.expander("Pre-call prompt", expanded=False):
@@ -536,6 +540,25 @@ with st.form("estimation_form"):
             options=list(OutputFormat),
             format_func=lambda f: f.value.replace("_", " ").title(),
         )
+
+    st.divider()
+    st.markdown("**Reference projects** *(optional)*")
+    num_ref = st.number_input(
+        "Number of reference projects",
+        min_value=0, max_value=5, value=0, step=1,
+        help="Add past similar projects to help the model calibrate the estimate.",
+    )
+    _ref_entries: list[dict] = []
+    for _i in range(int(num_ref)):
+        st.markdown(f"_Project {_i + 1}_")
+        _rc1, _rc2, _rc3, _rc4 = st.columns([3, 5, 2, 2])
+        _ref_entries.append({
+            "name": _rc1.text_input("Name", key=f"ref_name_{_i}", placeholder="e.g. HR Tool v1"),
+            "description": _rc2.text_input("Description", key=f"ref_desc_{_i}", placeholder="e.g. Basic HR CRUD app"),
+            "total_hours": _rc3.number_input("Hours", min_value=0, value=0, step=10, key=f"ref_hours_{_i}"),
+            "total_cost": _rc4.number_input("Cost (EUR)", min_value=0, value=0, step=500, key=f"ref_cost_{_i}"),
+        })
+
     submitted = st.form_submit_button("\U0001f4ca Estimate", use_container_width=True)
 
 # ── Messages history ──────────────────────────────────────────────────────────
@@ -565,6 +588,16 @@ if submitted:
     _call_kwargs["example_format"] = example_format
 
     # Render versioned system/user prompts and pass them pre-built to the service
+    _reference_projects = [
+        ReferenceProject(
+            name=r["name"],
+            description=r["description"],
+            total_hours=r["total_hours"] or None,
+            total_cost=r["total_cost"] or None,
+        )
+        for r in _ref_entries
+        if r["name"].strip() and r["description"].strip()
+    ] or None
     _version_req = EstimationRequest(
         transcription=description.strip(),
         output_format=output_format,
@@ -572,6 +605,7 @@ if submitted:
         project_type=ProjectType(project_type),
         num_examples=int(num_examples),
         example_format=example_format,
+        reference_projects=_reference_projects,
     )
     _system_prompt, _user_prompt = render_estimation_prompt(_version_req, version=prompt_version)
     _call_kwargs["system_prompt"] = _system_prompt
@@ -614,6 +648,7 @@ if submitted:
             validation = evaluate_estimation_structure(str(estimation), finish_reason)
             meta["validation"] = validation.model_dump()
             meta["system_prompt"] = system_prompt
+            meta["user_prompt"] = _user_prompt
             meta["pre_call_prompt"] = pre_call_prompt
             _render_details(meta, session_id)
 

@@ -45,10 +45,15 @@ class PromptBuilder:
         Returns:
             Rendered system prompt.
         """
-        from app.prompts.loader import _ENV
+        from app.prompts.loader import _ENV, get_examples, format_examples_for_prompt, ExampleFormat
 
         template_root = "estimation/v1"
         system_template = _ENV.get_template(f"{template_root}/system.j2")
+
+        # Always provide examples, even if empty, to avoid UndefinedError
+        examples = get_examples("v1")
+        selected_examples = examples[:num_examples] if num_examples > 0 else []
+        formatted_examples = format_examples_for_prompt(selected_examples, fmt=ExampleFormat.MARKDOWN)
 
         context = {
             "output_format": "phases_table",
@@ -56,6 +61,7 @@ class PromptBuilder:
             "project_description": transcription,
             "project_type": None,
             "num_examples": num_examples,
+            "examples": formatted_examples,
         }
 
         system_prompt = system_template.render(**context).strip()

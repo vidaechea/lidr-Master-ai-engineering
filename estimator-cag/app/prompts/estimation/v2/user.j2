@@ -3,5 +3,12 @@ Project type: {{ project_type }}
 {% endif %}
 Project description:
 {{ project_description }}
+{% if reference_projects %}
+
+Reference projects from similar past work:
+{% for rp in reference_projects %}
+- **{{ rp.name }}**: {{ rp.description }}{% if rp.total_hours %} ({{ rp.total_hours }}h{% if rp.total_cost %}, {{ rp.total_cost }} EUR{% endif %}){% endif %}
+{% endfor %}
+{% endif %}
 
 Include a Confidence Level (High / Medium / Low) at the end of your estimate, justified by the clarity and completeness of the requirements above.

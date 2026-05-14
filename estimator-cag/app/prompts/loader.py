@@ -151,6 +151,7 @@ def render_estimation_prompt(
         "project_type": request.project_type.value if request.project_type else None,
         "num_examples": request.num_examples,
         "examples": formatted_examples,
+        "reference_projects": request.reference_projects,
     }
 
     system_prompt = system_template.render(**context).strip()

@@ -49,6 +49,13 @@ class OutputFormat(str, Enum):
     LINE_ITEMS = "line_items"
     NARRATIVE = "narrative"
 
+class ReferenceProject(BaseModel):
+    name: str
+    description: str
+    total_hours: int | None = None
+    total_cost: int | None = None
+
+
 class ExampleItem(BaseModel):
     title: str
     meeting_summary: str
@@ -142,6 +149,10 @@ class EstimationRequest(BaseModel):
     detail_level: DetailLevel | None = Field(
         default=None,
         description="Desired level of detail for the estimation output.",
+    )
+    reference_projects: list[ReferenceProject] | None = Field(
+        default=None,
+        description="Similar past projects used as context to calibrate the estimation.",
     )
 
 class StructureCheck(BaseModel):
