@@ -7,6 +7,7 @@ from typing import Any
 import redis.asyncio as aioredis
 import structlog
 
+from app.cache.semantic import EstimationSemanticCache
 from app.config import settings
 from app.schemas.estimation import EstimationRequest, EstimationResponse
 from app.services.estimation_service import EstimationService
@@ -27,18 +28,56 @@ CACHE_STAT_KEYS = [
 
 
 class CachedEstimationService:
-    """Decorator that adds Redis exact-match caching to EstimationService.
+    """Decorator that adds two Redis cache layers to EstimationService.
 
-    Cache key is a SHA-256 hash of all parameters that affect the LLM output,
-    ensuring any change in model, temperature, or transcription produces a
-    different key.
+    Layer 1 — exact match: SHA-256 hash of all request parameters.
+    Layer 2 — semantic similarity: vector search via redisvl (Redis Stack).
+    Any change in model, temperature, or transcription bypasses layer 1 and
+    falls through to the semantic similarity check before hitting the LLM.
     """
 
-    def __init__(self, inner: EstimationService) -> None:
+    def __init__(
+        self,
+        inner: EstimationService,
+        *,
+        semantic_cache: EstimationSemanticCache | None = None,
+    ) -> None:
         self._inner = inner
         self._redis: aioredis.Redis | None = None
         self._redis_loop: asyncio.AbstractEventLoop | None = None
         self._ttl: int = settings.cache_ttl
+        self._semantic: EstimationSemanticCache | None = (
+            semantic_cache if semantic_cache is not None else self._build_semantic_cache()
+        )
+
+    # ------------------------------------------------------------------
+    # Semantic cache factory — only built when settings enable it
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _build_semantic_cache() -> EstimationSemanticCache | None:
+        if not settings.semantic_cache_enabled:
+            return None
+        try:
+            import redis as sync_redis
+            from redisvl.utils.vectorize import OpenAITextVectorizer
+
+            client = sync_redis.from_url(settings.redis_url)
+            vectorizer = OpenAITextVectorizer(
+                model="text-embedding-3-small",
+                api_config={"api_key": settings.openai_api_key},
+            )
+            log.info("semantic_cache_initialized")
+            return EstimationSemanticCache(
+                redis_client=client,
+                vectorizer=vectorizer,
+                threshold=settings.semantic_cache_threshold,
+                ttl=settings.cache_ttl,
+                log_only=settings.semantic_cache_log_only,
+            )
+        except Exception as exc:
+            log.warning("semantic_cache_init_failed", error=str(exc))
+            return None
 
     # ------------------------------------------------------------------
     # Redis client — recreated when the running event loop changes
@@ -191,14 +230,52 @@ class CachedEstimationService:
             return response
 
         log.info("cache_miss", key_prefix=key[:16])
+
+        # -------------------------------------------------------------------
+        # Layer 2: semantic similarity cache
+        # -------------------------------------------------------------------
+        if self._semantic is not None:
+            try:
+                sem_result = await asyncio.to_thread(
+                    self._semantic.lookup, request, prompt_version
+                )
+            except Exception as exc:
+                log.warning("semantic_cache_lookup_error", error=str(exc))
+                sem_result = None
+
+            if sem_result is not None:
+                cost_avoided = float(sem_result.turn_cost_usd or 0.0)
+                latency_ms = (time.perf_counter() - t0) * 1000
+                log.info(
+                    "semantic_cache_hit",
+                    key_prefix=key[:16],
+                    latency_ms=round(latency_ms, 1),
+                )
+                await self._record_metrics(
+                    hit=True, latency_ms=latency_ms, cost_avoided_usd=cost_avoided
+                )
+                return sem_result.model_copy(update={"turn_cost_usd": 0.0})
+
+        # -------------------------------------------------------------------
+        # Layer 3: LLM call
+        # -------------------------------------------------------------------
         response = await self._inner.estimate(request, prompt_version=prompt_version)
         latency_ms = (time.perf_counter() - t0) * 1000
 
-        # Persist the response (without cache metadata)
+        # Persist in exact cache
         try:
             await self._get_redis().setex(key, self._ttl, response.model_dump_json())
         except Exception as exc:
             log.warning("cache_write_error", error=str(exc))
+
+        # Persist in semantic cache
+        if self._semantic is not None:
+            try:
+                await asyncio.to_thread(
+                    self._semantic.store, request, response, prompt_version
+                )
+            except Exception as exc:
+                log.warning("semantic_cache_store_error", error=str(exc))
 
         await self._record_metrics(hit=False, latency_ms=latency_ms)
         return response

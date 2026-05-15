@@ -2,14 +2,8 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { MatCardModule } from '@angular/material/card';
-import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
-import { MatInputModule } from '@angular/material/input';
-import { MatSelectModule } from '@angular/material/select';
-import { MatButtonModule } from '@angular/material/button';
-import { MatCheckboxModule } from '@angular/material/checkbox';
-import { MatSliderModule } from '@angular/material/slider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { EstimationCreate, EstimationService, GuardrailError, GuardrailReason } from '../estimation.service';
 
@@ -22,60 +16,173 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
 @Component({
   selector: 'app-estimation-form',
   standalone: true,
-  imports: [
-    FormsModule,
-    MatCardModule, MatFormFieldModule, MatIconModule, MatInputModule, MatSelectModule,
-    MatButtonModule, MatCheckboxModule, MatSliderModule, MatProgressSpinnerModule,
-  ],
+  imports: [FormsModule, MatExpansionModule, MatIconModule, MatProgressSpinnerModule],
   template: `
-    <mat-card class="form-card">
-      <mat-card-header>
-        <mat-card-title>New Estimation</mat-card-title>
-        <mat-card-subtitle>Paste a meeting transcript or project description</mat-card-subtitle>
-      </mat-card-header>
-      <mat-card-content>
-        <form (ngSubmit)="submit()" #f="ngForm">
+    <div class="page">
+      <div class="card">
 
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Transcript / Description</mat-label>
-            <textarea matInput name="transcription" [(ngModel)]="form.transcription"
-              rows="8" required minlength="20"
-              placeholder="Paste your meeting notes or project description hereâ€¦"></textarea>
-          </mat-form-field>
+        <!-- Card header -->
+        <div class="card-head">
+          <div class="head-icon"><mat-icon>description</mat-icon></div>
+          <div>
+            <h2 class="head-title">New Estimation</h2>
+            <p class="head-sub">Paste a meeting transcript or project description to generate an estimate</p>
+          </div>
+        </div>
+        <hr class="divider">
 
-          <div class="params-row">
-            <mat-form-field appearance="outline">
-              <mat-label>Model</mat-label>
-              <mat-select name="model" [(ngModel)]="form.model">
-                <mat-option value="">Default</mat-option>
-                <mat-option value="gpt-4o-mini">GPT-4o mini</mat-option>
-                <mat-option value="gpt-5.4-mini">GPT-5.4 mini</mat-option>
-                <mat-option value="claude-sonnet-4-6">Claude Sonnet 4.6</mat-option>
-                <mat-option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</mat-option>
-              </mat-select>
-            </mat-form-field>
+        <form (ngSubmit)="submit()">
 
-            <mat-form-field appearance="outline">
-              <mat-label>Output format</mat-label>
-              <mat-select name="outputFormat" [(ngModel)]="form.output_format">
-                <mat-option value="phases_table">Phases table</mat-option>
-                <mat-option value="line_items">Line items</mat-option>
-                <mat-option value="narrative">Narrative</mat-option>
-              </mat-select>
-            </mat-form-field>
-
-            <mat-form-field appearance="outline">
-              <mat-label>Prompt version</mat-label>
-              <mat-select name="promptVersion" [(ngModel)]="form.prompt_version">
-                <mat-option value="v1">v1</mat-option>
-                <mat-option value="v2">v2</mat-option>
-              </mat-select>
-            </mat-form-field>
+          <!-- Transcript -->
+          <div class="field">
+            <div class="field-header">
+              <label class="field-label" for="transcription">
+                Transcript / Description <span class="required">*</span>
+              </label>
+              <span class="tip-badge">
+                <mat-icon class="tip-icon">lightbulb</mat-icon>
+                Tip: Include goals, scope, and key requirements
+              </span>
+            </div>
+            <textarea id="transcription" class="textarea" name="transcription"
+              [(ngModel)]="form.transcription"
+              rows="8" maxlength="20000" required minlength="20"
+              placeholder="Paste meeting transcript or project description here...">
+            </textarea>
+            <div class="textarea-footer">
+              <span class="char-count">{{ form.transcription.length }} / 20,000</span>
+            </div>
           </div>
 
-          <mat-checkbox name="preCal" [(ngModel)]="form.pre_call">
-            Extract requirements before estimating (pre_call)
-          </mat-checkbox>
+          <!-- Primary row: Model / Output format / Prompt version -->
+          <div class="selects-row">
+            <div class="select-group">
+              <label class="select-label">
+                <mat-icon class="select-icon">smart_toy</mat-icon> Model
+              </label>
+              <div class="select-wrap">
+                <select class="select" name="model" [(ngModel)]="form.model">
+                  <option value="">Select model</option>
+                  <option value="gpt-4o-mini">GPT-4o mini</option>
+                  <option value="gpt-5.4-mini">GPT-5.4 mini</option>
+                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                </select>
+                <mat-icon class="chevron">expand_more</mat-icon>
+              </div>
+            </div>
+            <div class="select-group">
+              <label class="select-label">
+                <mat-icon class="select-icon">table_chart</mat-icon> Output format
+              </label>
+              <div class="select-wrap">
+                <select class="select" name="outputFormat" [(ngModel)]="form.output_format">
+                  <option value="phases_table">Phases table</option>
+                  <option value="line_items">Line items</option>
+                  <option value="narrative">Narrative</option>
+                </select>
+                <mat-icon class="chevron">expand_more</mat-icon>
+              </div>
+            </div>
+            <div class="select-group">
+              <label class="select-label">
+                <mat-icon class="select-icon">auto_awesome</mat-icon> Prompt version
+              </label>
+              <div class="select-wrap">
+                <select class="select" name="promptVersion" [(ngModel)]="form.prompt_version">
+                  <option value="v1">v1</option>
+                  <option value="v2">v2</option>
+                </select>
+                <mat-icon class="chevron">expand_more</mat-icon>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pre-call checkbox -->
+          <label class="precall-card">
+            <input type="checkbox" name="preCal" [(ngModel)]="form.pre_call" class="precall-check">
+            <div class="precall-text">
+              <span class="precall-title">Extract requirements before estimating (pre_call)</span>
+              <span class="precall-desc">Use AI to extract and structure requirements before generating the estimate.</span>
+            </div>
+            <mat-icon class="precall-info">info_outline</mat-icon>
+          </label>
+
+          <!-- Advanced options (collapsed) -->
+          <mat-expansion-panel class="advanced-panel">
+            <mat-expansion-panel-header>
+              <mat-panel-title>Advanced options</mat-panel-title>
+              <mat-panel-description>Project type, sampling &amp; generation parameters</mat-panel-description>
+            </mat-expansion-panel-header>
+
+            <div class="selects-row adv-row">
+              <div class="select-group">
+                <label class="select-label"><mat-icon class="select-icon">category</mat-icon> Project type</label>
+                <div class="select-wrap">
+                  <select class="select" name="projectType" [(ngModel)]="form.project_type">
+                    <option value="">None</option>
+                    <option value="mobile_app">Mobile App</option>
+                    <option value="web_saas">Web SaaS</option>
+                    <option value="internal_tool">Internal Tool</option>
+                    <option value="data_pipeline">Data Pipeline</option>
+                  </select>
+                  <mat-icon class="chevron">expand_more</mat-icon>
+                </div>
+              </div>
+              <div class="select-group">
+                <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level</label>
+                <div class="select-wrap">
+                  <select class="select" name="detailLevel" [(ngModel)]="form.detail_level">
+                    <option value="">Default</option>
+                    <option value="summary">Summary</option>
+                    <option value="medium">Medium</option>
+                    <option value="detailed">Detailed</option>
+                  </select>
+                  <mat-icon class="chevron">expand_more</mat-icon>
+                </div>
+              </div>
+              <div class="select-group">
+                <label class="select-label"><mat-icon class="select-icon">format_list_bulleted</mat-icon> Example format</label>
+                <div class="select-wrap">
+                  <select class="select" name="exampleFormat" [(ngModel)]="form.example_format">
+                    <option value="markdown">Markdown</option>
+                    <option value="json">JSON</option>
+                    <option value="narrative">Narrative</option>
+                  </select>
+                  <mat-icon class="chevron">expand_more</mat-icon>
+                </div>
+              </div>
+            </div>
+
+            <div class="selects-row adv-row">
+              <div class="select-group">
+                <label class="select-label"><mat-icon class="select-icon">psychology</mat-icon> Reasoning effort</label>
+                <div class="select-wrap">
+                  <select class="select" name="reasoningEffort" [(ngModel)]="form.reasoning_effort">
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
+                  <mat-icon class="chevron">expand_more</mat-icon>
+                </div>
+              </div>
+              <div class="input-group">
+                <label class="select-label"><mat-icon class="select-icon">thermostat</mat-icon> Temperature (0–1)</label>
+                <input class="text-input" type="number" name="temperature"
+                  [(ngModel)]="form.temperature" min="0" max="1" step="0.05" placeholder="Default">
+              </div>
+              <div class="input-group">
+                <label class="select-label"><mat-icon class="select-icon">format_list_numbered</mat-icon> Examples (0–5)</label>
+                <input class="text-input" type="number" name="numExamples"
+                  [(ngModel)]="form.num_examples" min="0" max="5" step="1">
+              </div>
+              <div class="input-group">
+                <label class="select-label"><mat-icon class="select-icon">token</mat-icon> Max output tokens</label>
+                <input class="text-input" type="number" name="maxOutputTokens"
+                  [(ngModel)]="form.max_output_tokens" min="256" max="32768" step="256">
+              </div>
+            </div>
+          </mat-expansion-panel>
 
           @if (guardrailError()) {
             <div class="guardrail-warning" [attr.data-reason]="guardrailError()!.reason">
@@ -83,61 +190,161 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
               <span>{{ guardrailError()!.message }}</span>
             </div>
           }
-
           @if (error()) {
             <p class="error-msg">{{ error() }}</p>
           }
 
-          <div class="actions">
-            <button mat-raised-button color="primary" type="submit" [disabled]="loading()">
+          <div class="form-actions">
+            <button type="submit" class="btn-primary" [disabled]="loading()">
               @if (loading()) {
-                <mat-spinner diameter="20"></mat-spinner>
+                <mat-spinner diameter="18"></mat-spinner>
+                <span>Running…</span>
               } @else {
-                Run Estimation
+                <mat-icon>auto_awesome</mat-icon>
+                <span>Run Estimation</span>
               }
             </button>
           </div>
         </form>
-      </mat-card-content>
-    </mat-card>
+      </div>
+    </div>
   `,
   styles: [`
-    .form-card { max-width:900px; margin:24px auto; padding:16px; }
-    .full-width { width:100%; margin-bottom:16px; }
-    .params-row { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
-    .params-row mat-form-field { flex:1; min-width:160px; }
-    .actions { display:flex; justify-content:flex-end; margin-top:16px; }
-    .error-msg { color:var(--mat-sys-error); }
-    .guardrail-warning {
-      display:flex; align-items:center; gap:8px;
-      padding:12px 16px; margin:12px 0;
-      border-radius:4px;
-      background:color-mix(in srgb, var(--mat-sys-error) 10%, transparent);
-      color:var(--mat-sys-error);
-      border-left:4px solid var(--mat-sys-error);
+    .page {
+      min-height: calc(100vh - 64px);
+      background: #f0f0f5;
+      padding: 32px 16px;
+      margin: -24px -16px;
     }
-    .guardrail-warning mat-icon { flex-shrink:0; }
+    .card {
+      max-width: 840px; margin: 0 auto;
+      background: #fff; border-radius: 16px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08); padding: 32px;
+    }
+    .card-head { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 24px; }
+    .head-icon {
+      width: 52px; height: 52px; border-radius: 14px; background: #ededf9;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .head-icon mat-icon { color: #5c6bc0; font-size: 26px; width: 26px; height: 26px; }
+    .head-title { margin: 0 0 4px; font-size: 1.5rem; font-weight: 700; color: #1a1a2e; }
+    .head-sub   { margin: 0; font-size: 0.875rem; color: #777; }
+    .divider    { border: none; border-top: 1px solid #f0f0f0; margin: 0 0 28px; }
+
+    .field { margin-bottom: 24px; }
+    .field-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .field-label { font-size: 0.875rem; font-weight: 600; color: #333; }
+    .required    { color: #6c63ff; }
+    .tip-badge {
+      display: flex; align-items: center; gap: 4px;
+      background: #f5f0ff; color: #6c63ff;
+      font-size: 0.75rem; padding: 4px 10px; border-radius: 20px;
+    }
+    .tip-icon { font-size: 14px; width: 14px; height: 14px; }
+    .textarea {
+      width: 100%; box-sizing: border-box; padding: 12px 16px;
+      border: 1.5px solid #e8e8f0; border-radius: 10px;
+      font-size: 0.9rem; font-family: inherit; line-height: 1.6;
+      resize: vertical; color: #333; transition: border-color .2s, box-shadow .2s;
+    }
+    .textarea::placeholder { color: #bbb; }
+    .textarea:focus { outline: none; border-color: #6c63ff; box-shadow: 0 0 0 3px rgba(108,99,255,0.12); }
+    .textarea-footer { display: flex; justify-content: flex-end; margin-top: 4px; }
+    .char-count { font-size: 0.75rem; color: #aaa; }
+
+    .selects-row  { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+    .select-group { flex: 1; min-width: 160px; }
+    .input-group  { flex: 1; min-width: 140px; }
+    .adv-row { margin-top: 8px; }
+    .select-label {
+      display: flex; align-items: center; gap: 4px;
+      font-size: 0.8rem; font-weight: 600; color: #555; margin-bottom: 6px;
+    }
+    .select-icon { font-size: 15px; width: 15px; height: 15px; color: #888; }
+    .select-wrap { position: relative; }
+    .select {
+      width: 100%; appearance: none; -webkit-appearance: none;
+      padding: 9px 36px 9px 12px;
+      border: 1.5px solid #e8e8f0; border-radius: 8px;
+      font-size: 0.875rem; font-family: inherit;
+      background: #fff; color: #333; cursor: pointer;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .select:focus { outline: none; border-color: #6c63ff; box-shadow: 0 0 0 3px rgba(108,99,255,0.12); }
+    .chevron {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      font-size: 20px; color: #aaa; pointer-events: none;
+    }
+    .text-input {
+      width: 100%; box-sizing: border-box; padding: 9px 12px;
+      border: 1.5px solid #e8e8f0; border-radius: 8px;
+      font-size: 0.875rem; font-family: inherit;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .text-input:focus { outline: none; border-color: #6c63ff; box-shadow: 0 0 0 3px rgba(108,99,255,0.12); }
+
+    .precall-card {
+      display: flex; align-items: center; gap: 16px;
+      padding: 16px 20px; margin-bottom: 20px;
+      border-radius: 10px; background: #f8f8fc;
+      border: 1.5px solid #e8e8f0; cursor: pointer;
+    }
+    .precall-check { width: 18px; height: 18px; accent-color: #6c63ff; flex-shrink: 0; cursor: pointer; }
+    .precall-text  { flex: 1; }
+    .precall-title { display: block; font-size: 0.875rem; font-weight: 600; color: #333; }
+    .precall-desc  { display: block; font-size: 0.8rem; color: #777; margin-top: 2px; }
+    .precall-info  { color: #bbb; font-size: 20px; }
+
+    .advanced-panel {
+      margin-bottom: 24px; border-radius: 10px !important;
+      border: 1.5px solid #e8e8f0 !important; box-shadow: none !important;
+    }
+
+    .guardrail-warning {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 0.875rem;
+      background: #fff8e1; color: #e65100; border-left: 3px solid #ff9800;
+    }
+    .error-msg {
+      padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 0.875rem;
+      background: #fce4ec; color: #c62828; border-left: 3px solid #e53935;
+    }
+
+    .form-actions { display: flex; justify-content: flex-end; margin-top: 8px; }
+    .btn-primary {
+      display: flex; align-items: center; gap: 8px;
+      padding: 12px 28px; border-radius: 10px;
+      background: #5c6bc0; color: #fff;
+      font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer;
+      transition: background .2s, box-shadow .2s;
+      box-shadow: 0 2px 8px rgba(92,107,192,0.3);
+    }
+    .btn-primary:hover:not(:disabled) { background: #3f51b5; box-shadow: 0 4px 12px rgba(92,107,192,0.4); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
+    .btn-primary mat-icon { font-size: 18px; width: 18px; height: 18px; }
   `],
 })
 export class EstimationFormComponent {
   form: EstimationCreate = {
     transcription: '',
     output_format: 'phases_table',
+    example_format: 'markdown',
     prompt_version: 'v1',
     pre_call: false,
     num_examples: 3,
     max_output_tokens: 2048,
+    reasoning_effort: 'medium',
   };
+
   loading = signal(false);
   error = signal<string | null>(null);
   guardrailError = signal<GuardrailError | null>(null);
 
   constructor(
-    private estimationService: EstimationService,
-    private router: Router,
-    private route: ActivatedRoute,
+    private readonly estimationService: EstimationService,
+    private readonly router: Router,
+    private readonly route: ActivatedRoute,
   ) {
-    // Pre-fill projectId from query params if coming from project detail.
     this.route.queryParams.subscribe(p => {
       if (p['projectId']) this.form.project_id = p['projectId'];
     });
