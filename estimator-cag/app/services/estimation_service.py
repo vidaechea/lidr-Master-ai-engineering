@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
 
+import openai
 import structlog
 
 from app.config import MODEL_REGISTRY, settings
+from app.guardrails.input import check_input
+from app.guardrails.ouput import enforce_scope_response
 from app.prompts.loader import render_requirements_extraction_prompt
 from app.schemas.estimation import (
     EstimationRequest,
@@ -21,6 +25,23 @@ log = structlog.get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Moderation client — lazy singleton, None when no OpenAI key is configured
+# ---------------------------------------------------------------------------
+
+_moderation_client: openai.OpenAI | None = None
+
+
+def _get_moderation_client() -> openai.OpenAI | None:
+    """Return a cached sync OpenAI client for the Moderation API, or None."""
+    if not settings.openai_api_key:
+        return None
+    global _moderation_client
+    if _moderation_client is None:
+        _moderation_client = openai.OpenAI(api_key=settings.openai_api_key)
+    return _moderation_client
+
+
+# ---------------------------------------------------------------------------
 # Estimation service
 # ---------------------------------------------------------------------------
 
@@ -32,6 +53,11 @@ class EstimationService:
     async def estimate(
         self, request: EstimationRequest, prompt_version: str = "v1"
     ) -> EstimationResponse:
+        await asyncio.to_thread(
+            check_input,
+            request.transcription,
+            openai_client=_get_moderation_client(),
+        )
         model_name = request.model or settings.llm_model
         model_cfg = MODEL_REGISTRY[model_name]
 
@@ -72,11 +98,7 @@ class EstimationService:
         )
         total_cost_usd = turn_cost_usd + (pre_call_cost_usd or 0.0)
 
-        validation = (
-            evaluate_estimation_structure(estimation_text, finish_reason)
-            if request.evaluate
-            else None
-        )
+        validation = evaluate_estimation_structure(estimation_text, finish_reason)
 
         log.info(
             "estimation_completed",
@@ -114,6 +136,11 @@ class EstimationService:
         the final streaming chunk and an :class:`EstimationResponse` is appended
         to the list after the last delta is yielded.
         """
+        await asyncio.to_thread(
+            check_input,
+            request.transcription,
+            openai_client=_get_moderation_client(),
+        )
         model_name = request.model or settings.llm_model
         model_cfg = MODEL_REGISTRY[model_name]
 
@@ -208,6 +235,11 @@ class EstimationService:
         Returns ``(EstimationResult, EstimationResponse)`` so callers have access
         to both the typed breakdown and full cost/token metadata.
         """
+        await asyncio.to_thread(
+            check_input,
+            request.transcription,
+            openai_client=_get_moderation_client(),
+        )
         from app.services.litellm_service import litellm_router_service
 
         model_name = request.model or settings.llm_model
@@ -254,6 +286,19 @@ class EstimationService:
             max_tokens=request.max_output_tokens,
         )
 
+        # --- Output guardrails (mandatory) ---------------------------------
+        # 1. Scope filter: rewrite low-confidence results before rendering.
+        structured_result = enforce_scope_response(structured_result)
+        estimation_markdown = _render_estimation_markdown(structured_result)
+        finish_reason = (
+            completion.choices[0].finish_reason
+            if completion.choices
+            else "stop"
+        )
+        # 2. Structure check: same validator used in the markdown path.
+        validation = evaluate_estimation_structure(estimation_markdown, finish_reason)
+        # -------------------------------------------------------------------
+
         input_tokens = completion.usage.prompt_tokens
         output_tokens = completion.usage.completion_tokens
         response_id = completion.id
@@ -269,10 +314,12 @@ class EstimationService:
             output_tokens=output_tokens,
             turn_cost_usd=turn_cost_usd,
             total_phases=len(structured_result.phases),
+            validation_score=validation.score,
+            scope_filtered=structured_result.summary.startswith("Out of scope:"),
         )
 
         return structured_result, EstimationResponse(
-            estimation=_render_estimation_markdown(structured_result),
+            estimation=estimation_markdown,
             model=model_name,
             response_id=response_id,
             input_tokens=input_tokens,
@@ -283,7 +330,7 @@ class EstimationService:
             estimated_precall_cost_usd=estimated_precall_cost_usd,
             requirements=requirements,
             pre_call_cost_usd=pre_call_cost_usd,
-            validation=None,
+            validation=validation,
             prompt_version=prompt_version,
             structured_result=structured_result,
             extracted_requirements=extracted_requirements,

@@ -5,7 +5,9 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { DatePipe, DecimalPipe } from '@angular/common';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatIconModule } from '@angular/material/icon';
+import { DatePipe, DecimalPipe, NgClass } from '@angular/common';
 import { EstimationOut, EstimationService } from '../estimation.service';
 
 @Component({
@@ -14,7 +16,8 @@ import { EstimationOut, EstimationService } from '../estimation.service';
   imports: [
     RouterLink,
     MatCardModule, MatButtonModule, MatChipsModule, MatDividerModule,
-    MatProgressSpinnerModule, DatePipe, DecimalPipe,
+    MatProgressSpinnerModule, MatProgressBarModule, MatIconModule,
+    DatePipe, DecimalPipe, NgClass,
   ],
   template: `
     <div class="result-page">
@@ -59,6 +62,73 @@ import { EstimationOut, EstimationService } from '../estimation.service';
             </mat-card-content>
           </mat-card>
         }
+
+        @if (validation()) {
+          <mat-card class="validation-card">
+            <mat-card-header>
+              <mat-card-title>
+                <mat-icon [ngClass]="validationIconClass()">{{ validationIcon() }}</mat-icon>
+                Output Validation
+              </mat-card-title>
+              <mat-card-subtitle>Structure score: {{ (validation()!.score * 100) | number:'1.0-0' }}%</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <mat-progress-bar
+                mode="determinate"
+                [value]="validation()!.score * 100"
+                [color]="validationBarColor()">
+              </mat-progress-bar>
+
+              <div class="checks-grid">
+                <div class="check-item" [ngClass]="{ ok: validation()!.has_title, fail: !validation()!.has_title }">
+                  <mat-icon>{{ validation()!.has_title ? 'check_circle' : 'cancel' }}</mat-icon>
+                  <span>Title</span>
+                </div>
+                <div class="check-item" [ngClass]="{ ok: validation()!.has_breakdown_table, fail: !validation()!.has_breakdown_table }">
+                  <mat-icon>{{ validation()!.has_breakdown_table ? 'check_circle' : 'cancel' }}</mat-icon>
+                  <span>Breakdown table</span>
+                </div>
+                <div class="check-item" [ngClass]="{ ok: validation()!.has_totals_section, fail: !validation()!.has_totals_section }">
+                  <mat-icon>{{ validation()!.has_totals_section ? 'check_circle' : 'cancel' }}</mat-icon>
+                  <span>Totals section</span>
+                </div>
+                <div class="check-item" [ngClass]="{ ok: validation()!.has_team_section, fail: !validation()!.has_team_section }">
+                  <mat-icon>{{ validation()!.has_team_section ? 'check_circle' : 'cancel' }}</mat-icon>
+                  <span>Team section</span>
+                </div>
+                <div class="check-item" [ngClass]="{ ok: validation()!.has_duration_section, fail: !validation()!.has_duration_section }">
+                  <mat-icon>{{ validation()!.has_duration_section ? 'check_circle' : 'cancel' }}</mat-icon>
+                  <span>Duration</span>
+                </div>
+                <div class="check-item" [ngClass]="{ ok: validation()!.finish_reason_ok, fail: !validation()!.finish_reason_ok }">
+                  <mat-icon>{{ validation()!.finish_reason_ok ? 'check_circle' : 'cancel' }}</mat-icon>
+                  <span>Complete response</span>
+                </div>
+                @if (validation()!.hours_match !== null) {
+                  <div class="check-item" [ngClass]="{ ok: validation()!.hours_match, fail: !validation()!.hours_match }">
+                    <mat-icon>{{ validation()!.hours_match ? 'check_circle' : 'cancel' }}</mat-icon>
+                    <span>Hours match</span>
+                  </div>
+                }
+                @if (validation()!.cost_match !== null) {
+                  <div class="check-item" [ngClass]="{ ok: validation()!.cost_match, fail: !validation()!.cost_match }">
+                    <mat-icon>{{ validation()!.cost_match ? 'check_circle' : 'cancel' }}</mat-icon>
+                    <span>Cost match</span>
+                  </div>
+                }
+              </div>
+
+              @if (validation()!.issues.length > 0) {
+                <mat-divider></mat-divider>
+                <ul class="issues-list">
+                  @for (issue of validation()!.issues; track issue) {
+                    <li><mat-icon class="issue-icon">warning</mat-icon>{{ issue }}</li>
+                  }
+                </ul>
+              }
+            </mat-card-content>
+          </mat-card>
+        }
       } @else {
         <p>Estimation not found.</p>
       }
@@ -71,6 +141,19 @@ import { EstimationOut, EstimationService } from '../estimation.service';
     .meta-row { display:flex; flex-wrap:wrap; gap:16px; }
     .markdown-card { margin-bottom:16px; }
     .markdown-pre { white-space:pre-wrap; font-family:inherit; font-size:0.9rem; }
+    .validation-card { margin-top:16px; }
+    .validation-card mat-card-title { display:flex; align-items:center; gap:8px; }
+    mat-progress-bar { margin:12px 0 16px; }
+    .checks-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:8px; margin-bottom:12px; }
+    .check-item { display:flex; align-items:center; gap:6px; font-size:0.85rem; }
+    .check-item.ok mat-icon { color:#4caf50; font-size:18px; }
+    .check-item.fail mat-icon { color:#f44336; font-size:18px; }
+    .issues-list { margin:12px 0 0; padding:0; list-style:none; }
+    .issues-list li { display:flex; align-items:center; gap:6px; font-size:0.85rem; color:#e65100; margin-bottom:4px; }
+    .issue-icon { font-size:16px; color:#ff9800; }
+    .icon-ok { color:#4caf50; }
+    .icon-warn { color:#ff9800; }
+    .icon-fail { color:#f44336; }
   `],
 })
 export class EstimationResultComponent implements OnInit {
@@ -78,9 +161,35 @@ export class EstimationResultComponent implements OnInit {
   loading = signal(true);
   statusColor = () => this.estimation()?.status === 'completed' ? 'primary' : 'warn';
 
+  validation = () => this.estimation()?.validation_result ?? null;
+
+  validationIcon(): string {
+    const v = this.validation();
+    if (!v) return 'help';
+    if (v.score === 1) return 'verified';
+    if (v.score >= 0.75) return 'check_circle';
+    return 'warning';
+  }
+
+  validationIconClass(): Record<string, boolean> {
+    const v = this.validation();
+    if (!v) return {};
+    return {
+      'icon-ok': v.score === 1,
+      'icon-warn': v.score >= 0.75 && v.score < 1,
+      'icon-fail': v.score < 0.75,
+    };
+  }
+
+  validationBarColor(): 'primary' | 'warn' {
+    const v = this.validation();
+    if (!v) return 'primary';
+    return v.score >= 0.75 ? 'primary' : 'warn';
+  }
+
   constructor(
-    private estimationService: EstimationService,
-    private route: ActivatedRoute,
+    private readonly estimationService: EstimationService,
+    private readonly route: ActivatedRoute,
   ) {}
 
   ngOnInit() {

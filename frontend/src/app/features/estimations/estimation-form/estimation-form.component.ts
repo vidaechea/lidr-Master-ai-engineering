@@ -1,23 +1,30 @@
-import { Component, signal } from '@angular/core';
+﻿import { Component, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatSliderModule } from '@angular/material/slider';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { EstimationCreate, EstimationService } from '../estimation.service';
+import { EstimationCreate, EstimationService, GuardrailError, GuardrailReason } from '../estimation.service';
+
+const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
+  pii: 'person_off',
+  prompt_injection: 'security',
+  moderation: 'block',
+};
 
 @Component({
   selector: 'app-estimation-form',
   standalone: true,
   imports: [
     FormsModule,
-    MatCardModule, MatFormFieldModule, MatInputModule, MatSelectModule,
+    MatCardModule, MatFormFieldModule, MatIconModule, MatInputModule, MatSelectModule,
     MatButtonModule, MatCheckboxModule, MatSliderModule, MatProgressSpinnerModule,
   ],
   template: `
@@ -33,7 +40,7 @@ import { EstimationCreate, EstimationService } from '../estimation.service';
             <mat-label>Transcript / Description</mat-label>
             <textarea matInput name="transcription" [(ngModel)]="form.transcription"
               rows="8" required minlength="20"
-              placeholder="Paste your meeting notes or project description here…"></textarea>
+              placeholder="Paste your meeting notes or project description hereâ€¦"></textarea>
           </mat-form-field>
 
           <div class="params-row">
@@ -70,6 +77,13 @@ import { EstimationCreate, EstimationService } from '../estimation.service';
             Extract requirements before estimating (pre_call)
           </mat-checkbox>
 
+          @if (guardrailError()) {
+            <div class="guardrail-warning" [attr.data-reason]="guardrailError()!.reason">
+              <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
+              <span>{{ guardrailError()!.message }}</span>
+            </div>
+          }
+
           @if (error()) {
             <p class="error-msg">{{ error() }}</p>
           }
@@ -94,6 +108,15 @@ import { EstimationCreate, EstimationService } from '../estimation.service';
     .params-row mat-form-field { flex:1; min-width:160px; }
     .actions { display:flex; justify-content:flex-end; margin-top:16px; }
     .error-msg { color:var(--mat-sys-error); }
+    .guardrail-warning {
+      display:flex; align-items:center; gap:8px;
+      padding:12px 16px; margin:12px 0;
+      border-radius:4px;
+      background:color-mix(in srgb, var(--mat-sys-error) 10%, transparent);
+      color:var(--mat-sys-error);
+      border-left:4px solid var(--mat-sys-error);
+    }
+    .guardrail-warning mat-icon { flex-shrink:0; }
   `],
 })
 export class EstimationFormComponent {
@@ -107,6 +130,7 @@ export class EstimationFormComponent {
   };
   loading = signal(false);
   error = signal<string | null>(null);
+  guardrailError = signal<GuardrailError | null>(null);
 
   constructor(
     private estimationService: EstimationService,
@@ -119,14 +143,24 @@ export class EstimationFormComponent {
     });
   }
 
+  guardrailIcon(reason: GuardrailReason): string {
+    return GUARDRAIL_ICONS[reason] ?? 'warning';
+  }
+
   submit() {
     this.loading.set(true);
     this.error.set(null);
+    this.guardrailError.set(null);
     this.estimationService.create(this.form).subscribe({
       next: result => this.router.navigate(['/estimations', result.id]),
       error: (err: HttpErrorResponse) => {
-        const detail = err.error?.detail ?? err.message ?? 'Unknown error';
-        this.error.set(`Estimation failed (${err.status}): ${detail}`);
+        const detail = err.error?.detail;
+        if (detail?.reason && (err.status === 400 || err.status === 422)) {
+          this.guardrailError.set(detail as GuardrailError);
+        } else {
+          const msg = typeof detail === 'string' ? detail : (detail?.message ?? err.message ?? 'Unknown error');
+          this.error.set(`Estimation failed (${err.status}): ${msg}`);
+        }
         this.loading.set(false);
       },
     });

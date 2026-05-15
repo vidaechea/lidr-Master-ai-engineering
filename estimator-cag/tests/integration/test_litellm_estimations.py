@@ -314,3 +314,104 @@ class TestCreateEstimationLiteLLMErrors:
                 json={"transcription": VALID_TRANSCRIPTION},
             )
         assert response.status_code == 429
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/v1/estimate/structured — output guardrail (scope filter + validation)
+# --------------------------------------------------------------------------- #
+
+def _make_struct_completion(finish_reason: str = "stop") -> MagicMock:
+    comp = MagicMock()
+    comp.id = "resp-struct-integration-001"
+    comp.choices = [MagicMock()]
+    comp.choices[0].finish_reason = finish_reason
+    comp.usage = MagicMock()
+    comp.usage.prompt_tokens = 400
+    comp.usage.completion_tokens = 150
+    return comp
+
+
+def _patch_complete_structured(mock_result, mock_completion):
+    return patch(
+        "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+        AsyncMock(return_value=(mock_result, mock_completion)),
+    )
+
+
+class TestStructuredOutputGuardrail:
+    """Verify that both output guardrail layers run on POST /estimate/structured."""
+
+    def _normal_result(self):
+        from app.schemas.estimation import EstimationResult, Phase
+        phase = Phase(name="Backend", duration_weeks=2, cost_eur=5_000, confidence_pct=80)
+        return EstimationResult(
+            summary="E-commerce platform",
+            confidence_pct=80,
+            phases=[phase],
+            total_duration_weeks=2,
+            total_cost_eur=5_000,
+        )
+
+    def _low_confidence_result(self):
+        from app.schemas.estimation import EstimationResult, Phase
+        phase = Phase(name="Unknown scope", duration_weeks=1, cost_eur=0, confidence_pct=10)
+        return EstimationResult(
+            summary="I cannot estimate this without more information",
+            confidence_pct=10,
+            phases=[phase],
+            total_duration_weeks=1,
+            total_cost_eur=0,
+        )
+
+    def test_structured_endpoint_returns_200(self, client: TestClient):
+        comp = _make_struct_completion()
+        with _patch_complete_structured(self._normal_result(), comp):
+            response = client.post(
+                "/api/v1/estimate/structured",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200
+
+    def test_validation_always_present_in_structured_response(self, client: TestClient):
+        comp = _make_struct_completion()
+        with _patch_complete_structured(self._normal_result(), comp):
+            response = client.post(
+                "/api/v1/estimate/structured",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        data = response.json()
+        assert data["validation"] is not None
+        assert "score" in data["validation"]
+        assert "issues" in data["validation"]
+
+    def test_scope_filter_rewrites_low_confidence_summary(self, client: TestClient):
+        comp = _make_struct_completion()
+        with _patch_complete_structured(self._low_confidence_result(), comp):
+            response = client.post(
+                "/api/v1/estimate/structured",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["estimation"].startswith("## Out of scope:")
+
+    def test_scope_filter_zeroes_cost_in_structured_result(self, client: TestClient):
+        comp = _make_struct_completion()
+        with _patch_complete_structured(self._low_confidence_result(), comp):
+            response = client.post(
+                "/api/v1/estimate/structured",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        structured = response.json()["structured_result"]
+        assert structured["total_cost_eur"] == 0
+
+    def test_high_confidence_result_not_rewritten(self, client: TestClient):
+        comp = _make_struct_completion()
+        with _patch_complete_structured(self._normal_result(), comp):
+            response = client.post(
+                "/api/v1/estimate/structured",
+                json={"transcription": VALID_TRANSCRIPTION},
+            )
+        data = response.json()
+        assert not data["estimation"].startswith("## Out of scope:")
+        assert data["structured_result"]["total_cost_eur"] == 5_000

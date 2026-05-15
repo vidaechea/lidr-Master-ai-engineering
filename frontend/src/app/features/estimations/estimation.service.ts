@@ -1,8 +1,32 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 
 export type EstimationStatus = 'pending' | 'processing' | 'completed' | 'failed';
+
+export type GuardrailReason = 'pii' | 'prompt_injection' | 'moderation';
+
+export interface GuardrailError {
+  message: string;
+  reason: GuardrailReason;
+}
+
+export interface StructureCheck {
+  has_title: boolean;
+  has_breakdown_table: boolean;
+  has_totals_section: boolean;
+  has_team_section: boolean;
+  has_duration_section: boolean;
+  declared_total_hours: number | null;
+  sum_row_hours: number | null;
+  hours_match: boolean | null;
+  declared_total_cost: number | null;
+  sum_row_cost: number | null;
+  cost_match: boolean | null;
+  finish_reason_ok: boolean;
+  score: number;
+  issues: string[];
+}
 
 export interface EstimationListItem {
   id: string;
@@ -20,7 +44,7 @@ export interface EstimationOut extends EstimationListItem {
   estimation_markdown: string | null;
   structured_result: Record<string, unknown> | null;
   requirements: string | null;
-  validation_result: Record<string, unknown> | null;
+  validation_result: StructureCheck | null;
   input_tokens: number | null;
   output_tokens: number | null;
   turn_cost_usd: number | null;
@@ -45,7 +69,7 @@ export interface EstimationCreate {
 export class EstimationService {
   private readonly base = `${environment.apiUrl}/v1/estimations`;
 
-  constructor(private http: HttpClient) {}
+  constructor(private readonly http: HttpClient) {}
 
   list(projectId?: string) {
     const params: Record<string, string> = {};

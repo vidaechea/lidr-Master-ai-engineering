@@ -176,11 +176,16 @@ class ExtractedRequirements(BaseModel):
     )
 
 
+LOW_CONFIDENCE_THRESHOLD: int = 30
+OUT_OF_SCOPE_PREFIX: str = "Out of scope:"
+
+
 class Phase(BaseModel):
     name: str
     duration_weeks: int
     cost_eur: int
     confidence_pct: int
+    summary: str | None = None
     assumptions: list[str] = []
 
 class EstimationResult(BaseModel):

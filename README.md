@@ -193,7 +193,11 @@ POSTGRES_DB=estimator
 ### Iniciar todos los servicios
 
 ```bash
+# Construir imágenes y levantar todos los servicios
 docker compose up --build
+
+# En background (detached)
+docker compose up --build -d
 ```
 
 | URL | Servicio |
@@ -206,6 +210,29 @@ docker compose up --build
 
 ```bash
 docker compose exec backend alembic upgrade head
+```
+
+### Otros comandos útiles
+
+```bash
+# Levantar solo infraestructura (postgres + redis)
+docker compose up postgres redis
+
+# Levantar solo el motor de IA con su worker
+docker compose up --build ai-engine ai-engine-worker
+
+# Ver logs en tiempo real (todos los servicios o uno concreto)
+docker compose logs -f
+docker compose logs -f ai-engine
+
+# Parar los contenedores
+docker compose down
+
+# Parar y borrar volúmenes (elimina datos de postgres y redis)
+docker compose down -v
+
+# Reconstruir un servicio sin tocar los demás
+docker compose up --build frontend
 ```
 
 ---

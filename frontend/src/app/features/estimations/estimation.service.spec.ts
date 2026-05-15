@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { EstimationService, EstimationCreate, EstimationOut } from './estimation.service';
+import { EstimationService, EstimationCreate, EstimationOut, GuardrailError } from './estimation.service';
 import { environment } from '../../../environments/environment';
 
 const BASE = `${environment.apiUrl}/v1/estimations`;
@@ -195,6 +195,50 @@ describe('EstimationService', () => {
       });
 
       expect(result?.status).toBe('processing');
+    });
+  });
+
+  // ── GuardrailError shape ───────────────────────────────────────────────────
+
+  describe('GuardrailError type contract', () => {
+    it('create() error body with reason=pii matches GuardrailError shape', () => {
+      let caughtError: unknown;
+      service.create(VALID_PAYLOAD).subscribe({ error: e => (caughtError = e) });
+
+      httpMock.expectOne(BASE).flush(
+        { detail: { message: 'Email address detected.', reason: 'pii' } },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+
+      const detail = (caughtError as { error: { detail: GuardrailError } }).error.detail;
+      expect(detail.reason).toBe('pii');
+      expect(detail.message).toContain('Email');
+    });
+
+    it('create() error body with reason=prompt_injection matches GuardrailError shape', () => {
+      let caughtError: unknown;
+      service.create(VALID_PAYLOAD).subscribe({ error: e => (caughtError = e) });
+
+      httpMock.expectOne(BASE).flush(
+        { detail: { message: 'Suspicious text.', reason: 'prompt_injection' } },
+        { status: 422, statusText: 'Unprocessable Entity' },
+      );
+
+      const detail = (caughtError as { error: { detail: GuardrailError } }).error.detail;
+      expect(detail.reason).toBe('prompt_injection');
+    });
+
+    it('create() error body with reason=moderation matches GuardrailError shape', () => {
+      let caughtError: unknown;
+      service.create(VALID_PAYLOAD).subscribe({ error: e => (caughtError = e) });
+
+      httpMock.expectOne(BASE).flush(
+        { detail: { message: 'Input flagged by moderation: hate', reason: 'moderation' } },
+        { status: 400, statusText: 'Bad Request' },
+      );
+
+      const detail = (caughtError as { error: { detail: GuardrailError } }).error.detail;
+      expect(detail.reason).toBe('moderation');
     });
   });
 });

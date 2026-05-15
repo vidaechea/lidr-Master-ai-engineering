@@ -56,6 +56,46 @@ _CHECK_LABELS: dict[str, str] = {
 }
 
 
+def _render_validation_inline(response: EstimationResponse) -> None:
+    """Render the output validation card inline, below the estimation text."""
+    v = response.validation
+    if v is None:
+        return
+
+    score_pct = int(v.score * 100)
+    if v.score >= 0.8:
+        color, icon = "green", "✅"
+    elif v.score >= 0.5:
+        color, icon = "orange", "⚠️"
+    else:
+        color, icon = "red", "❌"
+
+    with st.expander(f"{icon} Output validation — score: :{color}[**{score_pct}%**]", expanded=v.score < 0.8):
+        check_cols = st.columns(len(_CHECK_LABELS))
+        for col, (key, label) in zip(check_cols, _CHECK_LABELS.items()):
+            passed = getattr(v, key, False)
+            col.metric(label, "✅" if passed else "❌")
+
+        num_col1, num_col2 = st.columns(2)
+        num_col1.metric(
+            "Hours: declared / rows",
+            f"{v.declared_total_hours} / {v.sum_row_hours}" if v.declared_total_hours is not None else "—",
+            delta="✅ match" if v.hours_match else ("❌ mismatch" if v.hours_match is False else None),
+            delta_color="normal" if v.hours_match else "inverse",
+        )
+        num_col2.metric(
+            "Cost: declared / rows",
+            f"{v.declared_total_cost:,.0f} / {v.sum_row_cost:,.0f}" if v.declared_total_cost is not None else "—",
+            delta="✅ match" if v.cost_match else ("❌ mismatch" if v.cost_match is False else None),
+            delta_color="normal" if v.cost_match else "inverse",
+        )
+
+        if v.issues:
+            st.warning("**Issues found:**\n" + "\n".join(f"- {i}" for i in v.issues), icon="⚠️")
+        else:
+            st.success("All checks passed.", icon="✅")
+
+
 def _render_details(response: EstimationResponse, session_id: str) -> None:
     """Render the full estimation metadata inside the sidebar."""
     with st.sidebar.expander(f"Details — session {session_id}", expanded=False):
@@ -551,6 +591,7 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
         if message["role"] == "assistant" and message.get("response") is not None:
+            _render_validation_inline(message["response"])
             _render_details(message["response"], session_id)
 
 # ── Handle form submission ────────────────────────────────────────────────────
@@ -605,6 +646,7 @@ if submitted:
                 st.caption(f"Completed in {response_time_s}s")
                 if _captured:
                     _stream_meta = _captured[0].model_copy(update={"response_time_s": response_time_s})
+                    _render_validation_inline(_stream_meta)
                     _render_details(_stream_meta, session_id)
                     st.session_state.messages.append(
                         {"role": "assistant", "content": str(estimation_text), "response": _stream_meta}
@@ -625,6 +667,7 @@ if submitted:
 
                 st.markdown(response.estimation)
                 st.caption(f"Completed in {response_time_s}s")
+                _render_validation_inline(response)
                 _render_details(response, session_id)
 
                 st.session_state.messages.append(

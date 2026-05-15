@@ -4,12 +4,19 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.config import settings
+from app.guardrails.input import InputGuardrailViolation
 from app.prompts.loader import get_examples
 from app.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult, ExampleItem, ExampleFormat
 from app.services.estimation_service import EstimationService
 from app.services.helpers.error_mapper import LLMServiceError
 
 log = structlog.get_logger(__name__)
+
+_GUARDRAIL_STATUS: dict[str, int] = {
+    "moderation": 400,
+    "prompt_injection": 422,
+    "pii": 422,
+}
 
 
 def get_estimation_service() -> EstimationService:
@@ -47,6 +54,11 @@ async def create_estimation(
 ) -> EstimationResponse:
     try:
         return await service.estimate(request, prompt_version=prompt_version)
+    except InputGuardrailViolation as exc:
+        raise HTTPException(
+            status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+            detail={"message": exc.message, "reason": exc.reason},
+        )
     except LLMServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
@@ -66,6 +78,11 @@ async def create_estimation_stream(
         try:
             async for delta in service.estimate_stream(request, prompt_version=prompt_version):
                 yield delta
+        except InputGuardrailViolation as exc:
+            raise HTTPException(
+                status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+                detail={"message": exc.message, "reason": exc.reason},
+            )
         except LLMServiceError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
@@ -91,6 +108,11 @@ async def create_structured_estimation(
     try:
         _, response = await service.estimate_structured(request, prompt_version=prompt_version)
         return response
+    except InputGuardrailViolation as exc:
+        raise HTTPException(
+            status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+            detail={"message": exc.message, "reason": exc.reason},
+        )
     except LLMServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
