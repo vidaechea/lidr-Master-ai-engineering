@@ -66,10 +66,15 @@ class Settings(BaseSettings):
     log_level: str = "DEBUG"
     example_fixture: Optional[Literal["short", "long"]] = None
 
-    # Cache
+    # Cache — exact match (layer 1)
     cache_enabled: bool = False
     redis_url: str = "redis://localhost:6379"
     cache_ttl: int = 86400  # 24 hours
+
+    # Cache — semantic similarity (layer 2, requires Redis Stack + redisvl)
+    semantic_cache_enabled: bool = False
+    semantic_cache_threshold: float = 0.92
+    semantic_cache_log_only: bool = False
 
     # Prompt version
     prompt_version: str = "v1"

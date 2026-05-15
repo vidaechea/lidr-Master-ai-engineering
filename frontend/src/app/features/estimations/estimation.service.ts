@@ -28,6 +28,23 @@ export interface StructureCheck {
   issues: string[];
 }
 
+export interface EstimationPhase {
+  name: string;
+  duration_weeks: number;
+  cost_eur: number;
+  confidence_pct: number;
+  summary: string | null;
+  assumptions: string[];
+}
+
+export interface EstimationStructuredResult {
+  summary: string;
+  total_duration_weeks: number;
+  total_cost_eur: number;
+  confidence_pct: number;
+  phases: EstimationPhase[];
+}
+
 export interface EstimationListItem {
   id: string;
   project_id: string | null;
@@ -42,7 +59,7 @@ export interface EstimationOut extends EstimationListItem {
   transcription: string;
   prompt_version: string | null;
   estimation_markdown: string | null;
-  structured_result: Record<string, unknown> | null;
+  structured_result: EstimationStructuredResult | null;
   requirements: string | null;
   validation_result: StructureCheck | null;
   input_tokens: number | null;
@@ -51,18 +68,29 @@ export interface EstimationOut extends EstimationListItem {
   error_detail: string | null;
 }
 
+export interface ReferenceProject {
+  name: string;
+  description: string;
+  total_hours: number | null;
+  total_cost: number | null;
+}
+
 export interface EstimationCreate {
   transcription: string;
   project_id?: string;
   model?: string;
   temperature?: number;
+  top_p?: number;
   reasoning_effort?: 'low' | 'medium' | 'high';
   max_output_tokens?: number;
   pre_call?: boolean;
   output_format?: 'phases_table' | 'line_items' | 'narrative';
+  example_format?: 'markdown' | 'json' | 'narrative';
   num_examples?: number;
   prompt_version?: string;
-  project_type?: string;
+  project_type?: 'mobile_app' | 'web_saas' | 'internal_tool' | 'data_pipeline';
+  detail_level?: 'summary' | 'medium' | 'detailed';
+  reference_projects?: ReferenceProject[];
 }
 
 @Injectable({ providedIn: 'root' })

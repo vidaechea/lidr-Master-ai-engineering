@@ -14,6 +14,13 @@ DetailLevel = Literal["summary", "medium", "detailed"]
 ProjectType = Literal["mobile_app", "web_saas", "internal_tool", "data_pipeline"]
 
 
+class ReferenceProject(BaseModel):
+    name: str
+    description: str
+    total_hours: int | None = None
+    total_cost: int | None = None
+
+
 class EstimationCreate(BaseModel):
     """What the Angular SPA sends to the Business API."""
 
@@ -33,6 +40,7 @@ class EstimationCreate(BaseModel):
     project_type: ProjectType | None = None
     detail_level: DetailLevel | None = None
     prompt_version: str = "v1"
+    reference_projects: list[ReferenceProject] | None = None
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
