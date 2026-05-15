@@ -6,7 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class CostCalculator:
     """Encapsulates cost calculation logic.
-    
+
     Responsible for computing costs based on token counts and pricing models,
     including cache-related adjustments.
     """
@@ -24,7 +24,7 @@ class CostCalculator:
         cache_read_multiplier: float = 0.0,
     ) -> float:
         """Compute total cost of an LLM call.
-        
+
         Args:
             input_tokens: Number of input tokens used.
             output_tokens: Number of output tokens generated.
@@ -34,7 +34,7 @@ class CostCalculator:
             cache_read_tokens: Tokens read from cache.
             cache_write_multiplier: Multiplier for cache write pricing.
             cache_read_multiplier: Multiplier for cache read pricing.
-        
+
         Returns:
             Total cost in USD.
         """
@@ -49,11 +49,11 @@ class CostCalculator:
         price_in: float,
     ) -> float:
         """Estimate cost of a pre-call request.
-        
+
         Args:
             input_tokens_est: Estimated input tokens for pre-call.
             price_in: Price per 1M input tokens in USD.
-        
+
         Returns:
             Estimated cost in USD.
         """

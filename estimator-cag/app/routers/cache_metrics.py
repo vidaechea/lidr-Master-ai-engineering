@@ -3,7 +3,7 @@ import structlog
 from fastapi import APIRouter, HTTPException
 
 from app.config import settings
-from app.services.cache.cache_service import CACHE_STAT_KEYS, CachedLLMService
+from app.services.cache_service import CACHE_STAT_KEYS, CachedLLMService
 
 log = structlog.get_logger(__name__)
 

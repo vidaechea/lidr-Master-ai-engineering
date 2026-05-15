@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Literal, Optional
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.config import LLMModel
 from app.config import settings as _settings
 
@@ -155,9 +155,51 @@ class EstimationRequest(BaseModel):
         description="Similar past projects used as context to calibrate the estimation.",
     )
 
-class StructureCheck(BaseModel):
-    """Level-1 structural evaluation of the generated estimation."""
+class RequirementCategory(str, Enum):
+    FUNCTIONAL = "functional"
+    NON_FUNCTIONAL = "non_functional"
+    CONSTRAINT = "constraint"
+    BUDGET_DEADLINE = "budget_deadline"
 
+
+class Requirement(BaseModel):
+    id: str = Field(description="Unique identifier, e.g. FR-01 for functional, NFR-01 for non-functional")
+    description: str = Field(description="Clear, actionable requirement statement")
+    category: RequirementCategory
+
+
+class ExtractedRequirements(BaseModel):
+    requirements: list[Requirement]
+    open_questions: list[str] = Field(
+        default_factory=list,
+        description="Ambiguities or open questions that need clarification before estimation",
+    )
+
+
+class Phase(BaseModel):
+    name: str
+    duration_weeks: int
+    cost_eur: int
+    confidence_pct: int
+    assumptions: list[str] = []
+
+class EstimationResult(BaseModel):
+    summary: str
+    total_duration_weeks: int
+    total_cost_eur: int
+    confidence_pct: int
+    phases: list[Phase]
+
+    @model_validator(mode='after')
+    def validate_phase_costs_sum(self) -> 'EstimationResult':
+        total_phases = sum(phase.cost_eur for phase in self.phases)
+        if total_phases != self.total_cost_eur:
+            raise ValueError(
+                f"La suma de los costes de las fases ({total_phases}) no coincide con total_cost_eur ({self.total_cost_eur})"
+            )
+        return self
+
+class StructureCheck(BaseModel):
     has_title: bool
     has_breakdown_table: bool
     has_totals_section: bool
@@ -173,19 +215,24 @@ class StructureCheck(BaseModel):
     score: float
     issues: list[str]
 
+
+# Backwards-compat alias
+EstimationValidation = StructureCheck
+
+
 class EstimationResponse(BaseModel):
     estimation: str
     model: str
+    response_id: str
     input_tokens: int
     output_tokens: int
-    reasoning_tokens: Optional[int] = None
     turn_cost_usd: float
     total_cost_usd: float
-    response_id: str
     estimated_input_tokens: int
-    estimated_precall_cost_usd: float | None = None
-    validation: StructureCheck | None = None
-    requirements: str | None = None
-    pre_call_cost_usd: float | None = None
-    cache_hit: bool = False
-    prompt_version: str = "v1"
+    estimated_precall_cost_usd: float | None
+    requirements: str | None
+    pre_call_cost_usd: float | None
+    validation: StructureCheck | None
+    prompt_version: str
+    structured_result: Optional[EstimationResult] = None
+    extracted_requirements: Optional[ExtractedRequirements] = None
