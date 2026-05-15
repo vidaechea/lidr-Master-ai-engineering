@@ -5,7 +5,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { EstimationCreate, EstimationService, GuardrailError, GuardrailReason } from '../estimation.service';
+import { EstimationCreate, EstimationService, GuardrailError, GuardrailReason, ReferenceProject } from '../estimation.service';
 
 const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
   pii: 'person_off',
@@ -57,20 +57,18 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
           <!-- Primary row: Model / Output format / Prompt version -->
           <div class="selects-row">
             <div class="select-group">
-              <label class="select-label">
-                <mat-icon class="select-icon">smart_toy</mat-icon> Model
-              </label>
-              <div class="select-wrap">
-                <select class="select" name="model" [(ngModel)]="form.model">
-                  <option value="">Select model</option>
-                  <option value="gpt-4o-mini">GPT-4o mini</option>
-                  <option value="gpt-5.4-mini">GPT-5.4 mini</option>
-                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-                </select>
-                <mat-icon class="chevron">expand_more</mat-icon>
+                <label class="select-label"><mat-icon class="select-icon">category</mat-icon> Project type</label>
+                <div class="select-wrap">
+                  <select class="select" name="projectType" [(ngModel)]="form.project_type">
+                    <option value="">None</option>
+                    <option value="mobile_app">Mobile App</option>
+                    <option value="web_saas">Web SaaS</option>
+                    <option value="internal_tool">Internal Tool</option>
+                    <option value="data_pipeline">Data Pipeline</option>
+                  </select>
+                  <mat-icon class="chevron">expand_more</mat-icon>
+                </div>
               </div>
-            </div>
             <div class="select-group">
               <label class="select-label">
                 <mat-icon class="select-icon">table_chart</mat-icon> Output format
@@ -85,17 +83,17 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
               </div>
             </div>
             <div class="select-group">
-              <label class="select-label">
-                <mat-icon class="select-icon">auto_awesome</mat-icon> Prompt version
-              </label>
-              <div class="select-wrap">
-                <select class="select" name="promptVersion" [(ngModel)]="form.prompt_version">
-                  <option value="v1">v1</option>
-                  <option value="v2">v2</option>
-                </select>
-                <mat-icon class="chevron">expand_more</mat-icon>
+                <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level</label>
+                <div class="select-wrap">
+                  <select class="select" name="detailLevel" [(ngModel)]="form.detail_level">
+                    <option value="">Default</option>
+                    <option value="summary">Summary</option>
+                    <option value="medium">Medium</option>
+                    <option value="detailed">Detailed</option>
+                  </select>
+                  <mat-icon class="chevron">expand_more</mat-icon>
+                </div>
               </div>
-            </div>
           </div>
 
           <!-- Pre-call checkbox -->
@@ -117,26 +115,16 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
 
             <div class="selects-row adv-row">
               <div class="select-group">
-                <label class="select-label"><mat-icon class="select-icon">category</mat-icon> Project type</label>
+                <label class="select-label">
+                  <mat-icon class="select-icon">smart_toy</mat-icon> Model
+                </label>
                 <div class="select-wrap">
-                  <select class="select" name="projectType" [(ngModel)]="form.project_type">
-                    <option value="">None</option>
-                    <option value="mobile_app">Mobile App</option>
-                    <option value="web_saas">Web SaaS</option>
-                    <option value="internal_tool">Internal Tool</option>
-                    <option value="data_pipeline">Data Pipeline</option>
-                  </select>
-                  <mat-icon class="chevron">expand_more</mat-icon>
-                </div>
-              </div>
-              <div class="select-group">
-                <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level</label>
-                <div class="select-wrap">
-                  <select class="select" name="detailLevel" [(ngModel)]="form.detail_level">
-                    <option value="">Default</option>
-                    <option value="summary">Summary</option>
-                    <option value="medium">Medium</option>
-                    <option value="detailed">Detailed</option>
+                  <select class="select" name="model" [(ngModel)]="form.model">
+                    <option value="">Select model</option>
+                    <option value="gpt-4o-mini">GPT-4o mini</option>
+                    <option value="gpt-5.4-mini">GPT-5.4 mini</option>
+                    <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
                   </select>
                   <mat-icon class="chevron">expand_more</mat-icon>
                 </div>
@@ -148,6 +136,18 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                     <option value="markdown">Markdown</option>
                     <option value="json">JSON</option>
                     <option value="narrative">Narrative</option>
+                  </select>
+                  <mat-icon class="chevron">expand_more</mat-icon>
+                </div>
+              </div>          
+              <div class="select-group">
+                <label class="select-label">
+                  <mat-icon class="select-icon">auto_awesome</mat-icon> Prompt version
+                </label>
+                <div class="select-wrap">
+                  <select class="select" name="promptVersion" [(ngModel)]="form.prompt_version">
+                    <option value="v1">v1</option>
+                    <option value="v2">v2</option>
                   </select>
                   <mat-icon class="chevron">expand_more</mat-icon>
                 </div>
@@ -183,6 +183,56 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
               </div>
             </div>
           </mat-expansion-panel>
+
+          <!-- Reference projects -->
+          <div class="ref-section">
+            <div class="ref-section-head">
+              <span class="field-label">Reference projects <em class="optional-tag">(optional)</em></span>
+            </div>
+            <div class="ref-counter-row">
+              <span class="select-label">Number of reference projects</span>
+              <div class="counter-ctrl">
+                <span class="counter-val">{{ refProjects.length }}</span>
+                <button type="button" class="counter-btn" (click)="removeRefProject()" [disabled]="refProjects.length === 0">−</button>
+                <button type="button" class="counter-btn counter-btn--add" (click)="addRefProject()">+</button>
+              </div>
+            </div>
+            @for (proj of refProjects; track $index; let i = $index) {
+              <div class="ref-project">
+                <div class="ref-project-title">Project {{ i + 1 }}</div>
+                <div class="ref-row">
+                  <div class="ref-col ref-col--name">
+                    <label class="select-label">Name</label>
+                    <input class="text-input" type="text" [name]="'refName' + i"
+                      [(ngModel)]="proj.name" placeholder="e.g. HR Tool v1">
+                  </div>
+                  <div class="ref-col ref-col--desc">
+                    <label class="select-label">Description</label>
+                    <input class="text-input" type="text" [name]="'refDesc' + i"
+                      [(ngModel)]="proj.description" placeholder="e.g. Basic HR CRUD app">
+                  </div>
+                  <div class="ref-col ref-col--num">
+                    <label class="select-label">Hours</label>
+                    <div class="num-ctrl">
+                      <input class="text-input num-input" type="number" [name]="'refHours' + i"
+                        [(ngModel)]="proj.total_hours" min="0" placeholder="0">
+                      <button type="button" class="counter-btn" (click)="proj.total_hours = (proj.total_hours ?? 0) - 1" [disabled]="(proj.total_hours ?? 0) <= 0">−</button>
+                      <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_hours = (proj.total_hours ?? 0) + 1">+</button>
+                    </div>
+                  </div>
+                  <div class="ref-col ref-col--num">
+                    <label class="select-label">Cost (EUR)</label>
+                    <div class="num-ctrl">
+                      <input class="text-input num-input" type="number" [name]="'refCost' + i"
+                        [(ngModel)]="proj.total_cost" min="0" placeholder="0">
+                      <button type="button" class="counter-btn" (click)="proj.total_cost = (proj.total_cost ?? 0) - 1" [disabled]="(proj.total_cost ?? 0) <= 0">−</button>
+                      <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_cost = (proj.total_cost ?? 0) + 1">+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            }
+          </div>
 
           @if (guardrailError()) {
             <div class="guardrail-warning" [attr.data-reason]="guardrailError()!.reason">
@@ -322,6 +372,49 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
     .btn-primary:hover:not(:disabled) { background: #3f51b5; box-shadow: 0 4px 12px rgba(92,107,192,0.4); }
     .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; box-shadow: none; }
     .btn-primary mat-icon { font-size: 18px; width: 18px; height: 18px; }
+
+    /* ── Reference projects ───────────────────────────────────────────────── */
+    .ref-section {
+      border: 1.5px solid #e8e8f0; border-radius: 10px;
+      padding: 16px 20px; margin-bottom: 20px;
+    }
+    .ref-section-head { margin-bottom: 12px; }
+    .optional-tag { font-style: italic; color: #6c63ff; font-size: 0.875rem; }
+    .ref-counter-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: #f8f8fc; border: 1.5px solid #e8e8f0; border-radius: 8px;
+      padding: 10px 14px; margin-bottom: 12px;
+    }
+    .counter-ctrl { display: flex; align-items: center; gap: 6px; }
+    .counter-val {
+      min-width: 36px; text-align: center;
+      font-size: 1rem; font-weight: 600; color: #1a1a2e;
+    }
+    .counter-btn {
+      width: 28px; height: 28px; border-radius: 6px;
+      border: 1.5px solid #d0d0e8; background: #fff;
+      font-size: 1.1rem; font-weight: 700; color: #555;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: background .15s;
+    }
+    .counter-btn:hover:not(:disabled) { background: #ededfa; }
+    .counter-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .counter-btn--add { border-color: #6c63ff; color: #6c63ff; }
+    .counter-btn--add:hover:not(:disabled) { background: #f0eeff; }
+    .ref-project {
+      border-top: 1px solid #f0f0f0; padding-top: 12px; margin-top: 4px;
+    }
+    .ref-project-title {
+      font-size: 0.8rem; font-weight: 700; font-style: italic; color: #5c6bc0;
+      margin-bottom: 10px;
+    }
+    .ref-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .ref-col { display: flex; flex-direction: column; }
+    .ref-col--name { flex: 1.5; min-width: 140px; }
+    .ref-col--desc { flex: 2.5; min-width: 180px; }
+    .ref-col--num  { flex: 1; min-width: 110px; }
+    .num-ctrl { display: flex; align-items: center; gap: 4px; }
+    .num-input { flex: 1; min-width: 0; }
   `],
 })
 export class EstimationFormComponent {
@@ -339,6 +432,16 @@ export class EstimationFormComponent {
   loading = signal(false);
   error = signal<string | null>(null);
   guardrailError = signal<GuardrailError | null>(null);
+
+  refProjects: ReferenceProject[] = [];
+
+  addRefProject() {
+    this.refProjects.push({ name: '', description: '', total_hours: null, total_cost: null });
+  }
+
+  removeRefProject() {
+    this.refProjects.pop();
+  }
 
   constructor(
     private readonly estimationService: EstimationService,
@@ -358,6 +461,8 @@ export class EstimationFormComponent {
     this.loading.set(true);
     this.error.set(null);
     this.guardrailError.set(null);
+    const validRefs = this.refProjects.filter(r => r.name.trim() && r.description.trim());
+    this.form.reference_projects = validRefs.length > 0 ? validRefs : undefined;
     this.estimationService.create(this.form).subscribe({
       next: result => this.router.navigate(['/estimations', result.id]),
       error: (err: HttpErrorResponse) => {

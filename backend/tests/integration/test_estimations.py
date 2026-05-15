@@ -78,6 +78,58 @@ class TestCreateEstimationSync:
         assert resp.status_code == 201
         assert resp.json()["project_id"] == project_id
 
+    async def test_reference_projects_forwarded_to_ai_engine(self, client, auth_headers):
+        """reference_projects must be serialised and passed through to the AI engine."""
+        ref_projects = [
+            {"name": "HR Tool v1", "description": "Basic HR CRUD", "total_hours": 200, "total_cost": 15000},
+            {"name": "CRM Lite",   "description": "Simple CRM",    "total_hours": 120, "total_cost": None},
+        ]
+        captured: list[dict] = []
+
+        def _capture(payload: dict) -> dict:
+            captured.append(payload)
+            return AI_RESPONSE_PAYLOAD  # type: ignore[return-value]
+
+        with patch("app.services.ai_client.estimate_sync", AsyncMock(side_effect=_capture)):
+            resp = await client.post(
+                "/v1/estimations",
+                json={"transcription": VALID_TRANSCRIPTION, "reference_projects": ref_projects},
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 201
+        assert len(captured) == 1
+        forwarded = captured[0].get("reference_projects")
+        assert forwarded is not None
+        assert len(forwarded) == 2
+        assert forwarded[0]["name"] == "HR Tool v1"
+        assert forwarded[0]["total_hours"] == 200
+        assert forwarded[1]["name"] == "CRM Lite"
+        assert forwarded[1]["total_cost"] is None
+
+    async def test_reference_projects_accepts_minimal_fields(self, client, auth_headers):
+        """total_hours and total_cost are optional; only name+description are required."""
+        with _patch_ai_sync():
+            resp = await client.post(
+                "/v1/estimations",
+                json={
+                    "transcription": VALID_TRANSCRIPTION,
+                    "reference_projects": [{"name": "Minimal", "description": "No hours or cost"}],
+                },
+                headers=auth_headers,
+            )
+        assert resp.status_code == 201
+
+    async def test_reference_projects_none_is_accepted(self, client, auth_headers):
+        """Sending null (or omitting) reference_projects must still succeed."""
+        with _patch_ai_sync():
+            resp = await client.post(
+                "/v1/estimations",
+                json={"transcription": VALID_TRANSCRIPTION, "reference_projects": None},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 201
+
     async def test_short_transcription_returns_422(self, client, auth_headers):
         resp = await client.post(
             "/v1/estimations",

@@ -253,3 +253,123 @@ describe('EstimationFormComponent — submit() generic errors', () => {
     expect(warning).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// refProjects management
+// ---------------------------------------------------------------------------
+
+describe('EstimationFormComponent — refProjects management', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('starts with an empty refProjects array', () => {
+    const { component } = setup();
+    expect(component.refProjects).toEqual([]);
+  });
+
+  it('addRefProject() appends a blank project entry', () => {
+    const { component } = setup();
+    component.addRefProject();
+    expect(component.refProjects.length).toBe(1);
+    expect(component.refProjects[0]).toEqual({
+      name: '', description: '', total_hours: null, total_cost: null,
+    });
+  });
+
+  it('addRefProject() called twice produces two entries', () => {
+    const { component } = setup();
+    component.addRefProject();
+    component.addRefProject();
+    expect(component.refProjects.length).toBe(2);
+  });
+
+  it('removeRefProject() pops the last entry', () => {
+    const { component } = setup();
+    component.addRefProject();
+    component.addRefProject();
+    component.removeRefProject();
+    expect(component.refProjects.length).toBe(1);
+  });
+
+  it('removeRefProject() on empty array does not throw', () => {
+    const { component } = setup();
+    expect(() => component.removeRefProject()).not.toThrow();
+    expect(component.refProjects.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// submit() — reference_projects in payload
+// ---------------------------------------------------------------------------
+
+describe('EstimationFormComponent — submit() reference_projects payload', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('omits reference_projects from payload when array is empty', () => {
+    const { component, httpMock } = setup();
+    component.form.transcription = VALID_TRANSCRIPTION;
+    component.submit();
+
+    const req = httpMock.expectOne(ESTIMATE_URL);
+    expect(req.request.body['reference_projects']).toBeUndefined();
+    req.flush({ id: 'est-1' });
+  });
+
+  it('includes reference_projects in payload when valid entries exist', () => {
+    const { component, httpMock } = setup();
+    component.form.transcription = VALID_TRANSCRIPTION;
+    component.addRefProject();
+    component.refProjects[0].name = 'HR Tool v1';
+    component.refProjects[0].description = 'Basic CRUD app';
+    component.refProjects[0].total_hours = 200;
+    component.refProjects[0].total_cost = 15000;
+    component.submit();
+
+    const req = httpMock.expectOne(ESTIMATE_URL);
+    expect(req.request.body['reference_projects']).toEqual([
+      { name: 'HR Tool v1', description: 'Basic CRUD app', total_hours: 200, total_cost: 15000 },
+    ]);
+    req.flush({ id: 'est-2' });
+  });
+
+  it('filters out entries with empty name before sending', () => {
+    const { component, httpMock } = setup();
+    component.form.transcription = VALID_TRANSCRIPTION;
+    component.addRefProject();
+    component.refProjects[0].name = '';
+    component.refProjects[0].description = 'Has description but no name';
+    component.submit();
+
+    const req = httpMock.expectOne(ESTIMATE_URL);
+    expect(req.request.body['reference_projects']).toBeUndefined();
+    req.flush({ id: 'est-3' });
+  });
+
+  it('filters out entries with empty description before sending', () => {
+    const { component, httpMock } = setup();
+    component.form.transcription = VALID_TRANSCRIPTION;
+    component.addRefProject();
+    component.refProjects[0].name = 'Has name but no description';
+    component.refProjects[0].description = '';
+    component.submit();
+
+    const req = httpMock.expectOne(ESTIMATE_URL);
+    expect(req.request.body['reference_projects']).toBeUndefined();
+    req.flush({ id: 'est-4' });
+  });
+
+  it('sends only valid entries when mix of valid and empty exists', () => {
+    const { component, httpMock } = setup();
+    component.form.transcription = VALID_TRANSCRIPTION;
+    component.addRefProject();
+    component.refProjects[0].name = 'Valid Project';
+    component.refProjects[0].description = 'Has both fields';
+    component.addRefProject(); // second entry left blank
+    component.submit();
+
+    const req = httpMock.expectOne(ESTIMATE_URL);
+    const sent = req.request.body['reference_projects'];
+    expect(sent.length).toBe(1);
+    expect(sent[0].name).toBe('Valid Project');
+    req.flush({ id: 'est-5' });
+  });
+});

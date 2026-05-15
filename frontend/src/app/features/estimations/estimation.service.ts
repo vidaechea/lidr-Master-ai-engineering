@@ -68,6 +68,13 @@ export interface EstimationOut extends EstimationListItem {
   error_detail: string | null;
 }
 
+export interface ReferenceProject {
+  name: string;
+  description: string;
+  total_hours: number | null;
+  total_cost: number | null;
+}
+
 export interface EstimationCreate {
   transcription: string;
   project_id?: string;
@@ -83,6 +90,7 @@ export interface EstimationCreate {
   prompt_version?: string;
   project_type?: 'mobile_app' | 'web_saas' | 'internal_tool' | 'data_pipeline';
   detail_level?: 'summary' | 'medium' | 'detailed';
+  reference_projects?: ReferenceProject[];
 }
 
 @Injectable({ providedIn: 'root' })
