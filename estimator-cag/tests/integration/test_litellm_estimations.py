@@ -52,21 +52,20 @@ def _make_litellm_response(
 
 
 def _patch_litellm_router(mock_response: MagicMock):
-    """Patch litellm.Router so its acompletion returns mock_response.
+    """Patch the litellm_router_service singleton's internal router.
 
-    The patch replaces the Router class at import time, so any
-    LiteLLMRouterService() instantiation gets the mock router.
+    Replaces the already-instantiated singleton's _router so that any
+    acompletion call returns mock_response without hitting real APIs.
     """
+    import app.services.litellm_service as _svc
+
     mock_router = MagicMock()
     mock_router.acompletion = AsyncMock(return_value=mock_response)
     mock_router.model_list = [
         {"model_name": "estimator", "litellm_params": {"model": "gpt-4o-mini"}},
         {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
     ]
-    return patch(
-        "app.services.llm.litellm.Router",
-        return_value=mock_router,
-    )
+    return patch.object(_svc.litellm_router_service, "_router", mock_router)
 
 
 @pytest.fixture()
@@ -188,6 +187,8 @@ class TestCreateEstimationLiteLLMPreCall:
         )
 
     def _patch_two_calls(self, litellm_client: TestClient):
+        import app.services.litellm_service as _svc
+
         pre = self._pre_call_mock()
         est = self._estimation_mock()
         mock_router = MagicMock()
@@ -196,10 +197,7 @@ class TestCreateEstimationLiteLLMPreCall:
             {"model_name": "estimator", "litellm_params": {"model": "gpt-4o-mini"}},
             {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
         ]
-        return patch(
-            "app.services.llm.litellm.Router",
-            return_value=mock_router,
-        ), mock_router
+        return patch.object(_svc.litellm_router_service, "_router", mock_router), mock_router
 
     def test_returns_200_with_pre_call_enabled(self, litellm_client: TestClient):
         ctx, _ = self._patch_two_calls(litellm_client)
@@ -285,6 +283,7 @@ class TestCreateEstimationLiteLLMErrors:
 
     def test_returns_401_on_auth_error(self, litellm_client: TestClient):
         import litellm as _litellm
+        import app.services.litellm_service as _svc
 
         mock_router = MagicMock()
         mock_router.acompletion = AsyncMock(
@@ -292,11 +291,7 @@ class TestCreateEstimationLiteLLMErrors:
                 message="Invalid key", llm_provider="openai", model="gpt-4o-mini"
             )
         )
-        mock_router.model_list = [
-            {"model_name": "estimator", "litellm_params": {"model": "gpt-4o-mini"}},
-            {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
-        ]
-        with patch("app.services.llm.litellm.Router", return_value=mock_router):
+        with patch.object(_svc.litellm_router_service, "_router", mock_router):
             response = litellm_client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -305,6 +300,7 @@ class TestCreateEstimationLiteLLMErrors:
 
     def test_returns_429_on_rate_limit(self, litellm_client: TestClient):
         import litellm as _litellm
+        import app.services.litellm_service as _svc
 
         mock_router = MagicMock()
         mock_router.acompletion = AsyncMock(
@@ -312,11 +308,7 @@ class TestCreateEstimationLiteLLMErrors:
                 message="Rate limit", llm_provider="openai", model="gpt-4o-mini"
             )
         )
-        mock_router.model_list = [
-            {"model_name": "estimator", "litellm_params": {"model": "gpt-4o-mini"}},
-            {"model_name": "estimator", "litellm_params": {"model": "anthropic/claude-haiku-4-5-20251001"}},
-        ]
-        with patch("app.services.llm.litellm.Router", return_value=mock_router):
+        with patch.object(_svc.litellm_router_service, "_router", mock_router):
             response = litellm_client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},

@@ -9,6 +9,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 ENV/
 build/
 develop-eggs/
@@ -42,6 +43,9 @@ wheels/
 # Coverage
 .coverage
 htmlcov/
+
+# Pytest
+.pytest_cache/
 
 # uv
 uv.lock

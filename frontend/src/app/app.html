@@ -1,0 +1,13 @@
+<mat-toolbar color="primary">
+  <span>Estimator</span>
+  @if (auth.isLoggedIn()) {
+    <span class="spacer"></span>
+    <a mat-button routerLink="/projects" routerLinkActive="active-link">Projects</a>
+    <a mat-button routerLink="/estimations/new" routerLinkActive="active-link">New Estimation</a>
+    <button mat-button (click)="auth.logout()">Sign out</button>
+  }
+</mat-toolbar>
+
+<main class="main-content">
+  <router-outlet />
+</main>

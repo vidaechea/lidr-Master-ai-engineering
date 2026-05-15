@@ -19,34 +19,36 @@ FAKE_RESPONSE_ID = "resp_integration_001"
 VALID_TRANSCRIPTION = "Build an e-commerce platform with user auth and product catalog."
 
 
-def _make_responses_mock(
+def _make_litellm_mock(
     output_text: str = FAKE_OUTPUT,
-    status: str = "completed",
     input_tokens: int = 600,
     output_tokens: int = 250,
     response_id: str = FAKE_RESPONSE_ID,
 ) -> MagicMock:
-    """Build a minimal mock that mimics an OpenAI Responses API response object."""
+    """Build a minimal mock that mimics a LiteLLM completion response object."""
     usage = MagicMock()
-    usage.input_tokens = input_tokens
-    usage.output_tokens = output_tokens
-    usage.output_tokens_details = None
+    usage.prompt_tokens = input_tokens
+    usage.completion_tokens = output_tokens
+
+    message = MagicMock()
+    message.content = output_text
+
+    choice = MagicMock()
+    choice.message = message
+    choice.finish_reason = "stop"
 
     response = MagicMock()
-    response.status = status
-    response.output_text = output_text
+    response.choices = [choice]
     response.usage = usage
     response.id = response_id
     return response
 
 
-def _patch_responses_api(mock_response: MagicMock):
-    """Context manager: patches _get_client so responses.create returns mock_response."""
+def _patch_litellm_complete(mock_response: MagicMock):
+    """Context manager: patches LiteLLMRouterService.complete to return mock_response."""
     return patch(
-        "app.services.llm.openai._get_client",
-        return_value=MagicMock(
-            responses=MagicMock(create=AsyncMock(return_value=mock_response))
-        ),
+        "app.services.litellm_service.LiteLLMRouterService.complete",
+        AsyncMock(return_value=mock_response),
     )
 
 
@@ -84,8 +86,8 @@ class TestGetExamples:
 # --------------------------------------------------------------------------- #
 class TestCreateEstimation:
     def test_returns_200_with_valid_payload(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -93,8 +95,8 @@ class TestCreateEstimation:
         assert response.status_code == 200
 
     def test_response_contains_estimation_field(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -102,8 +104,8 @@ class TestCreateEstimation:
         assert "estimation" in response.json()
 
     def test_estimation_value_matches_llm_output(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -111,8 +113,8 @@ class TestCreateEstimation:
         assert response.json()["estimation"] == FAKE_OUTPUT
 
     def test_response_contains_cost_fields(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -123,8 +125,8 @@ class TestCreateEstimation:
         assert "estimated_precall_cost_usd" in data
 
     def test_response_contains_token_fields(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -135,8 +137,8 @@ class TestCreateEstimation:
         assert "estimated_input_tokens" in data
 
     def test_response_contains_model_and_response_id(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -146,8 +148,8 @@ class TestCreateEstimation:
         assert data["response_id"] == FAKE_RESPONSE_ID
 
     def test_input_tokens_match_mock_usage(self, client: TestClient):
-        mock_response = _make_responses_mock(input_tokens=600, output_tokens=250)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(input_tokens=600, output_tokens=250)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -166,8 +168,8 @@ class TestCreateEstimation:
         assert response.status_code == 422
 
     def test_accepts_project_type_and_detail_level(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={
@@ -235,9 +237,11 @@ class TestCreateEstimationErrors:
             )
         assert "context" in response.json()["detail"].lower()
 
-    def test_returns_500_when_api_status_is_failed(self, client: TestClient):
-        mock_response = _make_responses_mock(status="failed")
-        with _patch_responses_api(mock_response):
+    def test_returns_500_when_llm_raises_unexpected_error(self, client: TestClient):
+        with patch(
+            "app.services.litellm_service.LiteLLMRouterService.complete",
+            AsyncMock(side_effect=RuntimeError("unexpected provider failure")),
+        ):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -256,22 +260,22 @@ FAKE_REQUIREMENTS = (
 )
 
 
-def _patch_responses_api_two_calls(
+def _patch_litellm_complete_two_calls(
     pre_call_response: MagicMock,
     estimation_response: MagicMock,
 ):
-    """Context manager: patches _get_client so two sequential responses.create
+    """Context manager: patches LiteLLMRouterService.complete so two sequential
     calls return pre_call_response first, then estimation_response."""
-    create_mock = AsyncMock(side_effect=[pre_call_response, estimation_response])
+    complete_mock = AsyncMock(side_effect=[pre_call_response, estimation_response])
     return patch(
-        "app.services.llm.openai._get_client",
-        return_value=MagicMock(responses=MagicMock(create=create_mock)),
-    ), create_mock
+        "app.services.litellm_service.LiteLLMRouterService.complete",
+        complete_mock,
+    ), complete_mock
 
 
 class TestCreateEstimationPreCall:
     def _pre_call_mock(self) -> MagicMock:
-        return _make_responses_mock(
+        return _make_litellm_mock(
             output_text=FAKE_REQUIREMENTS,
             response_id="resp_pre_call",
             input_tokens=300,
@@ -279,7 +283,7 @@ class TestCreateEstimationPreCall:
         )
 
     def _estimation_mock(self) -> MagicMock:
-        return _make_responses_mock(
+        return _make_litellm_mock(
             output_text=FAKE_OUTPUT,
             response_id="resp_estimation",
             input_tokens=400,
@@ -287,7 +291,7 @@ class TestCreateEstimationPreCall:
         )
 
     def test_returns_200_with_pre_call_enabled(self, client: TestClient):
-        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        ctx, _ = _patch_litellm_complete_two_calls(self._pre_call_mock(), self._estimation_mock())
         with ctx:
             response = client.post(
                 "/api/v1/estimate",
@@ -296,7 +300,7 @@ class TestCreateEstimationPreCall:
         assert response.status_code == 200
 
     def test_response_contains_requirements_when_pre_call_enabled(self, client: TestClient):
-        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        ctx, _ = _patch_litellm_complete_two_calls(self._pre_call_mock(), self._estimation_mock())
         with ctx:
             response = client.post(
                 "/api/v1/estimate",
@@ -305,8 +309,8 @@ class TestCreateEstimationPreCall:
         assert response.json()["requirements"] == FAKE_REQUIREMENTS
 
     def test_requirements_is_none_when_pre_call_disabled(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "pre_call": False},
@@ -314,7 +318,7 @@ class TestCreateEstimationPreCall:
         assert response.json()["requirements"] is None
 
     def test_pre_call_cost_usd_is_positive_when_pre_call_enabled(self, client: TestClient):
-        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        ctx, _ = _patch_litellm_complete_two_calls(self._pre_call_mock(), self._estimation_mock())
         with ctx:
             response = client.post(
                 "/api/v1/estimate",
@@ -325,8 +329,8 @@ class TestCreateEstimationPreCall:
         assert data["pre_call_cost_usd"] > 0
 
     def test_pre_call_cost_usd_is_none_when_pre_call_disabled(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "pre_call": False},
@@ -334,7 +338,7 @@ class TestCreateEstimationPreCall:
         assert response.json()["pre_call_cost_usd"] is None
 
     def test_estimation_field_contains_main_call_output(self, client: TestClient):
-        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        ctx, _ = _patch_litellm_complete_two_calls(self._pre_call_mock(), self._estimation_mock())
         with ctx:
             response = client.post(
                 "/api/v1/estimate",
@@ -343,7 +347,7 @@ class TestCreateEstimationPreCall:
         assert response.json()["estimation"] == FAKE_OUTPUT
 
     def test_total_cost_is_greater_than_turn_cost_when_pre_call_enabled(self, client: TestClient):
-        ctx, _ = _patch_responses_api_two_calls(self._pre_call_mock(), self._estimation_mock())
+        ctx, _ = _patch_litellm_complete_two_calls(self._pre_call_mock(), self._estimation_mock())
         with ctx:
             response = client.post(
                 "/api/v1/estimate",
@@ -353,7 +357,7 @@ class TestCreateEstimationPreCall:
         assert data["total_cost_usd"] > data["turn_cost_usd"]
 
     def test_provider_called_twice_when_pre_call_enabled(self, client: TestClient):
-        ctx, create_mock = _patch_responses_api_two_calls(
+        ctx, create_mock = _patch_litellm_complete_two_calls(
             self._pre_call_mock(), self._estimation_mock()
         )
         with ctx:
@@ -387,8 +391,8 @@ Estimated Duration: 6 weeks
 
 class TestEstimationValidation:
     def test_validation_field_present_by_default(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -396,8 +400,8 @@ class TestEstimationValidation:
         assert "validation" in response.json()
 
     def test_validation_is_object_when_evaluate_true(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "evaluate": True},
@@ -407,8 +411,8 @@ class TestEstimationValidation:
         assert isinstance(data["validation"], dict)
 
     def test_validation_is_null_when_evaluate_false(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "evaluate": False},
@@ -416,8 +420,8 @@ class TestEstimationValidation:
         assert response.json()["validation"] is None
 
     def test_validation_contains_score_field(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -427,8 +431,8 @@ class TestEstimationValidation:
         assert isinstance(validation["score"], float)
 
     def test_validation_contains_issues_list(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -438,8 +442,8 @@ class TestEstimationValidation:
         assert isinstance(validation["issues"], list)
 
     def test_validation_contains_all_check_fields(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -456,19 +460,19 @@ class TestEstimationValidation:
             assert field in validation, f"Missing field: {field}"
 
     def test_well_formed_output_gives_perfect_score(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
             )
         validation = response.json()["validation"]
-        assert validation["score"] == 1.0
+        assert validation["score"] == 1
         assert validation["issues"] == []
 
     def test_malformed_output_gives_issues(self, client: TestClient):
-        mock_response = _make_responses_mock(output_text="Just some random text without structure.")
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text="Just some random text without structure.")
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -479,13 +483,13 @@ class TestEstimationValidation:
 
     def test_evaluate_defaults_to_true(self, client: TestClient):
         """Omitting evaluate should behave the same as evaluate=True."""
-        mock_response = _make_responses_mock(output_text=WELL_FORMED_OUTPUT)
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock(output_text=WELL_FORMED_OUTPUT)
+        with _patch_litellm_complete(mock_response):
             without_flag = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
             )
-        with _patch_responses_api(mock_response):
+        with _patch_litellm_complete(mock_response):
             with_flag = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "evaluate": True},
@@ -499,8 +503,8 @@ class TestEstimationValidation:
 # --------------------------------------------------------------------------- #
 class TestOutputFormat:
     def test_accepts_phases_table(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "output_format": "phases_table"},
@@ -508,8 +512,8 @@ class TestOutputFormat:
         assert response.status_code == 200
 
     def test_accepts_line_items(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "output_format": "line_items"},
@@ -517,8 +521,8 @@ class TestOutputFormat:
         assert response.status_code == 200
 
     def test_accepts_narrative(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "output_format": "narrative"},
@@ -526,8 +530,8 @@ class TestOutputFormat:
         assert response.status_code == 200
 
     def test_accepts_example_format_markdown(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "example_format": "markdown"},
@@ -535,8 +539,8 @@ class TestOutputFormat:
         assert response.status_code == 200
 
     def test_accepts_example_format_json(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "example_format": "json"},
@@ -544,8 +548,8 @@ class TestOutputFormat:
         assert response.status_code == 200
 
     def test_accepts_example_format_narrative(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "example_format": "narrative"},
@@ -568,8 +572,8 @@ class TestOutputFormat:
 
     def test_default_output_format_is_phases_table(self, client: TestClient):
         """Omitting output_format should default to phases_table without error."""
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -582,8 +586,8 @@ class TestOutputFormat:
 # --------------------------------------------------------------------------- #
 class TestPromptVersion:
     def test_v1_returns_200(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate?prompt_version=v1",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -591,8 +595,8 @@ class TestPromptVersion:
         assert response.status_code == 200
 
     def test_v2_returns_200(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate?prompt_version=v2",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -600,8 +604,8 @@ class TestPromptVersion:
         assert response.status_code == 200
 
     def test_v2_response_contains_prompt_version_field(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate?prompt_version=v2",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -609,8 +613,8 @@ class TestPromptVersion:
         assert response.json()["prompt_version"] == "v2"
 
     def test_v1_response_contains_prompt_version_field(self, client: TestClient):
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate?prompt_version=v1",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -619,8 +623,8 @@ class TestPromptVersion:
 
     def test_default_prompt_version_is_v1(self, client: TestClient):
         """Omitting prompt_version should default to v1."""
-        mock_response = _make_responses_mock()
-        with _patch_responses_api(mock_response):
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -629,44 +633,34 @@ class TestPromptVersion:
 
     def test_v1_and_v2_produce_different_system_prompts(self, client: TestClient):
         """Requests with different prompt_version should call the API with different system prompts."""
-        from unittest.mock import call
+        complete_mock_v1 = AsyncMock(return_value=_make_litellm_mock())
+        complete_mock_v2 = AsyncMock(return_value=_make_litellm_mock())
 
-        create_mock_v1 = AsyncMock(return_value=_make_responses_mock())
-        create_mock_v2 = AsyncMock(return_value=_make_responses_mock())
-
-        with patch(
-            "app.services.llm.openai._get_client",
-            return_value=MagicMock(responses=MagicMock(create=create_mock_v1)),
-        ):
+        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock_v1):
             client.post(
                 "/api/v1/estimate?prompt_version=v1",
                 json={"transcription": VALID_TRANSCRIPTION},
             )
-        system_v1 = create_mock_v1.call_args[1]["instructions"]
+        system_v1 = complete_mock_v1.call_args.kwargs["messages"][0]["content"]
 
-        with patch(
-            "app.services.llm.openai._get_client",
-            return_value=MagicMock(responses=MagicMock(create=create_mock_v2)),
-        ):
+        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock_v2):
             client.post(
                 "/api/v1/estimate?prompt_version=v2",
                 json={"transcription": VALID_TRANSCRIPTION},
             )
-        system_v2 = create_mock_v2.call_args[1]["instructions"]
+        system_v2 = complete_mock_v2.call_args.kwargs["messages"][0]["content"]
 
         assert system_v1 != system_v2
 
     def test_v2_system_prompt_contains_confidence_instruction(self, client: TestClient):
         """v2 template should inject a confidence-level requirement into the system prompt."""
-        create_mock = AsyncMock(return_value=_make_responses_mock())
+        complete_mock = AsyncMock(return_value=_make_litellm_mock())
 
-        with patch(
-            "app.services.llm.openai._get_client",
-            return_value=MagicMock(responses=MagicMock(create=create_mock)),
-        ):
+        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock):
             client.post(
                 "/api/v1/estimate?prompt_version=v2",
                 json={"transcription": VALID_TRANSCRIPTION},
             )
-        system_prompt = create_mock.call_args[1]["instructions"]
+        system_prompt = complete_mock.call_args.kwargs["messages"][0]["content"]
         assert "confidence" in system_prompt.lower()
+
