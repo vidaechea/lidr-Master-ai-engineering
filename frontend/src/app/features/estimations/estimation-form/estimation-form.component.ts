@@ -5,7 +5,15 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
-import { EstimationCreate, EstimationService, GuardrailError, GuardrailReason, ReferenceProject } from '../estimation.service';
+import { switchMap } from 'rxjs';
+import {
+  EstimationCreate,
+  EstimationService,
+  GuardrailError,
+  GuardrailReason,
+  ReferenceProject,
+  SessionEstimationResponse,
+} from '../estimation.service';
 
 const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
   pii: 'person_off',
@@ -52,6 +60,44 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
             <div class="textarea-footer">
               <span class="char-count">{{ form.transcription.length }} / 20,000</span>
             </div>
+          </div>
+
+          <!-- Attachments drop-zone -->
+          <div class="field">
+            <div class="field-header">
+              <label class="field-label">
+                Attachments <em class="optional-tag">(optional)</em>
+              </label>
+              <span class="tip-badge">
+                <mat-icon class="tip-icon">info</mat-icon>
+                PDF, DOCX or TXT — text extracted server-side
+              </span>
+            </div>
+            <div class="attach-zone" [class.attach-zone--drag]="dragOver()"
+              (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
+              (click)="fileInput.click()" (keydown.enter)="fileInput.click()" tabindex="0" role="button"
+              aria-label="Upload attachments">
+              <input #fileInput type="file" accept=".pdf,.docx,.txt" multiple hidden
+                (change)="onFilesSelected($event)">
+              <mat-icon class="attach-icon">cloud_upload</mat-icon>
+              <span class="attach-label">Drop files here or <strong>click to browse</strong></span>
+              <span class="attach-hint">PDF · DOCX · TXT — max 10 MB each</span>
+            </div>
+            @if (attachments().length > 0) {
+              <div class="file-list">
+                @for (f of attachments(); track $index; let i = $index) {
+                  <div class="file-chip">
+                    <mat-icon class="file-icon">{{ fileIcon(f) }}</mat-icon>
+                    <span class="file-name">{{ f.name }}</span>
+                    <span class="file-size">({{ formatSize(f.size) }})</span>
+                    <button type="button" class="file-remove" (click)="removeAttachment(i)"
+                      [attr.aria-label]="'Remove ' + f.name">
+                      <mat-icon>close</mat-icon>
+                    </button>
+                  </div>
+                }
+              </div>
+            }
           </div>
 
           <!-- Primary row: Model / Output format / Prompt version -->
@@ -256,6 +302,23 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
             </button>
           </div>
         </form>
+
+        <!-- Inline result (shown when attachments path is used) -->
+        @if (inlineResult()) {
+          <div class="inline-result">
+            <div class="inline-result-head">
+              <mat-icon>auto_awesome</mat-icon>
+              <span>Estimation Result</span>
+              <span class="inline-model">{{ inlineResult()!.model }}</span>
+            </div>
+            <div class="inline-result-body">{{ inlineResult()!.estimation }}</div>
+            <div class="inline-result-meta">
+              <span>Tokens: {{ inlineResult()!.input_tokens }} in / {{ inlineResult()!.output_tokens }} out</span>
+              <span>Cost: {{ formatCost(inlineResult()!.turn_cost_usd) }}</span>
+            </div>
+          </div>
+        }
+
       </div>
     </div>
   `,
@@ -415,6 +478,61 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
     .ref-col--num  { flex: 1; min-width: 110px; }
     .num-ctrl { display: flex; align-items: center; gap: 4px; }
     .num-input { flex: 1; min-width: 0; }
+
+    /* ── Attachment drop-zone ─────────────────────────────────────────────── */
+    .attach-zone {
+      display: flex; flex-direction: column; align-items: center; gap: 4px;
+      padding: 20px; border: 2px dashed #d0d0e8; border-radius: 10px;
+      background: #fafafa; cursor: pointer; text-align: center;
+      transition: border-color .2s, background .2s; outline: none;
+    }
+    .attach-zone:hover, .attach-zone:focus, .attach-zone--drag {
+      border-color: #6c63ff; background: #f5f0ff;
+    }
+    .attach-icon { font-size: 32px; width: 32px; height: 32px; color: #8c87c2; margin-bottom: 4px; }
+    .attach-label { font-size: 0.875rem; color: #555; }
+    .attach-hint  { font-size: 0.75rem; color: #aaa; }
+
+    .file-list  { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .file-chip  {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border-radius: 8px;
+      background: #f5f0ff; border: 1.5px solid #d8d2f8;
+    }
+    .file-icon  { font-size: 18px; width: 18px; height: 18px; color: #6c63ff; flex-shrink: 0; }
+    .file-name  { flex: 1; font-size: 0.8rem; font-weight: 600; color: #333; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .file-size  { font-size: 0.75rem; color: #888; flex-shrink: 0; }
+    .file-remove {
+      background: none; border: none; cursor: pointer; padding: 2px; color: #aaa;
+      display: flex; align-items: center; border-radius: 4px; transition: color .15s, background .15s;
+    }
+    .file-remove:hover { color: #e53935; background: #fce4ec; }
+    .file-remove mat-icon { font-size: 16px; width: 16px; height: 16px; }
+
+    /* ── Inline result ────────────────────────────────────────────────────── */
+    .inline-result {
+      margin-top: 24px; border-radius: 12px;
+      border: 1.5px solid #d8d2f8; background: #f8f7ff; overflow: hidden;
+    }
+    .inline-result-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 14px 20px; background: #ededf9;
+      border-bottom: 1px solid #d8d2f8; font-size: 0.875rem; font-weight: 600; color: #3d3d7d;
+    }
+    .inline-result-head mat-icon { color: #6c63ff; font-size: 20px; width: 20px; height: 20px; }
+    .inline-model {
+      margin-left: auto; font-size: 0.75rem; color: #6c63ff;
+      background: #e8e2ff; padding: 2px 10px; border-radius: 20px; font-weight: 400;
+    }
+    .inline-result-body {
+      padding: 20px; font-size: 0.875rem; color: #333;
+      white-space: pre-wrap; font-family: 'Courier New', monospace; line-height: 1.6;
+      max-height: 480px; overflow-y: auto;
+    }
+    .inline-result-meta {
+      display: flex; gap: 20px; padding: 10px 20px;
+      border-top: 1px solid #d8d2f8; font-size: 0.75rem; color: #888; background: #f5f4ff;
+    }
   `],
 })
 export class EstimationFormComponent {
@@ -432,6 +550,9 @@ export class EstimationFormComponent {
   loading = signal(false);
   error = signal<string | null>(null);
   guardrailError = signal<GuardrailError | null>(null);
+  attachments = signal<File[]>([]);
+  inlineResult = signal<SessionEstimationResponse | null>(null);
+  dragOver = signal(false);
 
   refProjects: ReferenceProject[] = [];
 
@@ -441,6 +562,55 @@ export class EstimationFormComponent {
 
   removeRefProject() {
     this.refProjects.pop();
+  }
+
+  onFilesSelected(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files) {
+      this.attachments.update(prev => [...prev, ...Array.from(input.files!)]);
+      input.value = '';
+    }
+  }
+
+  removeAttachment(index: number) {
+    this.attachments.update(prev => prev.filter((_, i) => i !== index));
+  }
+
+  onDragOver(event: DragEvent) {
+    event.preventDefault();
+    this.dragOver.set(true);
+  }
+
+  onDragLeave(event: DragEvent) {
+    event.preventDefault();
+    this.dragOver.set(false);
+  }
+
+  onDrop(event: DragEvent) {
+    event.preventDefault();
+    this.dragOver.set(false);
+    const files = event.dataTransfer?.files;
+    if (files) {
+      this.attachments.update(prev => [...prev, ...Array.from(files)]);
+    }
+  }
+
+  fileIcon(file: File): string {
+    const name = file.name.toLowerCase();
+    if (name.endsWith('.pdf') || file.type === 'application/pdf') return 'picture_as_pdf';
+    if (name.endsWith('.docx')) return 'description';
+    if (name.endsWith('.txt') || file.type === 'text/plain') return 'text_snippet';
+    return 'attach_file';
+  }
+
+  formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  formatCost(cost: number): string {
+    return '$' + cost.toFixed(6);
   }
 
   constructor(
@@ -461,20 +631,55 @@ export class EstimationFormComponent {
     this.loading.set(true);
     this.error.set(null);
     this.guardrailError.set(null);
+    this.inlineResult.set(null);
+
+    if (this.attachments().length > 0) {
+      this._submitWithAttachments();
+    } else {
+      this._submitJson();
+    }
+  }
+
+  private _submitJson() {
     const validRefs = this.refProjects.filter(r => r.name.trim() && r.description.trim());
     this.form.reference_projects = validRefs.length > 0 ? validRefs : undefined;
     this.estimationService.create(this.form).subscribe({
       next: result => this.router.navigate(['/estimations', result.id]),
-      error: (err: HttpErrorResponse) => {
-        const detail = err.error?.detail;
-        if (detail?.reason && (err.status === 400 || err.status === 422)) {
-          this.guardrailError.set(detail as GuardrailError);
-        } else {
-          const msg = typeof detail === 'string' ? detail : (detail?.message ?? err.message ?? 'Unknown error');
-          this.error.set(`Estimation failed (${err.status}): ${msg}`);
-        }
+      error: (err: HttpErrorResponse) => this._handleError(err),
+    });
+  }
+
+  private _submitWithAttachments() {
+    this.estimationService.createSession().pipe(
+      switchMap(({ session_id }) => {
+        const fd = new FormData();
+        fd.append('transcript', this.form.transcription);
+        this.attachments().forEach(f => fd.append('attachments', f, f.name));
+        if (this.form.model) fd.append('model', this.form.model);
+        if (this.form.temperature != null) fd.append('temperature', String(this.form.temperature));
+        fd.append('pre_call', String(this.form.pre_call ?? false));
+        fd.append('output_format', this.form.output_format ?? 'phases_table');
+        return this.estimationService.createWithAttachments(
+          session_id, fd, this.form.prompt_version,
+        );
+      }),
+    ).subscribe({
+      next: result => {
+        this.inlineResult.set(result);
         this.loading.set(false);
       },
+      error: (err: HttpErrorResponse) => this._handleError(err),
     });
+  }
+
+  private _handleError(err: HttpErrorResponse) {
+    const detail = err.error?.detail;
+    if (detail?.reason && (err.status === 400 || err.status === 422)) {
+      this.guardrailError.set(detail as GuardrailError);
+    } else {
+      const msg = typeof detail === 'string' ? detail : (detail?.message ?? err.message ?? 'Unknown error');
+      this.error.set(`Estimation failed (${err.status}): ${msg}`);
+    }
+    this.loading.set(false);
   }
 }

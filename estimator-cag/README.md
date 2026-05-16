@@ -279,6 +279,33 @@ MODEL_REGISTRY: dict[str, ModelConfig] = {
 
 Each entry specifies the LiteLLM model string, input/output price per million tokens, context window, provider, and whether the model supports reasoning. Adding a new model requires only one line here — the API and UI pick it up automatically.
 
+## Design decisions
+
+### Session metadata extraction: heuristic vs. LLM extractor
+
+After each estimation turn the service enriches a `ProjectMetadata` object
+(project name, tech stack, team size, agreed scope) that is injected into the
+`<project_metadata>` block of the system prompt on every subsequent call.
+
+Two strategies were considered for populating this object:
+
+| | Heuristic | LLM extractor |
+|---|---|---|
+| **Latency overhead** | < 1 ms (regex, no I/O) | +0.5–1 s per turn |
+| **Cost overhead** | zero | one extra LLM call per turn |
+| **Accuracy** | good for narrow, well-defined fields | better for ambiguous names/scope |
+| **Failure mode** | field stays `None` silently | API error blocks the turn |
+
+**Decision: heuristic** (`app/services/metadata_extractor.py`).
+
+The fields are narrow and predictable enough for a regex/allow-list approach:
+`project_name` is matched by title-phrase patterns; `mentioned_technologies` is
+scanned against a curated ~70-keyword allow-list; `assumed_team_size` is extracted
+from numeric patterns in the LLM response; `agreed_scope` is the first sentence(s)
+of the transcript. False positives are low-risk — the metadata is advisory context
+for the LLM, not user-facing output. The `MetadataExtractor.update()` interface is
+stable, so a `LLMMetadataExtractor` can be swapped in without touching the router.
+
 ## Tests
 
 ```bash

@@ -3,6 +3,16 @@ Your task is to analyze project descriptions and produce clear, realistic effort
 Use professional language, make reasonable assumptions when details are missing, and be explicit about risks.
 Always include scope, effort, team composition, and timeline.
 
+<project_metadata>
+{% if project_metadata.project_name %}Project name: {{ project_metadata.project_name }}
+{% endif %}
+{% if project_metadata.assumed_team_size %}Assumed team size: {{ project_metadata.assumed_team_size }} members
+{% endif %}
+{% if project_metadata.mentioned_technologies %}Technologies: {{ project_metadata.mentioned_technologies | join(", ") }}
+{% endif %}
+{% if project_metadata.agreed_scope %}Agreed scope: {{ project_metadata.agreed_scope }}
+{% endif %}</project_metadata>
+
 {% if output_format == "phases_table" %}
 Output format: phases table — Organize the estimate as a markdown table grouped by project phase (e.g., Discovery, Design, Development, Testing, Deployment). Include a subtotals row per phase and a final totals section.
 {% elif output_format == "line_items" %}

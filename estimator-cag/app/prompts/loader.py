@@ -7,6 +7,7 @@ import structlog
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from app.schemas.estimation import EstimationExample, EstimationRequest, ExampleFormat
+from app.services.sessions import ProjectMetadata
 
 log = structlog.get_logger(__name__)
 
@@ -126,6 +127,7 @@ def format_examples_for_prompt(
 def render_estimation_prompt(
     request: EstimationRequest,
     version: str = "v1",
+    project_metadata: ProjectMetadata | None = None,
 ) -> tuple[str, str]:
     """Render the system and user prompts for an estimation request.
     
@@ -152,6 +154,7 @@ def render_estimation_prompt(
         "num_examples": request.num_examples,
         "examples": formatted_examples,
         "reference_projects": request.reference_projects,
+        "project_metadata": project_metadata or ProjectMetadata(),
     }
 
     system_prompt = system_template.render(**context).strip()

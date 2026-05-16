@@ -79,6 +79,9 @@ class Settings(BaseSettings):
     # Prompt version
     prompt_version: str = "v1"
 
+    # Conversation sliding-window — number of user+assistant *pairs* retained
+    max_conversation_turns: int = 6
+
     # LiteLLM Router resilience
     router_num_retries: int = 2
     router_timeout: int = 60

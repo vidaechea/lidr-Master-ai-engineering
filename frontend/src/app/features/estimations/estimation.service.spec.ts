@@ -2,10 +2,17 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { EstimationService, EstimationCreate, EstimationOut, GuardrailError } from './estimation.service';
+import {
+  EstimationService,
+  EstimationCreate,
+  EstimationOut,
+  GuardrailError,
+  SessionEstimationResponse,
+} from './estimation.service';
 import { environment } from '../../../environments/environment';
 
 const BASE = `${environment.apiUrl}/v1/estimations`;
+const SESSIONS_BASE = `${environment.aiEngineApiUrl}/api/v1/sessions`;
 
 const MOCK_ESTIMATION: EstimationOut = {
   id: 'est-001',
@@ -240,5 +247,119 @@ describe('EstimationService', () => {
       const detail = (caughtError as { error: { detail: GuardrailError } }).error.detail;
       expect(detail.reason).toBe('moderation');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session-based estimation (attachment path)
+// ---------------------------------------------------------------------------
+
+const MOCK_SESSION_RESPONSE: SessionEstimationResponse = {
+  estimation: '## Phase 1\n40h',
+  model: 'gpt-4o-mini',
+  response_id: 'resp-abc',
+  input_tokens: 320,
+  output_tokens: 90,
+  turn_cost_usd: 0.000035,
+  total_cost_usd: 0.000035,
+  estimated_input_tokens: 300,
+  estimated_precall_cost_usd: null,
+  requirements: null,
+  pre_call_cost_usd: null,
+  prompt_version: 'v1',
+};
+
+describe('EstimationService — createSession()', () => {
+  let service: EstimationService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('sends POST to the sessions base URL', () => {
+    service.createSession().subscribe();
+
+    const req = httpMock.expectOne(SESSIONS_BASE);
+    expect(req.request.method).toBe('POST');
+    req.flush({ session_id: 'sid-001' });
+  });
+
+  it('returns an object with a session_id field', () => {
+    let result: { session_id: string } | undefined;
+    service.createSession().subscribe(r => (result = r));
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-xyz' });
+    expect(result?.session_id).toBe('sid-xyz');
+  });
+});
+
+describe('EstimationService — createWithAttachments()', () => {
+  let service: EstimationService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('sends POST to /sessions/{id}/estimate', () => {
+    const fd = new FormData();
+    fd.append('transcript', 'Hello world');
+
+    service.createWithAttachments('sid-001', fd).subscribe();
+
+    const req = httpMock.expectOne(r => r.url === `${SESSIONS_BASE}/sid-001/estimate`);
+    expect(req.request.method).toBe('POST');
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('sends the FormData body as-is', () => {
+    const fd = new FormData();
+    fd.append('transcript', 'My project description here');
+
+    service.createWithAttachments('sid-002', fd).subscribe();
+
+    const req = httpMock.expectOne(r => r.url.includes('/sid-002/estimate'));
+    expect(req.request.body).toBe(fd);
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('defaults prompt_version query param to v1', () => {
+    service.createWithAttachments('sid-003', new FormData()).subscribe();
+
+    const req = httpMock.expectOne(r => r.url.includes('/sid-003/estimate'));
+    expect(req.request.params.get('prompt_version')).toBe('v1');
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('uses the provided prompt_version query param', () => {
+    service.createWithAttachments('sid-004', new FormData(), 'v2').subscribe();
+
+    const req = httpMock.expectOne(r => r.url.includes('/sid-004/estimate'));
+    expect(req.request.params.get('prompt_version')).toBe('v2');
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('returns the SessionEstimationResponse on success', () => {
+    let result: SessionEstimationResponse | undefined;
+    service.createWithAttachments('sid-005', new FormData()).subscribe(r => (result = r));
+
+    httpMock.expectOne(r => r.url.includes('/sid-005/estimate')).flush(MOCK_SESSION_RESPONSE);
+
+    expect(result?.model).toBe('gpt-4o-mini');
+    expect(result?.input_tokens).toBe(320);
+    expect(result?.estimation).toContain('Phase 1');
   });
 });

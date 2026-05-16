@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
@@ -8,6 +8,33 @@ import { EstimationFormComponent } from './estimation-form.component';
 import { environment } from '../../../../environments/environment';
 
 const ESTIMATE_URL = `${environment.apiUrl}/v1/estimations`;
+const SESSIONS_BASE = `${environment.aiEngineApiUrl}/api/v1/sessions`;
+
+// ---------------------------------------------------------------------------
+// Outer-scope helpers shared across suites
+// ---------------------------------------------------------------------------
+
+function makeFile(name: string, type: string, size = 1024): File {
+  return new File(['x'.repeat(size)], name, { type });
+}
+
+function makeFileList(...files: File[]): FileList {
+  const dt = new DataTransfer();
+  files.forEach(f => dt.items.add(f));
+  return dt.files;
+}
+
+function setupWithAttachment() {
+  const ctx = setup();
+  ctx.component.form.transcription = VALID_TRANSCRIPTION;
+  const file = new File(['%PDF-1.4 fake'], 'spec.pdf', { type: 'application/pdf' });
+  const input = document.createElement('input');
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  Object.defineProperty(input, 'files', { value: dt.files });
+  ctx.component.onFilesSelected({ target: input } as unknown as Event);
+  return ctx;
+}
 
 const VALID_TRANSCRIPTION =
   'A B2B SaaS company needs an admin portal to manage their existing customer accounts.';
@@ -371,5 +398,259 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
     expect(sent.length).toBe(1);
     expect(sent[0].name).toBe('Valid Project');
     req.flush({ id: 'est-5' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// attachment signals — fileIcon / formatSize / formatCost helpers
+// ---------------------------------------------------------------------------
+
+describe('EstimationFormComponent — attachment helpers', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('starts with empty attachments', () => {
+    const { component } = setup();
+    expect(component.attachments()).toEqual([]);
+  });
+
+  it('fileIcon returns picture_as_pdf for .pdf files', () => {
+    const { component } = setup();
+    expect(component.fileIcon(makeFile('spec.pdf', 'application/pdf'))).toBe('picture_as_pdf');
+  });
+
+  it('fileIcon returns description for .docx files', () => {
+    const { component } = setup();
+    expect(component.fileIcon(makeFile('spec.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'))).toBe('description');
+  });
+
+  it('fileIcon returns text_snippet for .txt files', () => {
+    const { component } = setup();
+    expect(component.fileIcon(makeFile('notes.txt', 'text/plain'))).toBe('text_snippet');
+  });
+
+  it('fileIcon returns attach_file for unknown types', () => {
+    const { component } = setup();
+    expect(component.fileIcon(makeFile('data.csv', 'text/csv'))).toBe('attach_file');
+  });
+
+  it('formatSize formats bytes below 1 KB', () => {
+    const { component } = setup();
+    expect(component.formatSize(512)).toBe('512 B');
+  });
+
+  it('formatSize formats bytes in KB range', () => {
+    const { component } = setup();
+    expect(component.formatSize(2048)).toBe('2.0 KB');
+  });
+
+  it('formatSize formats bytes in MB range', () => {
+    const { component } = setup();
+    expect(component.formatSize(1.5 * 1024 * 1024)).toBe('1.5 MB');
+  });
+
+  it('formatCost returns dollar-prefixed string with 6 decimal places', () => {
+    const { component } = setup();
+    expect(component.formatCost(0.00042)).toBe('$0.000420');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// attachment management — onFilesSelected / removeAttachment
+// ---------------------------------------------------------------------------
+
+describe('EstimationFormComponent — attachment management', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+
+  it('onFilesSelected() adds files to the attachments signal', () => {
+    const { component } = setup();
+    const file = new File(['hello'], 'report.pdf', { type: 'application/pdf' });
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', { value: makeFileList(file) });
+    const event = { target: input } as unknown as Event;
+
+    component.onFilesSelected(event);
+
+    expect(component.attachments().length).toBe(1);
+    expect(component.attachments()[0].name).toBe('report.pdf');
+  });
+
+  it('onFilesSelected() accumulates files across multiple calls', () => {
+    const { component } = setup();
+    const fileA = new File(['a'], 'a.pdf', { type: 'application/pdf' });
+    const fileB = new File(['b'], 'b.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+
+    for (const f of [fileA, fileB]) {
+      const input = document.createElement('input');
+      Object.defineProperty(input, 'files', { value: makeFileList(f) });
+      component.onFilesSelected({ target: input } as unknown as Event);
+    }
+
+    expect(component.attachments().length).toBe(2);
+  });
+
+  it('removeAttachment() removes the file at the given index', () => {
+    const { component } = setup();
+    const fileA = new File(['a'], 'a.pdf', { type: 'application/pdf' });
+    const fileB = new File(['b'], 'b.txt', { type: 'text/plain' });
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', { value: makeFileList(fileA, fileB) });
+    component.onFilesSelected({ target: input } as unknown as Event);
+
+    component.removeAttachment(0);
+
+    expect(component.attachments().length).toBe(1);
+    expect(component.attachments()[0].name).toBe('b.txt');
+  });
+
+  it('dragOver signal is initially false', () => {
+    const { component } = setup();
+    expect(component.dragOver()).toBe(false);
+  });
+
+  it('onDragOver() sets dragOver to true', () => {
+    const { component } = setup();
+    const event = new DragEvent('dragover');
+    component.onDragOver(event);
+    expect(component.dragOver()).toBe(true);
+  });
+
+  it('onDragLeave() resets dragOver to false', () => {
+    const { component } = setup();
+    component.dragOver.set(true);
+    component.onDragLeave(new DragEvent('dragleave'));
+    expect(component.dragOver()).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// submit() with attachments — session-based multipart path
+// ---------------------------------------------------------------------------
+
+const MOCK_SESSION_RESULT = {
+  estimation: '## Phase 1\n40h',
+  model: 'gpt-4o-mini',
+  response_id: 'resp-123',
+  input_tokens: 300,
+  output_tokens: 120,
+  turn_cost_usd: 0.000042,
+  total_cost_usd: 0.000042,
+  estimated_input_tokens: 280,
+  estimated_precall_cost_usd: null,
+  requirements: null,
+  pre_call_cost_usd: null,
+  prompt_version: 'v1',
+};
+
+describe('EstimationFormComponent — submit() with attachments', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('creates a session before submitting the multipart payload', () => {
+    const { component, httpMock } = setupWithAttachment();
+
+    component.submit();
+
+    const sessionReq = httpMock.expectOne(SESSIONS_BASE);
+    expect(sessionReq.request.method).toBe('POST');
+
+    sessionReq.flush({ session_id: 'sid-001' });
+
+    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-001/estimate'));
+    estimateReq.flush(MOCK_SESSION_RESULT);
+  });
+
+  it('sends attachments as FormData to the session estimate endpoint', () => {
+    const { component, httpMock } = setupWithAttachment();
+
+    component.submit();
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-002' });
+
+    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-002/estimate'));
+    expect(estimateReq.request.body).toBeInstanceOf(FormData);
+    estimateReq.flush(MOCK_SESSION_RESULT);
+  });
+
+  it('includes prompt_version as a query param', () => {
+    const { component, httpMock } = setupWithAttachment();
+    component.form.prompt_version = 'v2';
+
+    component.submit();
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-003' });
+
+    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-003/estimate'));
+    expect(estimateReq.request.params.get('prompt_version')).toBe('v2');
+    estimateReq.flush(MOCK_SESSION_RESULT);
+  });
+
+  it('sets inlineResult signal on success', () => {
+    const { component, httpMock, fixture } = setupWithAttachment();
+
+    component.submit();
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-004' });
+    httpMock.expectOne(r => r.url.includes('/sid-004/estimate')).flush(MOCK_SESSION_RESULT);
+    fixture.detectChanges();
+
+    expect(component.inlineResult()).toEqual(MOCK_SESSION_RESULT);
+    expect(component.loading()).toBe(false);
+  });
+
+  it('renders the inline result panel when inlineResult is set', () => {
+    const { component, httpMock, fixture } = setupWithAttachment();
+
+    component.submit();
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-005' });
+    httpMock.expectOne(r => r.url.includes('/sid-005/estimate')).flush(MOCK_SESSION_RESULT);
+    fixture.detectChanges();
+
+    const panel: HTMLElement = fixture.nativeElement.querySelector('.inline-result');
+    expect(panel).toBeTruthy();
+    expect(panel.textContent).toContain('Estimation Result');
+    expect(panel.textContent).toContain('gpt-4o-mini');
+  });
+
+  it('shows error and clears loading on session creation failure (503)', () => {
+    const { component, httpMock, fixture } = setupWithAttachment();
+
+    component.submit();
+
+    httpMock.expectOne(SESSIONS_BASE).flush(
+      { detail: 'Service unavailable' },
+      { status: 503, statusText: 'Service Unavailable' },
+    );
+    fixture.detectChanges();
+
+    expect(component.error()).toContain('503');
+    expect(component.loading()).toBe(false);
+    expect(component.inlineResult()).toBeNull();
+  });
+
+  it('shows error on 422 unsupported attachment type', () => {
+    const { component, httpMock, fixture } = setupWithAttachment();
+
+    component.submit();
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-006' });
+    httpMock.expectOne(r => r.url.includes('/sid-006/estimate')).flush(
+      { detail: "Unsupported attachment type 'application/zip' for file 'archive.zip'." },
+      { status: 422, statusText: 'Unprocessable Entity' },
+    );
+    fixture.detectChanges();
+
+    expect(component.error()).toContain('422');
+    expect(component.loading()).toBe(false);
+  });
+
+  it('does not call the sessions endpoint when there are no attachments', () => {
+    const { component, httpMock } = setup();
+    component.form.transcription = VALID_TRANSCRIPTION;
+
+    component.submit();
+
+    httpMock.expectNone(SESSIONS_BASE);
+    httpMock.expectOne(ESTIMATE_URL).flush({ id: 'est-no-attach' });
   });
 });

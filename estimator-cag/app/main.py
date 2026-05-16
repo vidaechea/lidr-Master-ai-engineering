@@ -6,7 +6,7 @@ from starlette.requests import Request
 
 from app.config import settings
 from app.logging import configure_logging
-from app.routers import estimations, cache_metrics, internal
+from app.routers import estimations, cache_metrics, internal, sessions
 
 configure_logging()
 
@@ -42,6 +42,7 @@ app.add_middleware(InternalKeyMiddleware)
 app.include_router(estimations.router, prefix="/api/v1")
 app.include_router(cache_metrics.router, prefix="/api/v1")
 app.include_router(internal.router, prefix="/api/v1")
+app.include_router(sessions.router, prefix="/api/v1")
 
 
 @app.get("/health")

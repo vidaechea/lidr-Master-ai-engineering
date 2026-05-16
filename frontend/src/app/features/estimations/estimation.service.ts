@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
 
 export type EstimationStatus = 'pending' | 'processing' | 'completed' | 'failed';
@@ -75,6 +75,25 @@ export interface ReferenceProject {
   total_cost: number | null;
 }
 
+export interface SessionCreateResponse {
+  session_id: string;
+}
+
+export interface SessionEstimationResponse {
+  estimation: string;
+  model: string;
+  response_id: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  turn_cost_usd: number;
+  total_cost_usd: number;
+  estimated_input_tokens: number;
+  estimated_precall_cost_usd: number | null;
+  requirements: string | null;
+  pre_call_cost_usd: number | null;
+  prompt_version: string;
+}
+
 export interface EstimationCreate {
   transcription: string;
   project_id?: string;
@@ -96,8 +115,22 @@ export interface EstimationCreate {
 @Injectable({ providedIn: 'root' })
 export class EstimationService {
   private readonly base = `${environment.apiUrl}/v1/estimations`;
+  private readonly sessionsBase = `${environment.aiEngineApiUrl}/api/v1/sessions`;
 
   constructor(private readonly http: HttpClient) {}
+
+  createSession() {
+    return this.http.post<SessionCreateResponse>(this.sessionsBase, {});
+  }
+
+  createWithAttachments(sessionId: string, formData: FormData, promptVersion = 'v1') {
+    const params = new HttpParams().set('prompt_version', promptVersion);
+    return this.http.post<SessionEstimationResponse>(
+      `${this.sessionsBase}/${sessionId}/estimate`,
+      formData,
+      { params },
+    );
+  }
 
   list(projectId?: string) {
     const params: Record<string, string> = {};

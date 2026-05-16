@@ -20,6 +20,7 @@ from app.services.helpers.cost_calculator import CostCalculator
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.helpers.output_validator import evaluate_estimation_structure
 from app.services.helpers.prompt_builder import PromptBuilder
+from app.services.sessions import ConversationHistory, ProjectMetadata
 
 log = structlog.get_logger(__name__)
 
@@ -51,7 +52,8 @@ class EstimationService:
     """Async service that dispatches to the configured LLM provider."""
 
     async def estimate(
-        self, request: EstimationRequest, prompt_version: str = "v1"
+        self, request: EstimationRequest, prompt_version: str = "v1",
+        project_metadata: ProjectMetadata | None = None,
     ) -> EstimationResponse:
         await asyncio.to_thread(
             check_input,
@@ -61,7 +63,7 @@ class EstimationService:
         model_name = request.model or settings.llm_model
         model_cfg = MODEL_REGISTRY[model_name]
 
-        builder = PromptBuilder(request, model_cfg, prompt_version)
+        builder = PromptBuilder(request, model_cfg, prompt_version, project_metadata=project_metadata)
         builder.validate_context_window()
 
         estimated_input_tokens = builder.estimated_input_tokens
@@ -227,7 +229,114 @@ class EstimationService:
             response.id,
         )
 
-    async def estimate_structured(
+    async def _call_litellm_messages(
+        self,
+        messages: list[dict[str, str]],
+        max_output_tokens: int,
+    ) -> tuple[str, int, int, str, str]:
+        """Send a pre-built messages list to LiteLLM (used for multi-turn conversations).
+
+        Returns ``(text, input_tokens, output_tokens, finish_reason, response_id)``.
+        """
+        from app.services.litellm_service import litellm_router_service
+
+        response = await litellm_router_service.complete(
+            messages=messages,
+            max_tokens=max_output_tokens,
+        )
+        return (
+            response.choices[0].message.content,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            response.choices[0].finish_reason or "stop",
+            response.id,
+        )
+
+    async def estimate_multi_turn(
+        self,
+        request: EstimationRequest,
+        history: ConversationHistory,
+        prompt_version: str = "v1",
+        project_metadata: ProjectMetadata | None = None,
+    ) -> EstimationResponse:
+        """Run one estimation turn using the full conversation history.
+
+        Adds the user prompt to *history* before calling the provider and
+        appends the assistant response afterwards, so the caller does not need
+        to manage history entries manually.
+
+        Args:
+            request: The current estimation request (transcript + options).
+            history: The session's :class:`~app.services.sessions.ConversationHistory`
+                that holds previous turns.  Modified in-place.
+            prompt_version: Prompt template version (e.g. ``"v1"``).
+            project_metadata: Current session metadata used to refresh the
+                system prompt for this turn.
+
+        Returns:
+            :class:`~app.schemas.estimation.EstimationResponse` with full cost
+            and token metadata.
+        """
+        await asyncio.to_thread(
+            check_input,
+            request.transcription,
+            openai_client=_get_moderation_client(),
+        )
+        model_name = request.model or settings.llm_model
+        model_cfg = MODEL_REGISTRY[model_name]
+
+        builder = PromptBuilder(request, model_cfg, prompt_version, project_metadata=project_metadata)
+        builder.validate_context_window()
+
+        estimated_input_tokens = builder.estimated_input_tokens
+        estimated_precall_cost_usd = _cost_calculator.estimate_precall_cost(
+            estimated_input_tokens, model_cfg.input_price
+        )
+
+        # Register this turn's user message and build the full messages list
+        # with the system prompt refreshed from current project_metadata.
+        history.add("user", builder.user_prompt)
+        messages = history.to_messages_list(system_prompt=builder.system_prompt)
+
+        estimation_text, input_tokens, output_tokens, finish_reason, response_id = (
+            await self._call_litellm_messages(messages, request.max_output_tokens)
+        )
+
+        # Persist the assistant response in the sliding window.
+        history.add("assistant", estimation_text)
+
+        turn_cost_usd = _cost_calculator.compute_cost(
+            input_tokens, output_tokens, model_cfg.input_price, model_cfg.output_price
+        )
+
+        validation = evaluate_estimation_structure(estimation_text, finish_reason)
+
+        log.info(
+            "multi_turn_estimation_completed",
+            model=model_name,
+            turn=history.turn_count,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            turn_cost_usd=turn_cost_usd,
+        )
+
+        return EstimationResponse(
+            estimation=estimation_text,
+            model=model_name,
+            response_id=response_id,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            turn_cost_usd=turn_cost_usd,
+            total_cost_usd=turn_cost_usd,
+            estimated_input_tokens=estimated_input_tokens,
+            estimated_precall_cost_usd=estimated_precall_cost_usd,
+            requirements=None,
+            pre_call_cost_usd=None,
+            validation=validation,
+            prompt_version=prompt_version,
+        )
+
+
         self, request: EstimationRequest, prompt_version: str = "v1"
     ) -> tuple[EstimationResult, EstimationResponse]:
         """Use instructor + litellm Router to produce a structured EstimationResult.
