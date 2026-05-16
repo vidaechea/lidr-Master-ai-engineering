@@ -43,6 +43,13 @@ export const routes: Routes = [
     canActivate: [authGuard],
     children: [
       {
+        path: '',
+        loadComponent: () =>
+          import('./features/estimations/sessions-list/sessions-list.component').then(
+            m => m.SessionsListComponent,
+          ),
+      },
+      {
         path: 'new',
         loadComponent: () =>
           import('./features/estimations/estimation-form/estimation-form.component').then(
@@ -50,10 +57,10 @@ export const routes: Routes = [
           ),
       },
       {
-        path: ':id',
+        path: ':sessionId',
         loadComponent: () =>
-          import('./features/estimations/estimation-result/estimation-result.component').then(
-            m => m.EstimationResultComponent,
+          import('./features/estimations/estimation-form/estimation-form.component').then(
+            m => m.EstimationFormComponent,
           ),
       },
     ],

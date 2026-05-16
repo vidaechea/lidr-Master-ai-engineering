@@ -113,15 +113,22 @@ _TECHNOLOGIES: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 
 _PROJECT_NAME_PATTERNS: list[re.Pattern[str]] = [
+    # "Project name is ShopCore."
+    re.compile(r"(?i:project\s+name\s+is\s+)['\"]?([A-Z][A-Za-z0-9_-]*(?:\s+[A-Z][A-Za-z0-9_-]*)*)(?=\s|$|['\"]|\.)", re.IGNORECASE),
+    # "Project name: ShopCore" or "Project name = ShopCore"
+    re.compile(r"(?i:project\s+name\s*[:=]\s*)['\"]?([A-Z][A-Za-z0-9_-]*(?:\s+[A-Z][A-Za-z0-9_-]*)*)(?=\s|$|['\"]|\.)", re.IGNORECASE),
+    # "project called ShopCore" or "app named ShopCore"
     re.compile(
-        r"(?:project|app|application|platform|system|tool|service)\s+"
-        r"(?:called|named|titled|known as)\s+['\"]?([A-Z][A-Za-z0-9 _-]{1,40})['\"]?",
-        re.IGNORECASE,
+        r"(?i:(?:project|app|application|platform|system|tool|service)\s+"
+        r"(?:called|named|titled|known as)\s+)['\"]?([A-Z][A-Za-z0-9_-]*(?:\s+[A-Z][A-Za-z0-9_-]*)*)(?=\s+(?:for|that|to|in|on|at)\b|['\"]|$|\.)"
     ),
-    re.compile(r"building\s+['\"]?([A-Z][A-Z0-9 _-]{1,40})['\"]?", re.IGNORECASE),
-    re.compile(r"^#+\s+(.+)$", re.MULTILINE),  # first Markdown heading
+    # "building ShopCore" or "building a ShopCore"
+    re.compile(r"(?i:building\s+(?:a\s+)?)['\"]?([A-Z][A-Za-z0-9_-]*(?:\s+[A-Z][A-Za-z0-9_-]*)*)(?=\s+(?:for|that|to|in|on|at)\b|['\"]|$|\.)['\"]?"),
+    # first Markdown heading
+    re.compile(r"^#+\s+(.+)$", re.MULTILINE),
+    # "project: ShopCore" or "project ShopCore"
     re.compile(
-        r"project[:\s]+['\"]?([A-Z][A-Z0-9 _-]{1,40})['\"]?", re.IGNORECASE
+        r"(?i:project\s*[:=]?\s*)['\"]?([A-Z][A-Za-z0-9_-]*(?:\s+[A-Z][A-Za-z0-9_-]*)*)(?=\s+(?:for|that|to|in|on|at)\b|['\"]|$|\.)"
     ),
 ]
 

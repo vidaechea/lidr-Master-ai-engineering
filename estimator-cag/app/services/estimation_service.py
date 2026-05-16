@@ -336,7 +336,7 @@ class EstimationService:
             prompt_version=prompt_version,
         )
 
-
+    async def estimate_structured(
         self, request: EstimationRequest, prompt_version: str = "v1"
     ) -> tuple[EstimationResult, EstimationResponse]:
         """Use instructor + litellm Router to produce a structured EstimationResult.

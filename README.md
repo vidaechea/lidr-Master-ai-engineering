@@ -171,6 +171,50 @@ Clientes Python mínimos y reutilizables para OpenAI y Anthropic, con tracking d
 - Docker y Docker Compose
 - Claves de API: `OPENAI_API_KEY` y/o `ANTHROPIC_API_KEY`
 
+### Uso en Codespaces
+
+Este repositorio incluye configuración de Dev Container en `.devcontainer/` para que GitHub Codespaces prepare el entorno automáticamente.
+
+Al crear (o reconstruir) el Codespace se ejecuta `postCreate.sh`, que instala:
+- Dependencias de sistema para ejecutar tests de Angular con Playwright/Chromium
+- `uv` para gestión de entorno/dependencias Python
+- Dependencias de `backend/` y `estimator-cag/` con `uv sync`
+- Dependencias de `frontend/` con `npm ci` y binario de Chromium
+
+Comandos recomendados para validar el entorno en un Codespace nuevo:
+
+```bash
+# Frontend (Angular + Vitest + Playwright)
+cd frontend
+npm test -- --watch=false --browsers=chromium
+
+# Backend (FastAPI)
+cd ../backend
+uv run pytest tests/ -v
+
+# AI Engine (FastAPI + LiteLLM)
+cd ../estimator-cag
+uv run pytest tests/ -v
+```
+
+#### Troubleshooting (Codespaces)
+
+Si los tests del frontend fallan con errores de Playwright/Chromium (por ejemplo, `libatk-1.0.so.0: cannot open shared object file`):
+
+```bash
+cd frontend
+npx playwright install-deps chromium
+npx playwright install chromium
+npm test -- --watch=false --browsers=chromium
+```
+
+Si aparece un error de bloqueo de `apt/dpkg` (`Could not get lock /var/lib/dpkg/lock-frontend`), espera al proceso activo y reintenta:
+
+```bash
+sudo apt-get -o DPkg::Lock::Timeout=600 update
+sudo apt-get -o DPkg::Lock::Timeout=600 --fix-missing install
+```
+
 ### Variables de entorno
 
 Crea un archivo `.env` en la raíz del repositorio:
@@ -209,7 +253,7 @@ docker compose up --build -d
 ### Ejecutar las migraciones (primera vez)
 
 ```bash
-docker compose exec backend alembic upgrade head
+a
 ```
 
 ### Otros comandos útiles

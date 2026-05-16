@@ -1,9 +1,11 @@
 ﻿import asyncio
+import os
 import queue
 import threading
 import time
 from typing import Generator
 
+import httpx
 import streamlit as st
 from streamlit.runtime.scriptrunner import get_script_run_ctx
 
@@ -54,6 +56,104 @@ _CHECK_LABELS: dict[str, str] = {
     "has_duration_section": "Duration section",
     "finish_reason_ok": "Finish reason",
 }
+
+_API_BASE_URL = os.getenv("STREAMLIT_API_BASE_URL", "http://localhost:8000/api/v1").rstrip("/")
+_API_TIMEOUT_S = float(os.getenv("STREAMLIT_API_TIMEOUT_S", "120"))
+
+
+def _api_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if settings.internal_api_key:
+        headers["X-Internal-API-Key"] = settings.internal_api_key
+    return headers
+
+
+def _extract_error_message(response: httpx.Response) -> str:
+    try:
+        payload = response.json()
+        detail = payload.get("detail")
+        if detail is not None:
+            return str(detail)
+    except Exception:
+        pass
+    return response.text or f"HTTP {response.status_code}"
+
+
+def _create_remote_session() -> str:
+    response = httpx.post(
+        f"{_API_BASE_URL}/sessions",
+        headers=_api_headers(),
+        timeout=_API_TIMEOUT_S,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_extract_error_message(response))
+
+    payload = response.json()
+    session_id = payload.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        raise RuntimeError("Invalid response from POST /sessions: missing session_id.")
+    return session_id
+
+
+def _refresh_remote_session_state(session_id: str) -> None:
+    response = httpx.get(
+        f"{_API_BASE_URL}/sessions/{session_id}",
+        headers=_api_headers(),
+        timeout=_API_TIMEOUT_S,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_extract_error_message(response))
+
+    payload = response.json()
+    st.session_state.project_metadata = payload.get("project_metadata") or {}
+    st.session_state.history_messages = payload.get("history") or []
+    st.session_state.turn_count = int(payload.get("turn_count") or 0)
+
+
+def _estimate_remote_session(
+    session_id: str,
+    transcript: str,
+    attachments: list,
+    model: str,
+    temperature: float | None,
+    pre_call: bool,
+    output_format: OutputFormat,
+    prompt_version: str,
+) -> EstimationResponse:
+    data: dict[str, str] = {
+        "transcript": transcript,
+        "model": model,
+        "pre_call": str(pre_call).lower(),
+        "output_format": output_format.value,
+    }
+    if temperature is not None:
+        data["temperature"] = str(temperature)
+
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    for uploaded in attachments:
+        files.append(
+            (
+                "attachments",
+                (
+                    uploaded.name,
+                    uploaded.getvalue(),
+                    uploaded.type or "application/octet-stream",
+                ),
+            )
+        )
+
+    response = httpx.post(
+        f"{_API_BASE_URL}/sessions/{session_id}/estimate",
+        params={"prompt_version": prompt_version},
+        data=data,
+        files=files,
+        headers=_api_headers(),
+        timeout=_API_TIMEOUT_S,
+    )
+    if response.status_code >= 400:
+        raise RuntimeError(_extract_error_message(response))
+
+    return EstimationResponse.model_validate(response.json())
 
 
 def _render_validation_inline(response: EstimationResponse) -> None:
@@ -370,6 +470,29 @@ if "messages" not in st.session_state:
 if "service" not in st.session_state:
     st.session_state.service = _build_service()
 
+if "api_session_id" not in st.session_state:
+    try:
+        st.session_state.api_session_id = _create_remote_session()
+        st.session_state.messages = []
+    except Exception as exc:
+        st.error(f"No se pudo crear la sesión inicial: {exc}", icon="🚨")
+        st.stop()
+
+if "project_metadata" not in st.session_state:
+    st.session_state.project_metadata = {}
+if "history_messages" not in st.session_state:
+    st.session_state.history_messages = []
+if "turn_count" not in st.session_state:
+    st.session_state.turn_count = 0
+
+if "_session_bootstrap_done" not in st.session_state:
+    try:
+        _refresh_remote_session_state(st.session_state.api_session_id)
+    except Exception:
+        # Keep UI usable even if this read fails; metadata will refresh after first turn.
+        st.session_state.project_metadata = {}
+    st.session_state._session_bootstrap_done = True
+
 if "litellm_primary" not in st.session_state:
     st.session_state.litellm_primary = settings.litellm_primary_model
 if "litellm_fallback" not in st.session_state:
@@ -381,10 +504,11 @@ _get_event_loop()
 
 st.title("Software Estimator")
 st.caption("Paste a meeting transcript below to receive a detailed effort estimate.")
+st.caption(f"Session ID: {st.session_state.api_session_id}")
 
 # ── Collapsible LLM options ───────────────────────────────────────────────────
 
-session_id = _get_session_id()
+session_id = st.session_state.api_session_id
 with st.expander("LLM Options", expanded=False):
     col_a, col_b, col_c, col_d = st.columns(4)
 
@@ -530,20 +654,39 @@ with st.expander("LLM Options", expanded=False):
             ),
         )
         st.write("")
-        if st.button("Clear conversation", use_container_width=True):
-            st.session_state.messages = []
-            st.rerun()
+        if st.button("Nueva conversación", use_container_width=True):
+            try:
+                st.session_state.api_session_id = _create_remote_session()
+                st.session_state.messages = []
+                st.session_state.project_metadata = {}
+                st.session_state.history_messages = []
+                st.session_state.turn_count = 0
+                _refresh_remote_session_state(st.session_state.api_session_id)
+                st.rerun()
+            except Exception as exc:
+                st.error(f"No se pudo crear una nueva sesión: {exc}", icon="🚨")
 
 _render_cache_metrics_sidebar()
+
+with st.sidebar.expander("Project metadata", expanded=True):
+    st.caption(f"session_id: {st.session_state.api_session_id}")
+    st.caption(f"turn_count: {st.session_state.turn_count}")
+    st.caption(f"history_messages: {len(st.session_state.history_messages)}")
+    st.json(st.session_state.project_metadata)
 
 # ── Estimation form ───────────────────────────────────────────────────────────
 
 with st.form("estimation_form"):
     description = st.text_area(
-        "Project description",
-        placeholder="Describe the project to estimate (20–2000 characters)…",
+        "Transcripción",
+        placeholder="Pega la transcripción o descripción del proyecto (mínimo 20 caracteres)…",
         max_chars=2000,
         height=160,
+    )
+    attachments = st.file_uploader(
+        "Archivos de apoyo (opcional)",
+        type=["pdf", "docx", "txt", "md"],
+        accept_multiple_files=True,
     )
     _col_pt, _col_dl, _col_of = st.columns(3)
     with _col_pt:
@@ -598,36 +741,8 @@ for message in st.session_state.messages:
 
 if submitted:
     if len(description.strip()) < 20:
-        st.error("Project description must be at least 20 characters.", icon="⚠️")
+        st.error("La transcripción debe tener al menos 20 caracteres.", icon="⚠️")
         st.stop()
-
-    _reference_projects = [
-        ReferenceProject(
-            name=r["name"],
-            description=r["description"],
-            total_hours=r["total_hours"] or None,
-            total_cost=r["total_cost"] or None,
-        )
-        for r in _ref_entries
-        if r["name"].strip() and r["description"].strip()
-    ] or None
-
-    _request = EstimationRequest(
-        transcription=description.strip(),
-        model=model,  # type: ignore[arg-type]
-        output_format=output_format,
-        detail_level=DetailLevel(detail_level),
-        project_type=ProjectType(project_type),
-        num_examples=int(num_examples),
-        example_format=example_format,
-        max_output_tokens=int(max_output_tokens),
-        temperature=temperature,
-        top_p=top_p,
-        top_k=int(top_k) if top_k is not None else None,
-        reasoning_effort=reasoning_effort,  # type: ignore[arg-type]
-        pre_call=pre_call,
-        reference_projects=_reference_projects,
-    )
 
     st.session_state.messages.append({"role": "user", "content": description.strip()})
     with st.chat_message("user"):
@@ -637,50 +752,28 @@ if submitted:
         try:
             _t0 = time.perf_counter()
 
-            if use_stream:
-                _captured: list[EstimationResponse] = []
-                estimation_text = st.write_stream(
-                    _sync_stream(st.session_state.service, _request, prompt_version, _captured)
+            with st.spinner("Generating estimation…"):
+                response = _estimate_remote_session(
+                    session_id=st.session_state.api_session_id,
+                    transcript=description.strip(),
+                    attachments=attachments or [],
+                    model=model,
+                    temperature=temperature,
+                    pre_call=pre_call,
+                    output_format=output_format,
+                    prompt_version=prompt_version,
                 )
-                response_time_s = round(time.perf_counter() - _t0, 2)
-                st.caption(f"Completed in {response_time_s}s")
-                if _captured:
-                    _stream_meta = _captured[0].model_copy(update={"response_time_s": response_time_s})
-                    _render_validation_inline(_stream_meta)
-                    _render_details(_stream_meta, session_id)
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": str(estimation_text), "response": _stream_meta}
-                    )
-                else:
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": str(estimation_text), "response": None}
-                    )
+            response_time_s = round(time.perf_counter() - _t0, 2)
+            response = response.model_copy(update={"response_time_s": response_time_s})  # type: ignore[call-arg]
 
-            else:
-                with st.spinner("Generating estimation…"):
-                    response = asyncio.run_coroutine_threadsafe(
-                        st.session_state.service.estimate(_request, prompt_version=prompt_version),
-                        _get_event_loop(),
-                    ).result()
-                response_time_s = round(time.perf_counter() - _t0, 2)
-                response = response.model_copy(update={"response_time_s": response_time_s})  # type: ignore[call-arg]
+            st.markdown(response.estimation)
+            st.caption(f"Completed in {response_time_s}s")
+            _render_validation_inline(response)
+            _render_details(response, session_id)
+            _refresh_remote_session_state(st.session_state.api_session_id)
 
-                st.markdown(response.estimation)
-                st.caption(f"Completed in {response_time_s}s")
-                _render_validation_inline(response)
-                _render_details(response, session_id)
-
-                st.session_state.messages.append(
-                    {"role": "assistant", "content": response.estimation, "response": response}
-                )
-
-        except LLMServiceError as exc:
-            st.error(
-                f"**{exc.error_type}** (HTTP {exc.status_code})\n\n{exc.message}",
-                icon="🚨",
-            )
             st.session_state.messages.append(
-                {"role": "assistant", "content": f"**Error {exc.status_code} — {exc.error_type}:** {exc.message}", "response": None}
+                {"role": "assistant", "content": response.estimation, "response": response}
             )
         except Exception as exc:
             st.error(f"**Unexpected error:** {exc}", icon="🚨")

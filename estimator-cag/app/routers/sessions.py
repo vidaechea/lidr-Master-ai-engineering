@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from app.config import LLMModel, settings
 from app.guardrails.input import InputGuardrailViolation
 from app.schemas.estimation import EstimationRequest, EstimationResponse, OutputFormat
-from app.schemas.session import SessionCreateResponse
+from app.schemas.session import SessionCreateResponse, SessionListItem, SessionMessageResponse, SessionStateResponse
 from app.services.attachment_service import (
     AttachmentService,
     AttachmentExtractionError,
@@ -57,6 +57,49 @@ async def create_session() -> SessionCreateResponse:
     session = store.create()
     log.info("session_created", session_id=session.session_id)
     return SessionCreateResponse(session_id=session.session_id)
+
+
+@router.get("")
+async def list_sessions() -> list[SessionListItem]:
+    """List all active sessions with basic metadata."""
+    result = []
+    for session in store.get_all():
+        # Get the last assistant message for preview
+        messages = session.history.messages()
+        last_message = None
+        for msg in reversed(messages):
+            if msg.role == "assistant":
+                last_message = msg.content[:200]
+                break
+        
+        item = SessionListItem(
+            session_id=session.session_id,
+            project_name=session.metadata.project_name,
+            turn_count=session.history.turn_count,
+            last_message_content=last_message,
+        )
+        result.append(item)
+    
+    log.debug("sessions_listed", count=len(result))
+    return result
+
+
+@router.get("/{session_id}")
+async def get_session_state(session_id: str) -> SessionStateResponse:
+    """Return persisted conversation history and extracted project metadata."""
+    session = store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    return SessionStateResponse(
+        session_id=session.session_id,
+        project_metadata=session.metadata,
+        history=[
+            SessionMessageResponse(role=message.role, content=message.content)
+            for message in session.history.messages()
+        ],
+        turn_count=session.history.turn_count,
+    )
 
 
 @router.post(

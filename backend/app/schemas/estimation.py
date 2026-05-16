@@ -86,6 +86,44 @@ class AsyncEstimationOut(BaseModel):
     status: str = "pending"
 
 
+class SessionCreateResponse(BaseModel):
+    session_id: str
+
+
+class SessionMessageOut(BaseModel):
+    role: str
+    content: str
+
+
+class SessionProjectMetadataOut(BaseModel):
+    project_name: str | None = None
+    assumed_team_size: int | None = None
+    mentioned_technologies: list[str] = Field(default_factory=list)
+    agreed_scope: str | None = None
+
+
+class SessionStateOut(BaseModel):
+    session_id: str
+    project_metadata: SessionProjectMetadataOut
+    history: list[SessionMessageOut]
+    turn_count: int
+
+
+class SessionEstimationOut(BaseModel):
+    estimation: str
+    model: str
+    response_id: str | None
+    input_tokens: int
+    output_tokens: int
+    turn_cost_usd: float
+    total_cost_usd: float
+    estimated_input_tokens: int
+    estimated_precall_cost_usd: float | None
+    requirements: str | None
+    pre_call_cost_usd: float | None
+    prompt_version: str
+
+
 # ── Callback payload (ai-engine worker → business backend) ────────────────────
 
 

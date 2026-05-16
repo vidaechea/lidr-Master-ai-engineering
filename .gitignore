@@ -49,3 +49,8 @@ htmlcov/
 
 # uv
 uv.lock
+
+# Vitest
+.vitest-attachments/
+.vitest-attachments/**
+

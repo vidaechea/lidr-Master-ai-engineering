@@ -7,8 +7,7 @@ import { provideAnimationsAsync } from '@angular/platform-browser/animations/asy
 import { EstimationFormComponent } from './estimation-form.component';
 import { environment } from '../../../../environments/environment';
 
-const ESTIMATE_URL = `${environment.apiUrl}/v1/estimations`;
-const SESSIONS_BASE = `${environment.aiEngineApiUrl}/api/v1/sessions`;
+const SESSIONS_BASE = `${environment.apiUrl}/v1/estimations/sessions`;
 
 // ---------------------------------------------------------------------------
 // Outer-scope helpers shared across suites
@@ -54,6 +53,20 @@ function setup() {
   const component = fixture.componentInstance;
   const httpMock = TestBed.inject(HttpTestingController);
   fixture.detectChanges();
+
+  httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-bootstrap' });
+  httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
+    session_id: 'sid-bootstrap',
+    project_metadata: {
+      project_name: null,
+      assumed_team_size: null,
+      mentioned_technologies: [],
+      agreed_scope: null,
+    },
+    history: [],
+    turn_count: 0,
+  });
+
   return { fixture, component, httpMock };
 }
 
@@ -126,7 +139,7 @@ describe('EstimationFormComponent — submit() success', () => {
     expect(component.error()).toBeNull();
     expect(component.guardrailError()).toBeNull();
 
-    httpMock.expectOne(ESTIMATE_URL).flush({ id: 'est-new' });
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
   });
 
   it('sets loading=true while request is in-flight', () => {
@@ -135,7 +148,7 @@ describe('EstimationFormComponent — submit() success', () => {
     component.submit();
 
     expect(component.loading()).toBe(true);
-    httpMock.expectOne(ESTIMATE_URL).flush({ id: 'est-new' });
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
   });
 });
 
@@ -151,7 +164,7 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: { message: 'Email address detected.', reason: 'pii' } },
       { status: 422, statusText: 'Unprocessable Entity' },
     );
@@ -170,7 +183,7 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: { message: 'Suspicious text detected.', reason: 'prompt_injection' } },
       { status: 422, statusText: 'Unprocessable Entity' },
     );
@@ -185,7 +198,7 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: { message: 'Input flagged by moderation: hate', reason: 'moderation' } },
       { status: 400, statusText: 'Bad Request' },
     );
@@ -200,7 +213,7 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: { message: 'Email address detected.', reason: 'pii' } },
       { status: 422, statusText: 'Unprocessable Entity' },
     );
@@ -217,7 +230,7 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: { message: 'IBAN detected.', reason: 'pii' } },
       { status: 422, statusText: 'Unprocessable Entity' },
     );
@@ -240,7 +253,7 @@ describe('EstimationFormComponent — submit() generic errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: 'Internal server error' },
       { status: 500, statusText: 'Internal Server Error' },
     );
@@ -255,7 +268,7 @@ describe('EstimationFormComponent — submit() generic errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: 'Rate limit reached' },
       { status: 429, statusText: 'Too Many Requests' },
     );
@@ -270,7 +283,7 @@ describe('EstimationFormComponent — submit() generic errors', () => {
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    httpMock.expectOne(ESTIMATE_URL).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: 'Internal server error' },
       { status: 500, statusText: 'Internal Server Error' },
     );
@@ -336,7 +349,7 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
     component.form.transcription = VALID_TRANSCRIPTION;
     component.submit();
 
-    const req = httpMock.expectOne(ESTIMATE_URL);
+    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     expect(req.request.body['reference_projects']).toBeUndefined();
     req.flush({ id: 'est-1' });
   });
@@ -351,7 +364,7 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
     component.refProjects[0].total_cost = 15000;
     component.submit();
 
-    const req = httpMock.expectOne(ESTIMATE_URL);
+    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     expect(req.request.body['reference_projects']).toEqual([
       { name: 'HR Tool v1', description: 'Basic CRUD app', total_hours: 200, total_cost: 15000 },
     ]);
@@ -366,7 +379,7 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
     component.refProjects[0].description = 'Has description but no name';
     component.submit();
 
-    const req = httpMock.expectOne(ESTIMATE_URL);
+    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     expect(req.request.body['reference_projects']).toBeUndefined();
     req.flush({ id: 'est-3' });
   });
@@ -379,7 +392,7 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
     component.refProjects[0].description = '';
     component.submit();
 
-    const req = httpMock.expectOne(ESTIMATE_URL);
+    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     expect(req.request.body['reference_projects']).toBeUndefined();
     req.flush({ id: 'est-4' });
   });
@@ -393,7 +406,7 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
     component.addRefProject(); // second entry left blank
     component.submit();
 
-    const req = httpMock.expectOne(ESTIMATE_URL);
+    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     const sent = req.request.body['reference_projects'];
     expect(sent.length).toBe(1);
     expect(sent[0].name).toBe('Valid Project');
@@ -545,18 +558,24 @@ const MOCK_SESSION_RESULT = {
 describe('EstimationFormComponent — submit() with attachments', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
-  it('creates a session before submitting the multipart payload', () => {
+  it('uses the existing session to submit multipart payload', () => {
     const { component, httpMock } = setupWithAttachment();
 
     component.submit();
 
-    const sessionReq = httpMock.expectOne(SESSIONS_BASE);
-    expect(sessionReq.request.method).toBe('POST');
-
-    sessionReq.flush({ session_id: 'sid-001' });
-
-    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-001/estimate'));
+    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     estimateReq.flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
+      session_id: 'sid-bootstrap',
+      project_metadata: {
+        project_name: 'PortalX',
+        assumed_team_size: 3,
+        mentioned_technologies: ['angular'],
+        agreed_scope: 'MVP',
+      },
+      history: [{ role: 'user', content: 'x' }, { role: 'assistant', content: 'y' }],
+      turn_count: 1,
+    });
   });
 
   it('sends attachments as FormData to the session estimate endpoint', () => {
@@ -564,11 +583,15 @@ describe('EstimationFormComponent — submit() with attachments', () => {
 
     component.submit();
 
-    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-002' });
-
-    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-002/estimate'));
+    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     expect(estimateReq.request.body).toBeInstanceOf(FormData);
     estimateReq.flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
+      session_id: 'sid-bootstrap',
+      project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
+      history: [],
+      turn_count: 0,
+    });
   });
 
   it('includes prompt_version as a query param', () => {
@@ -577,11 +600,15 @@ describe('EstimationFormComponent — submit() with attachments', () => {
 
     component.submit();
 
-    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-003' });
-
-    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-003/estimate'));
+    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
     expect(estimateReq.request.params.get('prompt_version')).toBe('v2');
     estimateReq.flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
+      session_id: 'sid-bootstrap',
+      project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
+      history: [],
+      turn_count: 0,
+    });
   });
 
   it('sets inlineResult signal on success', () => {
@@ -589,8 +616,13 @@ describe('EstimationFormComponent — submit() with attachments', () => {
 
     component.submit();
 
-    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-004' });
-    httpMock.expectOne(r => r.url.includes('/sid-004/estimate')).flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
+      session_id: 'sid-bootstrap',
+      project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
+      history: [],
+      turn_count: 0,
+    });
     fixture.detectChanges();
 
     expect(component.inlineResult()).toEqual(MOCK_SESSION_RESULT);
@@ -602,8 +634,13 @@ describe('EstimationFormComponent — submit() with attachments', () => {
 
     component.submit();
 
-    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-005' });
-    httpMock.expectOne(r => r.url.includes('/sid-005/estimate')).flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
+      session_id: 'sid-bootstrap',
+      project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
+      history: [],
+      turn_count: 0,
+    });
     fixture.detectChanges();
 
     const panel: HTMLElement = fixture.nativeElement.querySelector('.inline-result');
@@ -612,12 +649,12 @@ describe('EstimationFormComponent — submit() with attachments', () => {
     expect(panel.textContent).toContain('gpt-4o-mini');
   });
 
-  it('shows error and clears loading on session creation failure (503)', () => {
+  it('shows error and clears loading on estimation failure (503)', () => {
     const { component, httpMock, fixture } = setupWithAttachment();
 
     component.submit();
 
-    httpMock.expectOne(SESSIONS_BASE).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: 'Service unavailable' },
       { status: 503, statusText: 'Service Unavailable' },
     );
@@ -633,8 +670,7 @@ describe('EstimationFormComponent — submit() with attachments', () => {
 
     component.submit();
 
-    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-006' });
-    httpMock.expectOne(r => r.url.includes('/sid-006/estimate')).flush(
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
       { detail: "Unsupported attachment type 'application/zip' for file 'archive.zip'." },
       { status: 422, statusText: 'Unprocessable Entity' },
     );
@@ -644,13 +680,18 @@ describe('EstimationFormComponent — submit() with attachments', () => {
     expect(component.loading()).toBe(false);
   });
 
-  it('does not call the sessions endpoint when there are no attachments', () => {
+  it('also uses session endpoint when there are no attachments', () => {
     const { component, httpMock } = setup();
     component.form.transcription = VALID_TRANSCRIPTION;
 
     component.submit();
 
-    httpMock.expectNone(SESSIONS_BASE);
-    httpMock.expectOne(ESTIMATE_URL).flush({ id: 'est-no-attach' });
+    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
+    httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
+      session_id: 'sid-bootstrap',
+      project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
+      history: [],
+      turn_count: 0,
+    });
   });
 });

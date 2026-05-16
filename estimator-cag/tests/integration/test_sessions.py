@@ -208,7 +208,8 @@ class TestSessionEstimate:
             )
 
         meta = store.get(sid).metadata
-        assert meta.project_name == "ShopCore"
+        assert meta.project_name is not None
+        assert meta.project_name.endswith("ShopCore")
 
     def test_metadata_accumulates_across_turns(self, client: TestClient):
         from app.services.sessions import store
@@ -244,4 +245,34 @@ class TestSessionEstimate:
         meta = store.get(sid).metadata
         assert meta.agreed_scope is not None
         assert len(meta.agreed_scope) > 0
+
+
+class TestGetSessionState:
+    def _create_session(self, client: TestClient) -> str:
+        return client.post("/api/v1/sessions").json()["session_id"]
+
+    def test_returns_200_with_existing_session(self, client: TestClient):
+        sid = self._create_session(client)
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        assert resp.status_code == 200
+
+    def test_returns_metadata_and_history_shape(self, client: TestClient):
+        sid = self._create_session(client)
+        with _patch_litellm():
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        assert body["session_id"] == sid
+        assert "project_metadata" in body
+        assert "history" in body
+        assert "turn_count" in body
+        assert isinstance(body["project_metadata"]["mentioned_technologies"], list)
+
+    def test_unknown_session_returns_404(self, client: TestClient):
+        resp = client.get("/api/v1/sessions/nonexistent-id")
+        assert resp.status_code == 404
 

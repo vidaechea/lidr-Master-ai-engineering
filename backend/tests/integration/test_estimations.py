@@ -37,6 +37,57 @@ def _patch_ai_enqueue(job_id="job-test-001"):
     )
 
 
+def _patch_ai_create_session(session_id: str = "sid-test-001"):
+    return patch(
+        "app.services.ai_client.create_session",
+        AsyncMock(return_value={"session_id": session_id}),
+    )
+
+
+def _patch_ai_get_session_state(session_id: str = "sid-test-001"):
+    return patch(
+        "app.services.ai_client.get_session_state",
+        AsyncMock(
+            return_value={
+                "session_id": session_id,
+                "project_metadata": {
+                    "project_name": "PortalX",
+                    "assumed_team_size": 3,
+                    "mentioned_technologies": ["angular", "fastapi"],
+                    "agreed_scope": "MVP admin portal",
+                },
+                "history": [
+                    {"role": "user", "content": "Need admin portal."},
+                    {"role": "assistant", "content": "Estimated in phases."},
+                ],
+                "turn_count": 1,
+            }
+        ),
+    )
+
+
+def _patch_ai_session_estimate():
+    return patch(
+        "app.services.ai_client.estimate_session_multipart",
+        AsyncMock(
+            return_value={
+                "estimation": "## MVP\n- Phase 1: 40h",
+                "model": "gpt-4o-mini",
+                "response_id": "resp-session-001",
+                "input_tokens": 350,
+                "output_tokens": 120,
+                "turn_cost_usd": 0.00005,
+                "total_cost_usd": 0.00005,
+                "estimated_input_tokens": 320,
+                "estimated_precall_cost_usd": None,
+                "requirements": None,
+                "pre_call_cost_usd": None,
+                "prompt_version": "v1",
+            }
+        ),
+    )
+
+
 class TestListEstimations:
     async def test_returns_empty_list_for_new_user(self, client, auth_headers):
         resp = await client.get("/v1/estimations", headers=auth_headers)
@@ -45,6 +96,38 @@ class TestListEstimations:
 
     async def test_requires_authentication(self, client):
         resp = await client.get("/v1/estimations")
+        assert resp.status_code == 401
+
+
+class TestConversationSessionsProxy:
+    async def test_create_session_returns_201(self, client, auth_headers):
+        with _patch_ai_create_session("sid-123"):
+            resp = await client.post("/v1/estimations/sessions", headers=auth_headers)
+        assert resp.status_code == 201
+        assert resp.json()["session_id"] == "sid-123"
+
+    async def test_get_session_state_returns_metadata_and_history(self, client, auth_headers):
+        with _patch_ai_get_session_state("sid-xyz"):
+            resp = await client.get("/v1/estimations/sessions/sid-xyz", headers=auth_headers)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["session_id"] == "sid-xyz"
+        assert body["project_metadata"]["project_name"] == "PortalX"
+        assert body["turn_count"] == 1
+        assert len(body["history"]) == 2
+
+    async def test_session_estimate_accepts_multipart_without_attachments(self, client, auth_headers):
+        with _patch_ai_session_estimate():
+            resp = await client.post(
+                "/v1/estimations/sessions/sid-abc/estimate",
+                data={"transcript": VALID_TRANSCRIPTION, "pre_call": "false", "output_format": "phases_table"},
+                headers=auth_headers,
+            )
+        assert resp.status_code == 200
+        assert resp.json()["model"] == "gpt-4o-mini"
+
+    async def test_session_routes_require_authentication(self, client):
+        resp = await client.post("/v1/estimations/sessions")
         assert resp.status_code == 401
 
 

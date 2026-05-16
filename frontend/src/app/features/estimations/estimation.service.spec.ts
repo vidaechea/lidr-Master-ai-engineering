@@ -12,7 +12,7 @@ import {
 import { environment } from '../../../environments/environment';
 
 const BASE = `${environment.apiUrl}/v1/estimations`;
-const SESSIONS_BASE = `${environment.aiEngineApiUrl}/api/v1/sessions`;
+const SESSIONS_BASE = `${environment.apiUrl}/v1/estimations/sessions`;
 
 const MOCK_ESTIMATION: EstimationOut = {
   id: 'est-001',

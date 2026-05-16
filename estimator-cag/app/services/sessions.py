@@ -24,12 +24,14 @@ from app.config import settings
 # Constants
 # ---------------------------------------------------------------------------
 
-#: Maximum number of *user+assistant turns* kept in the sliding window per session.
-#: One turn = one user message + one assistant message (a pair).
-#: Once exceeded, the oldest pair is evicted to stay within the model's practical
-#: context budget while preserving the system prompt.
+#: Maximum number of user turns kept in the sliding window per session.
+#: In the common case, one turn is a user message plus its assistant reply.
+#: Once exceeded, the oldest turn is evicted while preserving the system prompt.
 #: Overridable via ``settings.max_conversation_turns``.
 MAX_TURNS: int = 6
+
+# Backward-compatible export used by older tests/callers.
+MAX_CONVERSATION_TURNS: int = MAX_TURNS
 
 # ---------------------------------------------------------------------------
 # Message type
@@ -55,9 +57,11 @@ class ConversationHistory:
     """Bounded message list with a sliding-window eviction strategy.
 
     The system prompt (role="system") is pinned at position 0 and is **never**
-    evicted.  Non-system messages are stored as ordered user/assistant *pairs*;
-    when the number of stored pairs exceeds ``max_turns`` the oldest complete
-    pair (user + assistant) is dropped from the front of the queue.
+    evicted. Non-system messages are stored in chronological order.
+    The window size is enforced by counting user turns; when the number of
+    user messages exceeds ``max_turns``, the oldest user turn is removed.
+    If that user message is followed by its assistant response, the response is
+    also removed to keep turn boundaries coherent.
 
     Args:
         system_prompt: Optional system message injected once at construction.
@@ -86,19 +90,24 @@ class ConversationHistory:
     def add(self, role: MessageRole, content: str) -> None:
         """Append a message; system messages replace the pinned prompt.
 
-        After adding a non-system message the sliding window is enforced:
-        if the total number of stored messages exceeds ``max_turns * 2`` the
-        oldest *pair* (two messages) is removed from the front of the queue.
+        After adding a non-system message, the sliding window is enforced by
+        number of user turns. If user turns exceed ``max_turns``, the oldest
+        user turn is evicted (and its assistant response, when present).
         """
         if role == "system":
             self._system_prompt = Message(role="system", content=content)
             return
+
         self._turns.append(Message(role=role, content=content))
-        # Evict oldest complete pair when the window is exceeded.
-        while len(self._turns) > self._max_turns * 2:
-            self._turns.popleft()  # oldest user message
-            if self._turns:
-                self._turns.popleft()  # its paired assistant message
+
+        # Evict oldest user turn when the window is exceeded.
+        while self.turn_count > self._max_turns:
+            while self._turns:
+                oldest = self._turns.popleft()
+                if oldest.role == "user":
+                    if self._turns and self._turns[0].role == "assistant":
+                        self._turns.popleft()
+                    break
 
     def messages(self) -> list[Message]:
         """Return all messages in chronological order, system prompt first."""
@@ -141,8 +150,8 @@ class ConversationHistory:
 
     @property
     def turn_count(self) -> int:
-        """Number of complete user+assistant pairs currently stored."""
-        return len(self._turns) // 2
+        """Number of user turns currently stored."""
+        return sum(1 for message in self._turns if message.role == "user")
 
     def __len__(self) -> int:
         return len(self._turns) + (1 if self._system_prompt else 0)
@@ -229,6 +238,10 @@ class SessionStore:
     def get(self, session_id: str) -> Session | None:
         """Return the Session for *session_id*, or ``None`` if not found."""
         return self._sessions.get(session_id)
+
+    def get_all(self) -> list[Session]:
+        """Return all sessions as a list."""
+        return list(self._sessions.values())
 
     def __len__(self) -> int:
         return len(self._sessions)
