@@ -621,16 +621,6 @@ class TestSessionEstimationWithPDFAttachment:
             "app.services.ai_client.estimate_session_multipart",
             AsyncMock(return_value=with_pdf_response),
         ) as mock_estimate_with_pdf:
-            from io import BytesIO
-            from fastapi import UploadFile
-            
-            pdf_file = UploadFile(
-                file=BytesIO(pdf_content),
-                size=len(pdf_content),
-                filename="requirements.pdf",
-                content_type="application/pdf",
-            )
-            
             resp_with_pdf = await client.post(
                 f"/v1/estimations/sessions/{session_id}/estimate",
                 data={
