@@ -120,60 +120,36 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
             </div>
           }
 
-          <!-- Main chat area (messages + input scrollable) -->
+          <!-- Main chat area with tabs -->
           <div class="chat-area">
-            <!-- Messages/Results section -->
-            <div class="messages-section">
-              <!-- Streaming result -->
-              @if (isStreaming() || streamingResult()) {
-                <div class="message message-ai">
-                  <div class="message-header">
-                    <mat-icon class="ai-icon">auto_awesome</mat-icon>
-                    <span class="ai-label">Estimation</span>
-                    @if (isStreaming()) {
-                      <span class="streaming-indicator">
-                        <span class="dot"></span>
-                        <span class="dot"></span>
-                        <span class="dot"></span>
-                      </span>
-                    }
-                  </div>
-                  <div class="message-content">
-                    <pre class="result-text">{{ streamingResult() }}</pre>
-                    @if (isStreaming()) {
-                      <span class="cursor">|</span>
-                    }
-                  </div>
-                </div>
-              }
-
-              <!-- Error state -->
-              @if (error()) {
-                <div class="message message-error">
-                  <div class="message-header">
-                    <mat-icon>error</mat-icon>
-                    <span>Error</span>
-                  </div>
-                  <div class="message-content">{{ error() }}</div>
-                </div>
-              }
-
-              <!-- Guardrail error state -->
-              @if (guardrailError()) {
-                <div class="message message-warning">
-                  <div class="message-header">
-                    <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
-                    <span>{{ guardrailError()!.reason | titlecase }}</span>
-                  </div>
-                  <div class="message-content">{{ guardrailError()!.message }}</div>
-                </div>
-              }
+            <!-- Tabs header -->
+            <div class="tabs-header">
+              <button 
+                type="button" 
+                class="tab-button"
+                [class.tab-active]="activeTab() === 'form'"
+                (click)="activeTab.set('form')">
+                <mat-icon>description</mat-icon>
+                <span>Formulario</span>
+              </button>
+              <button 
+                type="button" 
+                class="tab-button"
+                [class.tab-active]="activeTab() === 'response'"
+                (click)="activeTab.set('response')">
+                <mat-icon>{{ isStreaming() ? 'schedule' : 'check_circle' }}</mat-icon>
+                <span>Respuesta</span>
+                @if (isStreaming() || streamingResult()) {
+                  <span class="tab-badge">●</span>
+                }
+              </button>
             </div>
 
-            <!-- Metadata panel (removed - now in sidebar) -->
-
-            <!-- Input form section -->
-            <div class="input-section">
+            <!-- Tabs content -->
+            <div class="tabs-content">
+              <!-- Form Tab -->
+              @if (activeTab() === 'form') {
+                <div class="tab-pane">
             <form (ngSubmit)="submit()" class="chat-form">
               <!-- Transcript textarea -->
               <div class="field">
@@ -423,6 +399,70 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                 </button>
               </div>
             </form>
+                </div>
+              }
+
+              <!-- Response Tab -->
+              @if (activeTab() === 'response') {
+                <div class="tab-pane tab-response">
+                  <!-- Messages/Results section -->
+                  <div class="messages-section">
+                    <!-- Streaming result -->
+                    @if (isStreaming() || streamingResult()) {
+                      <div class="message message-ai">
+                        <div class="message-header">
+                          <mat-icon class="ai-icon">auto_awesome</mat-icon>
+                          <span class="ai-label">Estimation</span>
+                          @if (isStreaming()) {
+                            <span class="streaming-indicator">
+                              <span class="dot"></span>
+                              <span class="dot"></span>
+                              <span class="dot"></span>
+                            </span>
+                          }
+                        </div>
+                        <div class="message-content">
+                          <pre class="result-text">{{ streamingResult() }}</pre>
+                          @if (isStreaming()) {
+                            <span class="cursor">|</span>
+                          }
+                        </div>
+                      </div>
+                    }
+
+                    <!-- Empty state -->
+                    @if (!isStreaming() && !streamingResult() && !error() && !guardrailError()) {
+                      <div class="empty-state">
+                        <mat-icon>inbox</mat-icon>
+                        <p>No hay respuestas aún. Completa el formulario y presiona "Estimate" para generar una.</p>
+                      </div>
+                    }
+
+                    <!-- Error state -->
+                    @if (error()) {
+                      <div class="message message-error">
+                        <div class="message-header">
+                          <mat-icon>error</mat-icon>
+                          <span>Error</span>
+                        </div>
+                        <div class="message-content">{{ error() }}</div>
+                      </div>
+                    }
+
+                    <!-- Guardrail error state -->
+                    @if (guardrailError()) {
+                      <div class="message message-warning">
+                        <div class="message-header">
+                          <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
+                          <span>{{ guardrailError()!.reason | titlecase }}</span>
+                        </div>
+                        <div class="message-content">{{ guardrailError()!.message }}</div>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
           </div>
         </div>
       </div>
@@ -650,14 +690,22 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
     }
 
     /* Main chat area */
-    .chat-area {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      overflow: hidden;
-      padding: 24px;
-      gap: 24px;
-    }
+    .chat-area { display: flex; flex-direction: column; flex: 1; overflow: hidden; padding: 0; }
+
+    /* Tabs */
+    .tabs-header { display: flex; gap: 0; border-bottom: 2px solid #e8e8f0; background: #f8f8fc; padding: 0 24px; }
+    .tab-button { display: flex; align-items: center; gap: 8px; padding: 16px 0; border: none; background: none; cursor: pointer; font-size: 0.9rem; font-weight: 500; color: #666; border-bottom: 3px solid transparent; margin: 0 16px; transition: all 0.2s; }
+    .tab-button:hover { color: #5c6bc0; }
+    .tab-button.tab-active { color: #5c6bc0; border-bottom-color: #5c6bc0; }
+    .tab-button mat-icon { font-size: 18px; width: 18px; height: 18px; }
+    .tab-badge { width: 8px; height: 8px; border-radius: 50%; background: #ff5252; margin-left: 4px; animation: pulse 0.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+    .tabs-content { display: flex; flex: 1; overflow: hidden; }
+    .tab-pane { display: flex; flex-direction: column; width: 100%; overflow-y: auto; padding: 24px; gap: 24px; }
+    .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; height: 100%; color: #999; text-align: center; }
+    .empty-state mat-icon { font-size: 64px; width: 64px; height: 64px; color: #ddd; }
+    .empty-state p { font-size: 0.9rem; margin: 0; max-width: 300px; }
 
     /* Messages section (scrollable) */
     .messages-section {
@@ -668,6 +716,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       gap: 16px;
       padding-right: 8px;
     }
+
     .messages-section::-webkit-scrollbar {
       width: 8px;
     }
@@ -808,14 +857,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       font-size: 0.8rem;
     }
 
-    /* Input section (fixed at bottom) */
-    .input-section {
-      flex-shrink: 0;
-      border-top: 1px solid #e8e8f0;
-      padding-top: 16px;
-      max-height: 50vh;
-      overflow-y: auto;
-    }
+    /* Input section - now part of tab-pane */
     .chat-form {
       display: flex;
       flex-direction: column;
@@ -1290,6 +1332,7 @@ export class EstimationFormComponent implements OnInit {
   turnCount = signal(0);
   isExistingSession = signal(false);
   sidebarOpen = signal(false);
+  activeTab = signal<'form' | 'response'>('form');
 
   refProjects: ReferenceProject[] = [];
 
