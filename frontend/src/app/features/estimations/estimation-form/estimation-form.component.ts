@@ -204,6 +204,13 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                 <div class="tab-pane">
                   <form (ngSubmit)="submit()" class="chat-form">
                     <div class="form-layout">
+                      @if (guardrailError() || error()) {
+                        <div class="guardrail-warning form-alert" [attr.data-reason]="guardrailError()?.reason ?? 'form'">
+                          <mat-icon>{{ guardrailError() ? guardrailIcon(guardrailError()!.reason) : 'warning' }}</mat-icon>
+                          <span>{{ guardrailError()?.message ?? error() }}</span>
+                        </div>
+                      }
+
                       <section class="form-column form-column--transcript">
                         <div class="field field--transcript">
                           <div class="field-heading">
@@ -428,16 +435,6 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                             </div>
                           }
                         </div>
-
-                        @if (guardrailError()) {
-                          <div class="guardrail-warning" [attr.data-reason]="guardrailError()!.reason">
-                            <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
-                            <span>{{ guardrailError()!.message }}</span>
-                          </div>
-                        }
-                        @if (error()) {
-                          <p class="error-msg">{{ error() }}</p>
-                        }
 
                         <div class="form-actions">
                           <button type="submit" class="btn-primary" [disabled]="loading() || !form.transcription.trim()">
@@ -1174,10 +1171,12 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       background: #fff;
     }
 
-    .guardrail-warning,
-    .error-msg {
+    .guardrail-warning {
       margin: 0;
       font-size: 0.78rem;
+    }
+    .form-alert {
+      grid-column: 1 / -1;
     }
     .guardrail-warning {
       display: flex;
@@ -1188,10 +1187,6 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       background: #fff8ec;
       border-radius: 8px;
       color: #a05900;
-    }
-    .error-msg {
-      color: #c62828;
-      font-weight: 500;
     }
 
     @media (max-width: 1100px) {
