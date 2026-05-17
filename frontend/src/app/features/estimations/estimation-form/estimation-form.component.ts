@@ -267,10 +267,10 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                           </div>
                           <div class="select-group">
                             <label class="select-label">
-                              <mat-icon class="select-icon">table_chart</mat-icon> Output format
+                              <mat-icon class="select-icon">table_chart</mat-icon> Output format <span class="required">*</span>
                             </label>
                             <div class="select-wrap">
-                              <select class="select" name="outputFormat" [(ngModel)]="form.output_format">
+                              <select class="select" name="outputFormat" [(ngModel)]="form.output_format" required>
                                 <option value="phases_table">Phases table</option>
                                 <option value="line_items">Line items</option>
                                 <option value="narrative">Narrative</option>
@@ -279,10 +279,10 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                             </div>
                           </div>
                           <div class="select-group">
-                            <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level</label>
+                            <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level <span class="required">*</span></label>
                             <div class="select-wrap">
-                              <select class="select" name="detailLevel" [(ngModel)]="form.detail_level">
-                                <option value="">Default</option>
+                              <select class="select" name="detailLevel" [(ngModel)]="form.detail_level" required>
+                                <option value="" disabled>Select detail level</option>
                                 <option value="summary">Summary</option>
                                 <option value="medium">Medium</option>
                                 <option value="detailed">Detailed</option>
@@ -397,12 +397,12 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                                 <div class="ref-col ref-col--name">
                                   <label class="select-label">Name</label>
                                   <input class="text-input" type="text" [name]="'refName' + i"
-                                    [(ngModel)]="proj.name" placeholder="e.g. HR Tool v1">
+                                    [(ngModel)]="proj.name" placeholder="e.g. HR Tool v1" required>
                                 </div>
                                 <div class="ref-col ref-col--desc">
                                   <label class="select-label">Description</label>
                                   <input class="text-input" type="text" [name]="'refDesc' + i"
-                                    [(ngModel)]="proj.description" placeholder="e.g. Basic HR CRUD app">
+                                    [(ngModel)]="proj.description" placeholder="e.g. Basic HR CRUD app" required>
                                 </div>
                               </div>
                               <div class="ref-row ref-row--metrics">
@@ -410,7 +410,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                                   <label class="select-label">Hours</label>
                                   <div class="num-ctrl">
                                     <input class="text-input num-input" type="number" [name]="'refHours' + i"
-                                      [(ngModel)]="proj.total_hours" min="0" placeholder="0">
+                                      [(ngModel)]="proj.total_hours" min="0" placeholder="0" required>
                                     <button type="button" class="counter-btn" (click)="proj.total_hours = (proj.total_hours ?? 0) - 1" [disabled]="(proj.total_hours ?? 0) <= 0">−</button>
                                     <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_hours = (proj.total_hours ?? 0) + 1">+</button>
                                   </div>
@@ -419,7 +419,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                                   <label class="select-label">Cost (EUR)</label>
                                   <div class="num-ctrl">
                                     <input class="text-input num-input" type="number" [name]="'refCost' + i"
-                                      [(ngModel)]="proj.total_cost" min="0" placeholder="0">
+                                      [(ngModel)]="proj.total_cost" min="0" placeholder="0" required>
                                     <button type="button" class="counter-btn" (click)="proj.total_cost = (proj.total_cost ?? 0) - 1" [disabled]="(proj.total_cost ?? 0) <= 0">−</button>
                                     <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_cost = (proj.total_cost ?? 0) + 1">+</button>
                                   </div>
@@ -1442,6 +1442,28 @@ export class EstimationFormComponent implements OnInit {
       return;
     }
 
+    if (!this.form.output_format) {
+      this.error.set('Output format is required.');
+      return;
+    }
+
+    if (!this.form.detail_level) {
+      this.error.set('Detail level is required.');
+      return;
+    }
+
+    const hasInvalidRefProject = this.refProjects.some(
+      ref =>
+        !ref.name.trim() ||
+        !ref.description.trim() ||
+        ref.total_hours == null ||
+        ref.total_cost == null,
+    );
+    if (hasInvalidRefProject) {
+      this.error.set('Complete all fields for each reference project or remove incomplete ones.');
+      return;
+    }
+
     this.loading.set(true);
     this.error.set(null);
     this.guardrailError.set(null);
@@ -1481,6 +1503,17 @@ export class EstimationFormComponent implements OnInit {
     if (this.form.temperature != null) fd.append('temperature', String(this.form.temperature));
     fd.append('pre_call', String(this.form.pre_call ?? false));
     fd.append('output_format', this.form.output_format ?? 'phases_table');
+    fd.append('detail_level', this.form.detail_level!);
+
+    const validRefs = this.refProjects.map(r => ({
+      name: r.name.trim(),
+      description: r.description.trim(),
+      total_hours: r.total_hours,
+      total_cost: r.total_cost,
+    }));
+    if (validRefs.length > 0) {
+      fd.append('reference_projects', JSON.stringify(validRefs));
+    }
 
     // Use streaming
     this.streamingResult.set('');
