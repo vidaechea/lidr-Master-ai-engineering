@@ -46,7 +46,7 @@ ensure_frontend_dependencies() {
 
 ensure_uv
 sync_python_project backend "backend"
-sync_python_project estimator-cag "ai-engine"
+sync_python_project ai-engine "ai-engine"
 ensure_frontend_dependencies
 
 echo "[devcontainer] Workspace bootstrap complete."

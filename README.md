@@ -1,14 +1,75 @@
 # lidr-Master-ai-Engineering
 
-Repositorio del estudiante **Luis Vidaechea** — programa **Master AI Engineering** de [LIDR](https://lidr.es).
+**Estimator** — AI-powered software effort estimation platform.
 
-Contiene el proyecto principal **Estimator** — una plataforma completa de estimación de esfuerzo software basada en IA — y los ejercicios de sesiones del máster.
+Repository by **Luis Vidaechea** — **Master AI Engineering** program at [LIDR](https://lidr.es).
 
 ---
 
-## Arquitectura del sistema
+## What is Estimator?
 
-El proyecto principal está compuesto por cuatro servicios que se orquestan con Docker Compose:
+Estimator is a web application that generates software development effort estimates by analyzing meeting transcriptions using AI. It uses **Context-Augmented Generation (CAG)** to inject curated reference examples into prompts, ensuring consistent and well-structured estimates.
+
+### Key Features
+
+- 🎯 **Automatic estimation** from meeting transcriptions
+- 🧠 **Multi-model LLM**: OpenAI, Anthropic (via LiteLLM)
+- ⚡ **Smart caching** with Redis (TTL 24h)
+- 💰 **Cost tracking** per call and session
+- 🔐 **JWT authentication** and PostgreSQL persistence
+- 📊 **Complete REST API** with Swagger/OpenAPI
+- 🎨 **Modern Angular UI** with responsive design
+- 🤖 **Async processing** with ARQ worker
+
+---
+
+## 🚀 Quick Start
+
+### Requirements
+- Docker and Docker Compose
+- API Keys: `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY`
+
+### Starting the Application
+
+1. **Clone and configure environment variables**
+   ```bash
+   git clone https://github.com/vidaechea/lidr-Master-ai-engineering.git
+   cd lidr-Master-ai-engineering
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
+
+2. **Start all services**
+   ```bash
+   docker compose up --build
+   ```
+
+3. **Run database migrations** (first time, in another terminal)
+   ```bash
+   docker compose exec backend alembic upgrade head
+   ```
+
+4. **Access the application**
+   - 🖥️ Frontend: http://localhost:4200
+   - 📡 Backend API: http://localhost:8000/docs (Swagger)
+   - 🧠 AI Engine: http://localhost:8001/docs (Swagger)
+
+---
+
+## 📚 Component Documentation
+
+| Component | Description | Documentation |
+|---|---|---|
+| **Frontend** | Angular SPA for user interface | [→ frontend/README.md](frontend/README.md) |
+| **Backend** | Business API, authentication, persistence | [→ backend/README.md](backend/README.md) |
+| **AI Engine** | LLM engine, estimations, caching | [→ ai-engine/README.md](ai-engine/README.md) |
+| **Notebooks** | OpenAI/Anthropic API clients, interactive examples | [→ notebooks/README.md](notebooks/README.md) |
+
+---
+
+## 🏗️ System Architecture
+
+The main project consists of four services orchestrated with Docker Compose:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -17,7 +78,7 @@ El proyecto principal está compuesto por cuatro servicios que se orquestan con 
 │  ┌──────────────┐   REST    ┌──────────────┐   HTTP             │
 │  │   frontend   │ ────────► │   backend    │ ──────►  ai-engine │
 │  │  Angular SPA │  :4200    │  FastAPI API │  :8001  FastAPI    │
-│  │   :4200→80   │           │    :8000     │         (interno)  │
+│  │   :4200→80   │           │    :8000     │         (internal)  │
 │  └──────────────┘           └──────────────┘                    │
 │                                    │                  │          │
 │                              ┌─────┴──────┐    ┌─────┴──────┐  │
@@ -27,161 +88,161 @@ El proyecto principal está compuesto por cuatro servicios que se orquestan con 
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-| Servicio | Directorio | Puerto | Responsabilidad |
+| Service | Directory | Port | Responsibility |
 |---|---|---|---|
-| `frontend` | `frontend/` | 4200 | SPA Angular — interfaz de usuario |
-| `backend` | `backend/` | 8000 | API de negocio — auth, proyectos, persistencia |
-| `ai-engine` | `estimator-cag/` | 8001 | Motor LLM — generación de estimaciones |
-| `ai-engine-worker` | `estimator-cag/` | — | Worker ARQ — estimaciones asíncronas |
-| `postgres` | — | 5432 | Base de datos principal |
-| `redis` | — | 6379 | Caché y cola de trabajos |
+| `frontend` | `frontend/` | 4200 | Angular SPA — user interface |
+| `backend` | `backend/` | 8000 | Business API — auth, projects, persistence |
+| `ai-engine` | `ai-engine/` | 8001 | LLM engine — estimation generation |
+| `ai-engine-worker` | `ai-engine/` | — | ARQ worker — async estimations |
+| `postgres` | — | 5432 | Main database |
+| `redis` | — | 6379 | Cache and job queue |
 
 ---
 
-## Estructura del repositorio
+## Repository Structure
 
 ```
 lidr-Master-ai-engineering/
-├── docker-compose.yml        # Orquestación completa de todos los servicios
-├── .env                      # Variables de entorno (local, no versionado)
+├── docker-compose.yml        # Complete services orchestration
+├── .env                      # Environment variables (local, not versioned)
 │
-├── backend/                  # API de negocio (FastAPI + PostgreSQL)
+├── backend/                  # Business API (FastAPI + PostgreSQL)
 │   ├── app/
-│   │   ├── main.py           # Factory de la app, registro de routers
+│   │   ├── main.py           # App factory, router registration
 │   │   ├── config.py         # Settings (pydantic-settings)
-│   │   ├── models/           # ORM SQLAlchemy (User, Project, Estimation)
+│   │   ├── models/           # SQLAlchemy ORM (User, Project, Estimation)
 │   │   ├── routers/          # auth, projects, estimations, internal
 │   │   ├── schemas/          # Pydantic request/response
-│   │   ├── services/         # Lógica de negocio + cliente HTTP al ai-engine
+│   │   ├── services/         # Business logic + HTTP client to ai-engine
 │   │   └── dependencies.py   # get_db, get_current_user (Depends)
-│   ├── alembic/              # Migraciones de base de datos
+│   ├── alembic/              # Database migrations
 │   └── tests/
 │       ├── unit/             # test_auth_service, test_estimation_service
 │       └── integration/      # test_auth, test_projects, test_estimations
 │
-├── estimator-cag/            # Motor de IA (FastAPI + LiteLLM + Redis)
+├── ai-engine/               # AI Engine (FastAPI + LiteLLM + Redis)
 │   ├── app/
-│   │   ├── main.py           # Factory de la app
+│   │   ├── main.py           # App factory
 │   │   ├── routers/          # estimations, cache_metrics, internal
 │   │   ├── services/         # estimation_service, litellm_service, cache_service
-│   │   ├── prompts/          # Plantillas Jinja2 v1/v2 + ejemplos CAG
-│   │   └── worker.py         # Worker ARQ para estimaciones asíncronas
-│   ├── streamlit_app.py      # Chat UI de demostración
+│   │   ├── prompts/          # Jinja2 templates v1/v2 + CAG examples
+│   │   └── worker.py         # ARQ worker for async estimations
+│   ├── streamlit_app.py      # Demo chat UI
 │   └── tests/
 │       ├── unit/             # test_auth_service, test_cost_calculator, etc.
 │       └── integration/      # test_estimations, test_litellm_estimations
 │
-├── frontend/                 # SPA Angular 21
+├── frontend/                 # Angular 21 SPA
 │   └── src/app/
 │       ├── features/         # auth/, projects/, estimations/
-│       └── core/             # guards, interceptors, servicios compartidos
+│       └── core/             # guards, interceptors, shared services
 │
-└── session01/                # Ejercicios Sesión 01 — clientes OpenAI y Anthropic
-    ├── *.py                  # Scripts Python reutilizables
-    └── *.ipynb               # Notebooks Jupyter
+└── notebooks/                # Session 01 — OpenAI and Anthropic clients
+    ├── *.py                  # Reusable Python scripts
+    └── *.ipynb               # Jupyter notebooks
 ```
 
 ---
 
-## Componentes en detalle
+## Components in Detail
 
-### `backend/` — API de negocio
+### `backend/` — Business API
 
-API FastAPI que expone los recursos de la aplicación al frontend y actúa como gateway hacia el motor de IA. **No contiene lógica LLM**.
+FastAPI application that exposes application resources to the frontend and acts as a gateway to the AI engine. **Does not contain LLM logic**.
 
-**Responsabilidades:**
-- Autenticación JWT (registro, login, refresh) y OAuth2 (Google/Microsoft)
-- CRUD de proyectos por usuario
-- Creación y persistencia de estimaciones (estado: `pending → processing → completed/failed`)
-- Proxy síncrono y asíncrono al `ai-engine`
-- Endpoint de callback que recibe resultados del worker ARQ
+**Responsibilities:**
+- JWT authentication (signup, login, refresh) and OAuth2 (Google/Microsoft)
+- Per-user project CRUD
+- Estimation creation and persistence (state: `pending → processing → completed/failed`)
+- Synchronous and asynchronous proxy to `ai-engine`
+- Callback endpoint that receives ARQ worker results
 
-**Endpoints principales:**
+**Main Endpoints:**
 
-| Método | Ruta | Descripción |
+| Method | Route | Description |
 |---|---|---|
-| `POST` | `/v1/auth/register` | Registro con email/contraseña |
+| `POST` | `/v1/auth/register` | Register with email/password |
 | `POST` | `/v1/auth/login` | Login → access + refresh tokens |
-| `POST` | `/v1/auth/refresh` | Renovar access token |
-| `GET/POST` | `/v1/projects` | Listar / crear proyectos |
-| `GET/PATCH/DELETE` | `/v1/projects/{id}` | Detalle, actualizar, eliminar |
-| `GET/POST` | `/v1/estimations` | Listar / crear estimación (síncrona) |
-| `POST` | `/v1/estimations/async` | Crear estimación asíncrona (→ job_id) |
-| `GET` | `/v1/estimations/{id}/status` | Polling del estado de una estimación |
-| `POST` | `/v1/internal/estimation-callback` | Callback del worker ARQ |
+| `POST` | `/v1/auth/refresh` | Refresh access token |
+| `GET/POST` | `/v1/projects` | List / create projects |
+| `GET/PATCH/DELETE` | `/v1/projects/{id}` | Detail, update, delete |
+| `GET/POST` | `/v1/estimations` | List / create estimation (sync) |
+| `POST` | `/v1/estimations/async` | Create async estimation (→ job_id) |
+| `GET` | `/v1/estimations/{id}/status` | Poll estimation status |
+| `POST` | `/v1/internal/estimation-callback` | ARQ worker callback |
 
 **Stack:** Python 3.12 · FastAPI · SQLAlchemy 2 async · PostgreSQL · Alembic · python-jose · httpx · ARQ
 
 ---
 
-### `estimator-cag/` — Motor de IA
+### `ai-engine/` — AI Engine
 
-Servicio interno que recibe una transcripción de reunión y devuelve una estimación de esfuerzo en markdown y/o formato estructurado. Implementa **Context-Augmented Generation (CAG)**: ejemplos de referencia curados se inyectan en el system prompt para guiar al modelo.
+Internal service that receives a meeting transcription and returns effort estimation in markdown and/or structured format. Implements **Context-Augmented Generation (CAG)**: curated reference examples are injected into the system prompt to guide the model.
 
-**Responsabilidades:**
-- Pipeline CAG: construir system prompt con ejemplos + llamar al LLM + validar resultado
-- Enrutamiento multi-modelo vía LiteLLM (OpenAI, Anthropic)
-- Caché exacta con Redis (clave SHA-256 sobre transcripción + parámetros, TTL 24h)
-- Cálculo de coste por llamada (MODEL_REGISTRY con precios por token)
-- Worker ARQ para estimaciones asíncronas con callback al backend
+**Responsibilities:**
+- CAG pipeline: build system prompt with examples + call LLM + validate result
+- Multi-model routing via LiteLLM (OpenAI, Anthropic)
+- Exact caching with Redis (SHA-256 key on transcription + params, TTL 24h)
+- Cost calculation per call (MODEL_REGISTRY with per-token pricing)
+- ARQ worker for async estimations with callback to backend
 
-**Modelos soportados:**
+**Supported Models:**
 
-| Proveedor | Modelos |
+| Provider | Models |
 |---|---|
 | OpenAI | `gpt-4o-mini`, `gpt-5.4-mini`, `gpt-5.4`, `o3-mini`, `o4-mini` |
 | Anthropic | `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-7` |
 
-**Endpoints internos:**
+**Internal Endpoints:**
 
-| Método | Ruta | Descripción |
+| Method | Route | Description |
 |---|---|---|
-| `POST` | `/api/v1/estimate` | Estimación síncrona |
-| `POST` | `/api/v1/estimate/structured` | Estimación con salida estructurada |
-| `POST` | `/api/v1/internal/estimate/async` | Encolar estimación asíncrona |
-| `GET` | `/api/v1/examples` | Listar ejemplos CAG |
-| `GET` | `/api/v1/cache/metrics` | Métricas de caché (hits, misses, coste evitado) |
+| `POST` | `/api/v1/estimate` | Sync estimation |
+| `POST` | `/api/v1/estimate/structured` | Estimation with structured output |
+| `POST` | `/api/v1/internal/estimate/async` | Enqueue async estimation |
+| `GET` | `/api/v1/examples` | List CAG examples |
+| `GET` | `/api/v1/cache/metrics` | Cache metrics (hits, misses, cost saved) |
 
 **Stack:** Python 3.12 · FastAPI · LiteLLM · Redis · ARQ · Jinja2 · Streamlit (demo UI)
 
 ---
 
-### `frontend/` — SPA Angular
+### `frontend/` — Angular SPA
 
-Interfaz de usuario que consume la API del `backend`. Construida con Angular 21.
+User interface that consumes the `backend` API. Built with Angular 21.
 
-**Módulos de negocio (`src/app/features/`):**
-- `auth/` — login, registro, gestión de tokens
-- `projects/` — lista y detalle de proyectos
-- `estimations/` — creación de estimaciones, visualización de resultados
+**Business Modules (`src/app/features/`):**
+- `auth/` — login, signup, token management
+- `projects/` — projects list and detail
+- `estimations/` — estimation creation, results visualization
 
-**Stack:** Angular 21 · TypeScript · SCSS · nginx (producción)
-
----
-
-### `session01/` — Ejercicios Sesión 01
-
-Clientes Python mínimos y reutilizables para OpenAI y Anthropic, con tracking de costes y soporte para Google Colab y entorno local. Incluye notebooks Jupyter con ejemplos interactivos.
+**Stack:** Angular 21 · TypeScript · SCSS · nginx (production)
 
 ---
 
-## Levantar el proyecto completo
+### `notebooks/` — Session 01
 
-### Requisitos
-- Docker y Docker Compose
-- Claves de API: `OPENAI_API_KEY` y/o `ANTHROPIC_API_KEY`
+Minimal, reusable Python clients for OpenAI and Anthropic with cost tracking and support for Google Colab and local environment. Includes interactive Jupyter notebooks with examples.
 
-### Uso en Codespaces
+---
 
-Este repositorio incluye configuración de Dev Container en `.devcontainer/` para que GitHub Codespaces prepare el entorno automáticamente.
+## 🛠️ Full Project Setup
 
-Al crear (o reconstruir) el Codespace se ejecuta `postCreate.sh`, que instala:
-- Dependencias de sistema para ejecutar tests de Angular con Playwright/Chromium
-- `uv` para gestión de entorno/dependencias Python
-- Dependencias de `backend/` y `estimator-cag/` con `uv sync`
-- Dependencias de `frontend/` con `npm ci` y binario de Chromium
+### Requirements
+- Docker and Docker Compose
+- API Keys: `OPENAI_API_KEY` and/or `ANTHROPIC_API_KEY`
 
-Comandos recomendados para validar el entorno en un Codespace nuevo:
+### Using with Codespaces
+
+This repository includes Dev Container configuration in `.devcontainer/` for GitHub Codespaces to automatically prepare the environment.
+
+When creating (or rebuilding) the Codespace, `postCreate.sh` is executed, which installs:
+- System dependencies for running Angular tests with Playwright/Chromium
+- `uv` for Python environment/dependency management
+- `backend/` and `ai-engine/` dependencies with `uv sync`
+- `frontend/` dependencies with `npm ci` and Chromium binary
+
+Recommended commands to validate the environment in a new Codespace:
 
 ```bash
 # Frontend (Angular + Vitest + Playwright)
@@ -193,13 +254,13 @@ cd ../backend
 uv run pytest tests/ -v
 
 # AI Engine (FastAPI + LiteLLM)
-cd ../estimator-cag
+cd ../ai-engine
 uv run pytest tests/ -v
 ```
 
 #### Troubleshooting (Codespaces)
 
-Si los tests del frontend fallan con errores de Playwright/Chromium (por ejemplo, `libatk-1.0.so.0: cannot open shared object file`):
+If frontend tests fail with Playwright/Chromium errors (e.g., `libatk-1.0.so.0: cannot open shared object file`):
 
 ```bash
 cd frontend
@@ -208,107 +269,107 @@ npx playwright install chromium
 npm test -- --watch=false --browsers=chromium
 ```
 
-Si aparece un error de bloqueo de `apt/dpkg` (`Could not get lock /var/lib/dpkg/lock-frontend`), espera al proceso activo y reintenta:
+If you encounter `apt/dpkg` lock errors (`Could not get lock /var/lib/dpkg/lock-frontend`), wait for the active process and retry:
 
 ```bash
 sudo apt-get -o DPkg::Lock::Timeout=600 update
 sudo apt-get -o DPkg::Lock::Timeout=600 --fix-missing install
 ```
 
-### Variables de entorno
+### Environment Variables
 
-Crea un archivo `.env` en la raíz del repositorio:
+Create a `.env` file in the repository root:
 
 ```env
 # LLM
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 
-# Seguridad
-SECRET_KEY=cambia_esto_en_produccion
-INTERNAL_API_KEY=cambia_esto_tambien
+# Security
+SECRET_KEY=change_this_in_production
+INTERNAL_API_KEY=change_this_too
 
-# Base de datos (opcionales — los defaults funcionan con Docker)
+# Database (optional — defaults work with Docker)
 POSTGRES_USER=estimator
 POSTGRES_PASSWORD=estimator_dev
 POSTGRES_DB=estimator
 ```
 
-### Iniciar todos los servicios
+### Starting All Services
 
 ```bash
-# Construir imágenes y levantar todos los servicios
+# Build images and start all services
 docker compose up --build
 
-# En background (detached)
+# In the background (detached)
 docker compose up --build -d
 ```
 
-Si cambiaste `POSTGRES_USER`, `POSTGRES_PASSWORD` o `POSTGRES_DB` después del primer arranque, el contenedor de Postgres no reaplica esos valores sobre un volumen ya inicializado. En ese caso, el backend puede seguir intentando entrar con la clave nueva mientras Postgres conserva la anterior.
+If you change `POSTGRES_USER`, `POSTGRES_PASSWORD`, or `POSTGRES_DB` after the first startup, the Postgres container won't reapply those values to an already-initialized volume. In that case, the backend may continue trying to connect with the new credentials while Postgres keeps the old ones.
 
-Para un entorno local sin datos que preservar, reinicia la base desde cero:
+For a local environment without data to preserve, restart the database from scratch:
 
 ```bash
 docker compose down -v
 docker compose up --build
 ```
 
-Si necesitas conservar los datos, cambia la contraseña del usuario dentro de Postgres para que coincida con tu `.env` actual en lugar de borrar el volumen.
+If you need to preserve data, change the Postgres user password inside Postgres to match your current `.env` instead of deleting the volume.
 
-| URL | Servicio |
+| URL | Service |
 |---|---|
-| http://localhost:4200 | Frontend Angular |
+| http://localhost:4200 | Angular Frontend |
 | http://localhost:8000/docs | Backend API — Swagger UI |
 | http://localhost:8000/health | Backend healthcheck |
 
-### Ejecutar las migraciones (primera vez)
+### Running Migrations (first time)
 
 ```bash
-# Opción 1: con Docker Compose (recomendado si levantaste el stack con Docker)
+# Option 1: with Docker Compose (recommended if you started the stack with Docker)
 docker compose exec backend alembic upgrade head
 
-# Opción 2: en local (fuera de Docker)
+# Option 2: locally (outside Docker)
 cd backend
 uv run alembic upgrade head
 ```
 
-### Crear una nueva migración
+### Creating a New Migration
 
 ```bash
-# Opción 1: con Docker Compose
-docker compose exec backend alembic revision --autogenerate -m "descripcion_cambio"
+# Option 1: with Docker Compose
+docker compose exec backend alembic revision --autogenerate -m "description_of_change"
 
-# Opción 2: en local (fuera de Docker)
+# Option 2: locally (outside Docker)
 cd backend
-uv run alembic revision --autogenerate -m "descripcion_cambio"
+uv run alembic revision --autogenerate -m "description_of_change"
 ```
 
-### Otros comandos útiles
+### Other Useful Commands
 
 ```bash
-# Levantar solo infraestructura (postgres + redis)
+# Start only infrastructure (postgres + redis)
 docker compose up postgres redis
 
-# Levantar solo el motor de IA con su worker
+# Start only the AI engine with its worker
 docker compose up --build ai-engine ai-engine-worker
 
-# Ver logs en tiempo real (todos los servicios o uno concreto)
+# View logs in real time (all services or specific one)
 docker compose logs -f
 docker compose logs -f ai-engine
 
-# Parar los contenedores
+# Stop containers
 docker compose down
 
-# Parar y borrar volúmenes (elimina datos de postgres y redis)
+# Stop and delete volumes (removes postgres and redis data)
 docker compose down -v
 
-# Reconstruir un servicio sin tocar los demás
+# Rebuild a service without touching others
 docker compose up --build frontend
 ```
 
 ---
 
-## Tests
+## 🧪 Testing
 
 ### Backend
 
@@ -317,35 +378,35 @@ cd backend
 uv run pytest tests/ -v
 ```
 
-Los tests usan SQLite en memoria — no requieren PostgreSQL ni el `ai-engine` activo. Las llamadas HTTP al motor de IA se mockean.
+Tests use in-memory SQLite — no PostgreSQL or active `ai-engine` required. HTTP calls to the AI engine are mocked.
 
 ### AI Engine
 
 ```bash
-cd estimator-cag
+cd ai-engine
 uv run pytest tests/ -v
 ```
 
 ---
 
-## Convenciones
+## 📋 Conventions
 
-- Secretos nunca versionados (`.env` en `.gitignore`)
-- Sesiones del máster en directorios `session0X/`
-- Un `APIRouter` por recurso de dominio
-- Lógica de negocio exclusivamente en la capa de servicios, nunca en routers
+- Secrets never versioned (`.env` in `.gitignore`)
+- Master program sessions in `session0X/` directories
+- One `APIRouter` per domain resource
+- Business logic exclusively in the services layer, never in routers
 
 ---
 
-## Autor
+## 👤 Author
 
 **Luis Vidaechea** — Master AI Engineering, LIDR
 
-## Licencia
+## 📄 License
 
 MIT
 
 ---
 
-*Última actualización: 15 de Mayo de 2026*
+*Last update: May 17, 2026*
 
