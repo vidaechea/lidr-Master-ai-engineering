@@ -1,5 +1,5 @@
 ﻿import { Component, OnInit, computed, signal } from '@angular/core';
-import { JsonPipe, TitleCasePipe } from '@angular/common';
+import { JsonPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -31,7 +31,6 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
   imports: [
     FormsModule,
     JsonPipe,
-    TitleCasePipe,
     MatExpansionModule,
     MatIconModule,
     MatProgressSpinnerModule,
@@ -203,255 +202,257 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
               <!-- Form Tab -->
               @if (activeTab() === 'form') {
                 <div class="tab-pane">
-            <form (ngSubmit)="submit()" class="chat-form">
-              <!-- Transcript textarea -->
-              <div class="field">
-                <label class="field-label" for="transcription">
-                  Transcript / Description <span class="required">*</span>
-                </label>
-                <textarea id="transcription" class="textarea" name="transcription"
-                  [(ngModel)]="form.transcription"
-                  rows="6" maxlength="20000" required minlength="20"
-                  placeholder="Paste meeting transcript or project description here...">
-                </textarea>
-                <div class="textarea-footer">
-                  <span class="char-count">{{ form.transcription.length }} / 20,000</span>
-                </div>
-              </div>
-
-              <!-- Attachments -->
-              <div class="field">
-                <label class="field-label">
-                  Attachments <em class="optional-tag">(optional)</em>
-                </label>
-                <div class="attach-zone" [class.attach-zone--drag]="dragOver()"
-                  (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
-                  (click)="fileInput.click()" (keydown.enter)="fileInput.click()" tabindex="0" role="button"
-                  aria-label="Upload attachments">
-                  <input #fileInput type="file" accept=".pdf,.docx,.txt" multiple hidden
-                    (change)="onFilesSelected($event)">
-                  <mat-icon class="attach-icon">cloud_upload</mat-icon>
-                  <span class="attach-label">Drop files or <strong>click</strong></span>
-                </div>
-                @if (attachments().length > 0) {
-                  <div class="file-list">
-                    @for (f of attachments(); track $index; let i = $index) {
-                      <div class="file-chip">
-                        <mat-icon class="file-icon">{{ fileIcon(f) }}</mat-icon>
-                        <span class="file-name">{{ f.name }}</span>
-                        <button type="button" class="file-remove" (click)="removeAttachment(i)">
-                          <mat-icon>close</mat-icon>
-                        </button>
-                      </div>
-                    }
-                  </div>
-                }
-              </div>
-
-              <!-- Options row -->
-              <!-- Primary row: Project type / Output format / Detail level -->
-              <div class="selects-row">
-                <div class="select-group">
-                  <label class="select-label"><mat-icon class="select-icon">category</mat-icon> Project type</label>
-                  <div class="select-wrap">
-                    <select class="select" name="projectType" [(ngModel)]="form.project_type">
-                      <option value="">None</option>
-                      <option value="mobile_app">Mobile App</option>
-                      <option value="web_saas">Web SaaS</option>
-                      <option value="internal_tool">Internal Tool</option>
-                      <option value="data_pipeline">Data Pipeline</option>
-                    </select>
-                    <mat-icon class="chevron">expand_more</mat-icon>
-                  </div>
-                </div>
-                <div class="select-group">
-                  <label class="select-label">
-                    <mat-icon class="select-icon">table_chart</mat-icon> Output format
-                  </label>
-                  <div class="select-wrap">
-                    <select class="select" name="outputFormat" [(ngModel)]="form.output_format">
-                      <option value="phases_table">Phases table</option>
-                      <option value="line_items">Line items</option>
-                      <option value="narrative">Narrative</option>
-                    </select>
-                    <mat-icon class="chevron">expand_more</mat-icon>
-                  </div>
-                </div>
-                <div class="select-group">
-                  <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level</label>
-                  <div class="select-wrap">
-                    <select class="select" name="detailLevel" [(ngModel)]="form.detail_level">
-                      <option value="">Default</option>
-                      <option value="summary">Summary</option>
-                      <option value="medium">Medium</option>
-                      <option value="detailed">Detailed</option>
-                    </select>
-                    <mat-icon class="chevron">expand_more</mat-icon>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Pre-call checkbox -->
-              <label class="precall-card">
-                <input type="checkbox" name="preCal" [(ngModel)]="form.pre_call" class="precall-check">
-                <div class="precall-text">
-                  <span class="precall-title">Extract requirements before estimating (pre_call)</span>
-                  <span class="precall-desc">Use AI to extract and structure requirements before generating the estimate.</span>
-                </div>
-                <mat-icon class="precall-info">info_outline</mat-icon>
-              </label>
-
-              <!-- Advanced options (collapsed) -->
-              <mat-expansion-panel class="advanced-panel">
-                <mat-expansion-panel-header>
-                  <mat-panel-title>Advanced options</mat-panel-title>
-                  <mat-panel-description>Project type, sampling &amp; generation parameters</mat-panel-description>
-                </mat-expansion-panel-header>
-
-                <div class="selects-row adv-row">
-                  <div class="select-group">
-                    <label class="select-label">
-                      <mat-icon class="select-icon">smart_toy</mat-icon> Model
-                    </label>
-                    <div class="select-wrap">
-                      <select class="select" name="model" [(ngModel)]="form.model">
-                        <option value="">Select model</option>
-                        <option value="gpt-4o-mini">GPT-4o mini</option>
-                        <option value="gpt-5.4-mini">GPT-5.4 mini</option>
-                        <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-                      </select>
-                      <mat-icon class="chevron">expand_more</mat-icon>
-                    </div>
-                  </div>
-                  <div class="select-group">
-                    <label class="select-label"><mat-icon class="select-icon">format_list_bulleted</mat-icon> Example format</label>
-                    <div class="select-wrap">
-                      <select class="select" name="exampleFormat" [(ngModel)]="form.example_format">
-                        <option value="markdown">Markdown</option>
-                        <option value="json">JSON</option>
-                        <option value="narrative">Narrative</option>
-                      </select>
-                      <mat-icon class="chevron">expand_more</mat-icon>
-                    </div>
-                  </div>
-                  <div class="select-group">
-                    <label class="select-label">
-                      <mat-icon class="select-icon">auto_awesome</mat-icon> Prompt version
-                    </label>
-                    <div class="select-wrap">
-                      <select class="select" name="promptVersion" [(ngModel)]="form.prompt_version">
-                        <option value="v1">v1</option>
-                        <option value="v2">v2</option>
-                      </select>
-                      <mat-icon class="chevron">expand_more</mat-icon>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="selects-row adv-row">
-                  <div class="select-group">
-                    <label class="select-label"><mat-icon class="select-icon">psychology</mat-icon> Reasoning effort</label>
-                    <div class="select-wrap">
-                      <select class="select" name="reasoningEffort" [(ngModel)]="form.reasoning_effort">
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                      </select>
-                      <mat-icon class="chevron">expand_more</mat-icon>
-                    </div>
-                  </div>
-                  <div class="input-group">
-                    <label class="select-label"><mat-icon class="select-icon">thermostat</mat-icon> Temperature (0–1)</label>
-                    <input class="text-input" type="number" name="temperature"
-                      [(ngModel)]="form.temperature" min="0" max="1" step="0.05" placeholder="Default">
-                  </div>
-                  <div class="input-group">
-                    <label class="select-label"><mat-icon class="select-icon">format_list_numbered</mat-icon> Examples (0–5)</label>
-                    <input class="text-input" type="number" name="numExamples"
-                      [(ngModel)]="form.num_examples" min="0" max="5" step="1">
-                  </div>
-                  <div class="input-group">
-                    <label class="select-label"><mat-icon class="select-icon">token</mat-icon> Max output tokens</label>
-                    <input class="text-input" type="number" name="maxOutputTokens"
-                      [(ngModel)]="form.max_output_tokens" min="256" max="32768" step="256">
-                  </div>
-                </div>
-              </mat-expansion-panel>
-
-              <!-- Reference projects -->
-              <div class="ref-section">
-                <div class="ref-section-head">
-                  <span class="field-label">Reference projects <em class="optional-tag">(optional)</em></span>
-                </div>
-                <div class="ref-counter-row">
-                  <span class="select-label">Number of reference projects</span>
-                  <div class="counter-ctrl">
-                    <span class="counter-val">{{ refProjects.length }}</span>
-                    <button type="button" class="counter-btn" (click)="removeRefProject()" [disabled]="refProjects.length === 0">−</button>
-                    <button type="button" class="counter-btn counter-btn--add" (click)="addRefProject()">+</button>
-                  </div>
-                </div>
-                @for (proj of refProjects; track $index; let i = $index) {
-                  <div class="ref-project">
-                    <div class="ref-project-title">Project {{ i + 1 }}</div>
-                    <div class="ref-row">
-                      <div class="ref-col ref-col--name">
-                        <label class="select-label">Name</label>
-                        <input class="text-input" type="text" [name]="'refName' + i"
-                          [(ngModel)]="proj.name" placeholder="e.g. HR Tool v1">
-                      </div>
-                      <div class="ref-col ref-col--desc">
-                        <label class="select-label">Description</label>
-                        <input class="text-input" type="text" [name]="'refDesc' + i"
-                          [(ngModel)]="proj.description" placeholder="e.g. Basic HR CRUD app">
-                      </div>
-                      <div class="ref-col ref-col--num">
-                        <label class="select-label">Hours</label>
-                        <div class="num-ctrl">
-                          <input class="text-input num-input" type="number" [name]="'refHours' + i"
-                            [(ngModel)]="proj.total_hours" min="0" placeholder="0">
-                          <button type="button" class="counter-btn" (click)="proj.total_hours = (proj.total_hours ?? 0) - 1" [disabled]="(proj.total_hours ?? 0) <= 0">−</button>
-                          <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_hours = (proj.total_hours ?? 0) + 1">+</button>
+                  <form (ngSubmit)="submit()" class="chat-form">
+                    <div class="form-layout">
+                      <section class="form-column form-column--transcript">
+                        <div class="field field--transcript">
+                          <div class="field-heading">
+                            <label class="field-label" for="transcription">
+                              Transcript / Description <span class="required">*</span>
+                            </label>
+                          </div>
+                          <textarea id="transcription" class="textarea textarea--transcript" name="transcription"
+                            [(ngModel)]="form.transcription"
+                            rows="6" maxlength="20000" required minlength="20"
+                            placeholder="Paste meeting transcript or project description here...">
+                          </textarea>
+                          <div class="textarea-footer">
+                            <span class="char-count">{{ form.transcription.length }} / 20,000</span>
+                          </div>
                         </div>
-                      </div>
-                      <div class="ref-col ref-col--num">
-                        <label class="select-label">Cost (EUR)</label>
-                        <div class="num-ctrl">
-                          <input class="text-input num-input" type="number" [name]="'refCost' + i"
-                            [(ngModel)]="proj.total_cost" min="0" placeholder="0">
-                          <button type="button" class="counter-btn" (click)="proj.total_cost = (proj.total_cost ?? 0) - 1" [disabled]="(proj.total_cost ?? 0) <= 0">−</button>
-                          <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_cost = (proj.total_cost ?? 0) + 1">+</button>
+                      </section>
+
+                      <section class="form-column form-column--details">
+                        <div class="field">
+                          <label class="field-label">
+                            Attachments <em class="optional-tag">(optional)</em>
+                          </label>
+                          <div class="attach-zone" [class.attach-zone--drag]="dragOver()"
+                            (dragover)="onDragOver($event)" (dragleave)="onDragLeave($event)" (drop)="onDrop($event)"
+                            (click)="fileInput.click()" (keydown.enter)="fileInput.click()" tabindex="0" role="button"
+                            aria-label="Upload attachments">
+                            <input #fileInput type="file" accept=".pdf,.docx,.txt" multiple hidden
+                              (change)="onFilesSelected($event)">
+                            <mat-icon class="attach-icon">cloud_upload</mat-icon>
+                            <span class="attach-label">Drop files or <strong>click</strong></span>
+                          </div>
+                          @if (attachments().length > 0) {
+                            <div class="file-list">
+                              @for (f of attachments(); track $index; let i = $index) {
+                                <div class="file-chip">
+                                  <mat-icon class="file-icon">{{ fileIcon(f) }}</mat-icon>
+                                  <span class="file-name">{{ f.name }}</span>
+                                  <button type="button" class="file-remove" (click)="removeAttachment(i)">
+                                    <mat-icon>close</mat-icon>
+                                  </button>
+                                </div>
+                              }
+                            </div>
+                          }
                         </div>
-                      </div>
+
+                        <div class="selects-row">
+                          <div class="select-group">
+                            <label class="select-label"><mat-icon class="select-icon">category</mat-icon> Project type</label>
+                            <div class="select-wrap">
+                              <select class="select" name="projectType" [(ngModel)]="form.project_type">
+                                <option value="">None</option>
+                                <option value="mobile_app">Mobile App</option>
+                                <option value="web_saas">Web SaaS</option>
+                                <option value="internal_tool">Internal Tool</option>
+                                <option value="data_pipeline">Data Pipeline</option>
+                              </select>
+                              <mat-icon class="chevron">expand_more</mat-icon>
+                            </div>
+                          </div>
+                          <div class="select-group">
+                            <label class="select-label">
+                              <mat-icon class="select-icon">table_chart</mat-icon> Output format
+                            </label>
+                            <div class="select-wrap">
+                              <select class="select" name="outputFormat" [(ngModel)]="form.output_format">
+                                <option value="phases_table">Phases table</option>
+                                <option value="line_items">Line items</option>
+                                <option value="narrative">Narrative</option>
+                              </select>
+                              <mat-icon class="chevron">expand_more</mat-icon>
+                            </div>
+                          </div>
+                          <div class="select-group">
+                            <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level</label>
+                            <div class="select-wrap">
+                              <select class="select" name="detailLevel" [(ngModel)]="form.detail_level">
+                                <option value="">Default</option>
+                                <option value="summary">Summary</option>
+                                <option value="medium">Medium</option>
+                                <option value="detailed">Detailed</option>
+                              </select>
+                              <mat-icon class="chevron">expand_more</mat-icon>
+                            </div>
+                          </div>
+                        </div>
+
+                        <label class="precall-card">
+                          <input type="checkbox" name="preCal" [(ngModel)]="form.pre_call" class="precall-check">
+                          <div class="precall-text">
+                            <span class="precall-title">Extract requirements before estimating (pre_call)</span>
+                            <span class="precall-desc">Use AI to extract and structure requirements before generating the estimate.</span>
+                          </div>
+                          <mat-icon class="precall-info">info_outline</mat-icon>
+                        </label>
+
+                        <mat-expansion-panel class="advanced-panel">
+                          <mat-expansion-panel-header>
+                            <mat-panel-title>Advanced options</mat-panel-title>
+                            <mat-panel-description>Project type, sampling &amp; generation parameters</mat-panel-description>
+                          </mat-expansion-panel-header>
+
+                          <div class="selects-row adv-row">
+                            <div class="select-group">
+                              <label class="select-label">
+                                <mat-icon class="select-icon">smart_toy</mat-icon> Model
+                              </label>
+                              <div class="select-wrap">
+                                <select class="select" name="model" [(ngModel)]="form.model">
+                                  <option value="">Select model</option>
+                                  <option value="gpt-4o-mini">GPT-4o mini</option>
+                                  <option value="gpt-5.4-mini">GPT-5.4 mini</option>
+                                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                                  <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                                </select>
+                                <mat-icon class="chevron">expand_more</mat-icon>
+                              </div>
+                            </div>
+                            <div class="select-group">
+                              <label class="select-label"><mat-icon class="select-icon">format_list_bulleted</mat-icon> Example format</label>
+                              <div class="select-wrap">
+                                <select class="select" name="exampleFormat" [(ngModel)]="form.example_format">
+                                  <option value="markdown">Markdown</option>
+                                  <option value="json">JSON</option>
+                                  <option value="narrative">Narrative</option>
+                                </select>
+                                <mat-icon class="chevron">expand_more</mat-icon>
+                              </div>
+                            </div>
+                            <div class="select-group">
+                              <label class="select-label">
+                                <mat-icon class="select-icon">auto_awesome</mat-icon> Prompt version
+                              </label>
+                              <div class="select-wrap">
+                                <select class="select" name="promptVersion" [(ngModel)]="form.prompt_version">
+                                  <option value="v1">v1</option>
+                                  <option value="v2">v2</option>
+                                </select>
+                                <mat-icon class="chevron">expand_more</mat-icon>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="selects-row adv-row">
+                            <div class="select-group">
+                              <label class="select-label"><mat-icon class="select-icon">psychology</mat-icon> Reasoning effort</label>
+                              <div class="select-wrap">
+                                <select class="select" name="reasoningEffort" [(ngModel)]="form.reasoning_effort">
+                                  <option value="low">Low</option>
+                                  <option value="medium">Medium</option>
+                                  <option value="high">High</option>
+                                </select>
+                                <mat-icon class="chevron">expand_more</mat-icon>
+                              </div>
+                            </div>
+                            <div class="input-group">
+                              <label class="select-label"><mat-icon class="select-icon">thermostat</mat-icon> Temperature (0–1)</label>
+                              <input class="text-input" type="number" name="temperature"
+                                [(ngModel)]="form.temperature" min="0" max="1" step="0.05" placeholder="Default">
+                            </div>
+                            <div class="input-group">
+                              <label class="select-label"><mat-icon class="select-icon">format_list_numbered</mat-icon> Examples (0–5)</label>
+                              <input class="text-input" type="number" name="numExamples"
+                                [(ngModel)]="form.num_examples" min="0" max="5" step="1">
+                            </div>
+                            <div class="input-group">
+                              <label class="select-label"><mat-icon class="select-icon">token</mat-icon> Max output tokens</label>
+                              <input class="text-input" type="number" name="maxOutputTokens"
+                                [(ngModel)]="form.max_output_tokens" min="256" max="32768" step="256">
+                            </div>
+                          </div>
+                        </mat-expansion-panel>
+
+                        <div class="ref-section">
+                          <div class="ref-section-head">
+                            <span class="field-label">Reference projects <em class="optional-tag">(optional)</em></span>
+                          </div>
+                          <div class="ref-counter-row">
+                            <span class="select-label">Number of reference projects</span>
+                            <div class="counter-ctrl">
+                              <span class="counter-val">{{ refProjects.length }}</span>
+                              <button type="button" class="counter-btn" (click)="removeRefProject()" [disabled]="refProjects.length === 0">−</button>
+                              <button type="button" class="counter-btn counter-btn--add" (click)="addRefProject()">+</button>
+                            </div>
+                          </div>
+                          @for (proj of refProjects; track $index; let i = $index) {
+                            <div class="ref-project">
+                              <div class="ref-project-title">Project {{ i + 1 }}</div>
+                              <div class="ref-row">
+                                <div class="ref-col ref-col--name">
+                                  <label class="select-label">Name</label>
+                                  <input class="text-input" type="text" [name]="'refName' + i"
+                                    [(ngModel)]="proj.name" placeholder="e.g. HR Tool v1">
+                                </div>
+                                <div class="ref-col ref-col--desc">
+                                  <label class="select-label">Description</label>
+                                  <input class="text-input" type="text" [name]="'refDesc' + i"
+                                    [(ngModel)]="proj.description" placeholder="e.g. Basic HR CRUD app">
+                                </div>
+                              </div>
+                              <div class="ref-row ref-row--metrics">
+                                <div class="ref-col ref-col--num">
+                                  <label class="select-label">Hours</label>
+                                  <div class="num-ctrl">
+                                    <input class="text-input num-input" type="number" [name]="'refHours' + i"
+                                      [(ngModel)]="proj.total_hours" min="0" placeholder="0">
+                                    <button type="button" class="counter-btn" (click)="proj.total_hours = (proj.total_hours ?? 0) - 1" [disabled]="(proj.total_hours ?? 0) <= 0">−</button>
+                                    <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_hours = (proj.total_hours ?? 0) + 1">+</button>
+                                  </div>
+                                </div>
+                                <div class="ref-col ref-col--num">
+                                  <label class="select-label">Cost (EUR)</label>
+                                  <div class="num-ctrl">
+                                    <input class="text-input num-input" type="number" [name]="'refCost' + i"
+                                      [(ngModel)]="proj.total_cost" min="0" placeholder="0">
+                                    <button type="button" class="counter-btn" (click)="proj.total_cost = (proj.total_cost ?? 0) - 1" [disabled]="(proj.total_cost ?? 0) <= 0">−</button>
+                                    <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_cost = (proj.total_cost ?? 0) + 1">+</button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          }
+                        </div>
+
+                        @if (guardrailError()) {
+                          <div class="guardrail-warning" [attr.data-reason]="guardrailError()!.reason">
+                            <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
+                            <span>{{ guardrailError()!.message }}</span>
+                          </div>
+                        }
+                        @if (error()) {
+                          <p class="error-msg">{{ error() }}</p>
+                        }
+
+                        <div class="form-actions">
+                          <button type="submit" class="btn-primary" [disabled]="loading() || !form.transcription.trim()">
+                            @if (loading()) {
+                              <mat-spinner diameter="16"></mat-spinner>
+                              <span>{{ isStreaming() ? 'Generating...' : 'Processing...' }}</span>
+                            } @else {
+                              <mat-icon>send</mat-icon>
+                              <span>Estimate</span>
+                            }
+                          </button>
+                        </div>
+                      </section>
                     </div>
-                  </div>
-                }
-              </div>
-
-              @if (guardrailError()) {
-                <div class="guardrail-warning" [attr.data-reason]="guardrailError()!.reason">
-                  <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
-                  <span>{{ guardrailError()!.message }}</span>
-                </div>
-              }
-              @if (error()) {
-                <p class="error-msg">{{ error() }}</p>
-              }
-
-              <!-- Submit button -->
-              <div class="form-actions">
-                <button type="submit" class="btn-primary" [disabled]="loading() || !form.transcription.trim()">
-                  @if (loading()) {
-                    <mat-spinner diameter="16"></mat-spinner>
-                    <span>{{ isStreaming() ? 'Generating...' : 'Processing...' }}</span>
-                  } @else {
-                    <mat-icon>send</mat-icon>
-                    <span>Estimate</span>
-                  }
-                </button>
-              </div>
-            </form>
+                  </form>
                 </div>
               }
 
@@ -725,11 +726,49 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       flex-direction: column;
       gap: 12px;
     }
+    .form-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 0.9fr) minmax(420px, 1.1fr);
+      gap: 20px;
+      align-items: start;
+    }
+    .form-column {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-width: 0;
+    }
+    .form-column--transcript {
+      position: sticky;
+      top: 0;
+      align-self: start;
+    }
 
     .field {
       display: flex;
       flex-direction: column;
       gap: 6px;
+      min-width: 0;
+    }
+    .field--transcript {
+      padding: 16px;
+      border: 1px solid #ececf6;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #fcfcff 0%, #f8f9ff 100%);
+      box-shadow: 0 8px 20px rgba(31, 41, 55, 0.04);
+    }
+    .field-heading {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .field-caption {
+      max-width: 240px;
+      font-size: 0.72rem;
+      line-height: 1.4;
+      color: #7a7f96;
+      text-align: right;
     }
     .field-label {
       font-size: 0.75rem;
@@ -747,6 +786,8 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
 
     .textarea {
       width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
       padding: 10px 12px;
       border: 1.5px solid #e8e8f0;
       border-radius: 8px;
@@ -757,6 +798,10 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       max-height: 120px;
       color: #333;
       transition: border-color 0.2s;
+    }
+    .textarea--transcript {
+      min-height: clamp(360px, calc(100vh - 340px), 720px);
+      max-height: none;
     }
     .textarea:focus {
       outline: none;
@@ -880,6 +925,9 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       color: #555;
     }
     .select {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
       padding: 8px 10px;
       border: 1.5px solid #e8e8f0;
       border-radius: 6px;
@@ -935,6 +983,8 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
     }
     .text-input {
       width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
       padding: 8px 10px;
       border: 1.5px solid #e8e8f0;
       border-radius: 6px;
@@ -997,19 +1047,23 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
     }
 
     .ref-section {
-      border: 1px solid #ececf6;
-      border-radius: 10px;
-      background: #fcfcff;
-      padding: 12px;
+      border: 1px solid #e7eaf7;
+      border-radius: 14px;
+      background:
+        radial-gradient(circle at top right, rgba(92,107,192,0.08), transparent 28%),
+        linear-gradient(180deg, #ffffff 0%, #fbfbff 100%);
+      padding: 14px;
       display: flex;
       flex-direction: column;
-      gap: 10px;
+      gap: 12px;
+      box-shadow: 0 10px 28px rgba(31, 41, 55, 0.04);
     }
     .ref-counter-row {
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 8px;
+      padding-bottom: 2px;
     }
     .counter-ctrl {
       display: inline-flex;
@@ -1042,30 +1096,82 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       font-weight: 700;
     }
     .ref-project {
-      border: 1px solid #e7eaf7;
-      border-radius: 8px;
-      padding: 10px;
-      background: #fff;
+      position: relative;
+      border: 1px solid #dde3fb;
+      border-radius: 12px;
+      padding: 14px;
+      background: linear-gradient(180deg, #ffffff 0%, #fdfdff 100%);
+      box-shadow: 0 8px 20px rgba(63, 81, 181, 0.05);
+      overflow: hidden;
+    }
+    .ref-project::before {
+      content: '';
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: linear-gradient(180deg, #5c6bc0 0%, #8c87c2 100%);
     }
     .ref-project-title {
-      font-size: 0.75rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.76rem;
+      font-weight: 800;
+      color: #31417f;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 12px;
+      padding-left: 4px;
+    }
+    .ref-project-title::after {
+      content: 'Reference';
+      font-size: 0.64rem;
       font-weight: 700;
-      color: #3f51b5;
-      margin-bottom: 8px;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #6d75a8;
+      background: #eef1ff;
+      border: 1px solid #d9def9;
+      border-radius: 999px;
+      padding: 2px 8px;
     }
     .ref-row {
       display: grid;
-      grid-template-columns: 2fr 3fr 1fr 1fr;
-      gap: 8px;
+      grid-template-columns: 1.1fr 1.4fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .ref-row + .ref-row {
+      margin-top: 10px;
+    }
+    .ref-row--metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
     .ref-col {
       min-width: 0;
+    }
+    .ref-col--name,
+    .ref-col--desc {
+      grid-column: span 1;
+    }
+    .ref-col--num {
+      grid-column: span 1;
+    }
+    .ref-project .select-label {
+      color: #4b5583;
+      font-size: 0.72rem;
+      margin-bottom: 2px;
     }
     .num-ctrl {
       display: grid;
       grid-template-columns: 1fr auto auto;
       gap: 6px;
       align-items: center;
+    }
+    .ref-project .text-input,
+    .ref-project .num-ctrl .text-input {
+      border-radius: 8px;
+      background: #fff;
     }
 
     .guardrail-warning,
@@ -1089,9 +1195,18 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
     }
 
     @media (max-width: 1100px) {
+      .form-layout {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .form-column--transcript {
+        position: static;
+      }
       .selects-row,
       .adv-row,
       .ref-row {
+        grid-template-columns: 1fr 1fr;
+      }
+      .ref-row--metrics {
         grid-template-columns: 1fr 1fr;
       }
       .sidebar {
@@ -1104,13 +1219,19 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       }
     }
     @media (max-width: 760px) {
-      .chat-area {
-        padding: 14px;
-        gap: 14px;
+      .field-heading {
+        flex-direction: column;
+      }
+      .field-caption {
+        max-width: none;
+        text-align: left;
       }
       .selects-row,
       .adv-row,
       .ref-row {
+        grid-template-columns: 1fr;
+      }
+      .ref-row--metrics {
         grid-template-columns: 1fr;
       }
       .precall-card {
