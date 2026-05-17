@@ -1,4 +1,4 @@
-﻿import { Component, OnInit, signal } from '@angular/core';
+﻿import { Component, OnInit, computed, signal } from '@angular/core';
 import { JsonPipe, TitleCasePipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -7,6 +7,7 @@ import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { switchMap } from 'rxjs';
+import { EstimationResultComponent } from '../estimation-result/estimation-result.component';
 import {
   CacheMetrics,
   EstimationCreate,
@@ -27,7 +28,15 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
 @Component({
   selector: 'app-estimation-form',
   standalone: true,
-  imports: [FormsModule, JsonPipe, TitleCasePipe, MatExpansionModule, MatIconModule, MatProgressSpinnerModule],
+  imports: [
+    FormsModule,
+    JsonPipe,
+    TitleCasePipe,
+    MatExpansionModule,
+    MatIconModule,
+    MatProgressSpinnerModule,
+    EstimationResultComponent,
+  ],
   template: `
     <div class="page">
       <div class="chat-container">
@@ -449,61 +458,19 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
               <!-- Response Tab -->
               @if (activeTab() === 'response') {
                 <div class="tab-pane tab-response">
-                  <!-- Messages/Results section -->
-                  <div class="messages-section">
-                    <!-- Streaming result -->
-                    @if (isStreaming() || streamingResult()) {
-                      <div class="message message-ai">
-                        <div class="message-header">
-                          <mat-icon class="ai-icon">auto_awesome</mat-icon>
-                          <span class="ai-label">Estimation</span>
-                          @if (isStreaming()) {
-                            <span class="streaming-indicator">
-                              <span class="dot"></span>
-                              <span class="dot"></span>
-                              <span class="dot"></span>
-                            </span>
-                          }
-                        </div>
-                        <div class="message-content">
-                          <pre class="result-text">{{ streamingResult() }}</pre>
-                          @if (isStreaming()) {
-                            <span class="cursor">|</span>
-                          }
-                        </div>
-                      </div>
-                    }
-
-                    <!-- Empty state -->
-                    @if (!isStreaming() && !streamingResult() && !error() && !guardrailError()) {
-                      <div class="empty-state">
-                        <mat-icon>inbox</mat-icon>
-                        <p>No hay respuestas aún. Completa el formulario y presiona "Estimate" para generar una.</p>
-                      </div>
-                    }
-
-                    <!-- Error state -->
-                    @if (error()) {
-                      <div class="message message-error">
-                        <div class="message-header">
-                          <mat-icon>error</mat-icon>
-                          <span>Error</span>
-                        </div>
-                        <div class="message-content">{{ error() }}</div>
-                      </div>
-                    }
-
-                    <!-- Guardrail error state -->
-                    @if (guardrailError()) {
-                      <div class="message message-warning">
-                        <div class="message-header">
-                          <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
-                          <span>{{ guardrailError()!.reason | titlecase }}</span>
-                        </div>
-                        <div class="message-content">{{ guardrailError()!.message }}</div>
-                      </div>
-                    }
-                  </div>
+                  @if (!isStreaming() && !streamingResult() && !error() && !guardrailError()) {
+                    <div class="empty-state">
+                      <mat-icon>inbox</mat-icon>
+                      <p>No hay respuestas aún. Completa el formulario y presiona "Estimate" para generar una.</p>
+                    </div>
+                  } @else {
+                    <app-estimation-result
+                      [inlineMarkdown]="responseMarkdown()"
+                      [inlineResponse]="responsePayload()"
+                      [inlineLoading]="isStreaming()"
+                      [inlineError]="error() ?? guardrailError()?.message ?? null">
+                    </app-estimation-result>
+                  }
                 </div>
               }
             </div>
@@ -750,156 +717,6 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
     .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; height: 100%; color: #999; text-align: center; }
     .empty-state mat-icon { font-size: 64px; width: 64px; height: 64px; color: #ddd; }
     .empty-state p { font-size: 0.9rem; margin: 0; max-width: 300px; }
-
-    /* Messages section (scrollable) */
-    .messages-section {
-      flex: 1;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      padding-right: 8px;
-    }
-
-    .messages-section::-webkit-scrollbar {
-      width: 8px;
-    }
-    .messages-section::-webkit-scrollbar-track {
-      background: transparent;
-    }
-    .messages-section::-webkit-scrollbar-thumb {
-      background: #d0d0e8;
-      border-radius: 4px;
-    }
-    .messages-section::-webkit-scrollbar-thumb:hover {
-      background: #b0b0c8;
-    }
-
-    /* Messages */
-    .message {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 16px;
-      border-radius: 12px;
-      max-width: 90%;
-      animation: slideIn 0.3s ease-out;
-    }
-    @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-
-    .message-ai {
-      background: #f5f0ff;
-      border: 1.5px solid #d8d2f8;
-      align-self: flex-start;
-    }
-    .message-error {
-      background: #fce4ec;
-      border: 1.5px solid #f48fb1;
-      color: #c62828;
-      align-self: flex-start;
-    }
-    .message-warning {
-      background: #fff8e1;
-      border: 1.5px solid #ffe082;
-      color: #e65100;
-      align-self: flex-start;
-    }
-
-    .message-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: #5c6bc0;
-    }
-    .ai-icon {
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-    }
-    .ai-label {
-      color: #5c6bc0;
-    }
-
-    .streaming-indicator {
-      display: flex;
-      gap: 3px;
-      margin-left: auto;
-    }
-    .dot {
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: #5c6bc0;
-      animation: blink 1s infinite;
-    }
-    .dot:nth-child(2) {
-      animation-delay: 0.2s;
-    }
-    .dot:nth-child(3) {
-      animation-delay: 0.4s;
-    }
-    @keyframes blink {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 1; }
-    }
-
-    .message-content {
-      font-size: 0.875rem;
-      color: #333;
-      line-height: 1.6;
-    }
-    .result-text {
-      margin: 0;
-      white-space: pre-wrap;
-      font-family: 'Monaco', 'Courier New', monospace;
-      font-size: 0.8rem;
-      max-height: 300px;
-      overflow-y: auto;
-      color: #333;
-    }
-    .cursor {
-      animation: blink-cursor 1s infinite;
-      margin-left: 2px;
-    }
-    @keyframes blink-cursor {
-      0%, 50% { opacity: 1; }
-      51%, 100% { opacity: 0; }
-    }
-
-    /* Metadata panel */
-    .metadata-panel {
-      margin-top: 16px;
-      border-radius: 8px !important;
-      border: 1.5px solid #e8e8f0 !important;
-      box-shadow: none !important;
-    }
-    .metadata-json {
-      margin: 0;
-      padding: 12px;
-      border-radius: 8px;
-      background: #f7f9fc;
-      border: 1px solid #e5e9f1;
-      font-size: 0.75rem;
-      line-height: 1.4;
-      max-height: 150px;
-      overflow-y: auto;
-    }
-    .metadata-empty {
-      margin: 0;
-      color: #777;
-      font-size: 0.8rem;
-    }
 
     /* Input section - now part of tab-pane */
     .chat-form {
@@ -1368,6 +1185,8 @@ export class EstimationFormComponent implements OnInit {
   attachments = signal<File[]>([]);
   inlineResult = signal<SessionEstimationResponse | null>(null);
   streamingResult = signal<string>('');
+  responsePayload = computed(() => this.extractSessionResponse(this.streamingResult()));
+  responseMarkdown = computed(() => this.responsePayload()?.estimation ?? this.streamingResult());
   isStreaming = signal(false);
   dragOver = signal(false);
   sessionId = signal<string | null>(null);
@@ -1602,6 +1421,24 @@ export class EstimationFormComponent implements OnInit {
       },
       error: (err: HttpErrorResponse) => this._handleError(err),
     });
+  }
+
+  private extractSessionResponse(raw: string): SessionEstimationResponse | null {
+    const trimmed = raw.trim();
+    if (!trimmed) return null;
+
+    if (trimmed.startsWith('{') && trimmed.includes('"estimation"')) {
+      try {
+        const parsed = JSON.parse(trimmed) as Partial<SessionEstimationResponse>;
+        if (typeof parsed.estimation === 'string') {
+          return parsed as SessionEstimationResponse;
+        }
+      } catch {
+        // During streaming, payload can be partial JSON; fallback to raw text.
+      }
+    }
+
+    return null;
   }
 
   private _handleError(err: unknown) {

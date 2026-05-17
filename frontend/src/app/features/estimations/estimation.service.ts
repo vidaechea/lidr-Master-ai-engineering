@@ -99,7 +99,9 @@ export interface SessionEstimationResponse {
   estimated_precall_cost_usd: number | null;
   requirements: string | null;
   pre_call_cost_usd: number | null;
+  validation: StructureCheck | null;
   prompt_version: string;
+  structured_result: EstimationStructuredResult | null;
 }
 
 export interface SessionMessage {

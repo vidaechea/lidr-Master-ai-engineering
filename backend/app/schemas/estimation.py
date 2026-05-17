@@ -121,7 +121,9 @@ class SessionEstimationOut(BaseModel):
     estimated_precall_cost_usd: float | None
     requirements: str | None
     pre_call_cost_usd: float | None
+    validation: dict[str, Any] | None = None
     prompt_version: str
+    structured_result: dict[str, Any] | None = None
 
 
 class CacheMetricsOut(BaseModel):
