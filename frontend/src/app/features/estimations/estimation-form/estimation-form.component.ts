@@ -40,77 +40,140 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
             <mat-icon>add_comment</mat-icon>
             <span>Nueva conversación</span>
           </button>
+          <!-- Sidebar toggle -->
+          <button type="button" class="btn-sidebar-toggle" 
+            [class.active]="sidebarOpen()"
+            (click)="sidebarOpen.update(v => !v)"
+            title="Toggle metadata sidebar">
+            <mat-icon>{{ sidebarOpen() ? 'close' : 'info' }}</mat-icon>
+          </button>
         </div>
 
-        <!-- Main chat area (messages + input scrollable) -->
-        <div class="chat-area">
-          <!-- Messages/Results section -->
-          <div class="messages-section">
-            <!-- Streaming result -->
-            @if (isStreaming() || streamingResult()) {
-              <div class="message message-ai">
-                <div class="message-header">
-                  <mat-icon class="ai-icon">auto_awesome</mat-icon>
-                  <span class="ai-label">Estimation</span>
-                  @if (isStreaming()) {
-                    <span class="streaming-indicator">
-                      <span class="dot"></span>
-                      <span class="dot"></span>
-                      <span class="dot"></span>
-                    </span>
-                  }
-                </div>
-                <div class="message-content">
-                  <pre class="result-text">{{ streamingResult() }}</pre>
-                  @if (isStreaming()) {
-                    <span class="cursor">|</span>
-                  }
-                </div>
+        <!-- Main layout with sidebar -->
+        <div class="layout-wrapper">
+          <!-- Sidebar -->
+          @if (sidebarOpen()) {
+            <div class="sidebar">
+              <div class="sidebar-header">
+                <h3>Project Metadata</h3>
+                <span class="sidebar-hint">Debugging view</span>
               </div>
-            }
-
-            <!-- Error state -->
-            @if (error()) {
-              <div class="message message-error">
-                <div class="message-header">
-                  <mat-icon>error</mat-icon>
-                  <span>Error</span>
-                </div>
-                <div class="message-content">{{ error() }}</div>
-              </div>
-            }
-
-            <!-- Guardrail error state -->
-            @if (guardrailError()) {
-              <div class="message message-warning">
-                <div class="message-header">
-                  <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
-                  <span>{{ guardrailError()!.reason | titlecase }}</span>
-                </div>
-                <div class="message-content">{{ guardrailError()!.message }}</div>
-              </div>
-            }
-
-            <!-- Metadata panel -->
-            @if (turnCount() > 0 || historyMessageCount() > 0) {
-              <mat-expansion-panel class="metadata-panel">
-                <mat-expansion-panel-header>
-                  <mat-panel-title>Session Metadata</mat-panel-title>
-                  <mat-panel-description>
-                    {{ turnCount() }} turns · {{ historyMessageCount() }} messages
-                  </mat-panel-description>
-                </mat-expansion-panel-header>
+              <div class="sidebar-content">
                 @if (projectMetadata(); as metadata) {
-                  <pre class="metadata-json">{{ metadata | json }}</pre>
-                } @else {
-                  <p class="metadata-empty">No metadata yet for this session.</p>
-                }
-              </mat-expansion-panel>
-            }
-          </div>
+                  <div class="metadata-section">
+                    <div class="metadata-label">Session ID</div>
+                    <div class="metadata-value session-id">{{ sessionId() ?? 'N/A' }}</div>
+                  </div>
+                  
+                  <div class="metadata-section">
+                    <div class="metadata-label">Turn Count</div>
+                    <div class="metadata-value">{{ turnCount() }}</div>
+                  </div>
+                  
+                  <div class="metadata-section">
+                    <div class="metadata-label">History Messages</div>
+                    <div class="metadata-value">{{ historyMessageCount() }}</div>
+                  </div>
 
-          <!-- Input form section -->
-          <div class="input-section">
+                  @if (metadata.project_name) {
+                    <div class="metadata-section">
+                      <div class="metadata-label">Project Name</div>
+                      <div class="metadata-value">{{ metadata.project_name }}</div>
+                    </div>
+                  }
+
+                  @if (metadata.assumed_team_size) {
+                    <div class="metadata-section">
+                      <div class="metadata-label">Team Size</div>
+                      <div class="metadata-value">{{ metadata.assumed_team_size }} people</div>
+                    </div>
+                  }
+
+                  @if (metadata.mentioned_technologies && metadata.mentioned_technologies.length > 0) {
+                    <div class="metadata-section">
+                      <div class="metadata-label">Technologies</div>
+                      <div class="metadata-value">
+                        <ul class="req-list">
+                          @for (tech of metadata.mentioned_technologies; track $index) {
+                            <li>{{ tech }}</li>
+                          }
+                        </ul>
+                      </div>
+                    </div>
+                  }
+
+                  @if (metadata.agreed_scope) {
+                    <div class="metadata-section">
+                      <div class="metadata-label">Agreed Scope</div>
+                      <div class="metadata-value">{{ metadata.agreed_scope }}</div>
+                    </div>
+                  }
+
+                  <div class="metadata-section">
+                    <div class="metadata-label">Full JSON</div>
+                    <pre class="metadata-json-full">{{ metadata | json }}</pre>
+                  </div>
+                } @else {
+                  <div class="metadata-empty">No metadata yet for this session.</div>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Main chat area (messages + input scrollable) -->
+          <div class="chat-area">
+            <!-- Messages/Results section -->
+            <div class="messages-section">
+              <!-- Streaming result -->
+              @if (isStreaming() || streamingResult()) {
+                <div class="message message-ai">
+                  <div class="message-header">
+                    <mat-icon class="ai-icon">auto_awesome</mat-icon>
+                    <span class="ai-label">Estimation</span>
+                    @if (isStreaming()) {
+                      <span class="streaming-indicator">
+                        <span class="dot"></span>
+                        <span class="dot"></span>
+                        <span class="dot"></span>
+                      </span>
+                    }
+                  </div>
+                  <div class="message-content">
+                    <pre class="result-text">{{ streamingResult() }}</pre>
+                    @if (isStreaming()) {
+                      <span class="cursor">|</span>
+                    }
+                  </div>
+                </div>
+              }
+
+              <!-- Error state -->
+              @if (error()) {
+                <div class="message message-error">
+                  <div class="message-header">
+                    <mat-icon>error</mat-icon>
+                    <span>Error</span>
+                  </div>
+                  <div class="message-content">{{ error() }}</div>
+                </div>
+              }
+
+              <!-- Guardrail error state -->
+              @if (guardrailError()) {
+                <div class="message message-warning">
+                  <div class="message-header">
+                    <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
+                    <span>{{ guardrailError()!.reason | titlecase }}</span>
+                  </div>
+                  <div class="message-content">{{ guardrailError()!.message }}</div>
+                </div>
+              }
+            </div>
+
+            <!-- Metadata panel (removed - now in sidebar) -->
+
+            <!-- Input form section -->
+            <div class="input-section">
             <form (ngSubmit)="submit()" class="chat-form">
               <!-- Transcript textarea -->
               <div class="field">
@@ -389,11 +452,13 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       border-bottom: 1px solid #e8e8f0;
       background: #f8f8fc;
       flex-shrink: 0;
+      gap: 12px;
     }
     .header-left {
       display: flex;
       flex-direction: column;
       gap: 4px;
+      flex: 1;
     }
     .head-title {
       margin: 0;
@@ -430,6 +495,158 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       font-size: 16px;
       width: 16px;
       height: 16px;
+    }
+
+    /* Sidebar toggle button */
+    .btn-sidebar-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      border: 1px solid #e8e8f0;
+      background: #fff;
+      color: #666;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0;
+    }
+    .btn-sidebar-toggle:hover {
+      background: #f5f0ff;
+      border-color: #d5d9f5;
+      color: #5c6bc0;
+    }
+    .btn-sidebar-toggle.active {
+      background: #5c6bc0;
+      border-color: #5c6bc0;
+      color: #fff;
+    }
+    .btn-sidebar-toggle mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Layout wrapper */
+    .layout-wrapper {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      gap: 0;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 320px;
+      border-right: 1px solid #e8e8f0;
+      background: #fafbff;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: slideInRight 0.3s ease-out;
+    }
+    @keyframes slideInRight {
+      from {
+        width: 0;
+        opacity: 0;
+      }
+      to {
+        width: 320px;
+        opacity: 1;
+      }
+    }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid #e8e8f0;
+      flex-shrink: 0;
+    }
+    .sidebar-header h3 {
+      margin: 0 0 4px 0;
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    .sidebar-hint {
+      font-size: 0.7rem;
+      color: #999;
+      font-style: italic;
+    }
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sidebar-content::-webkit-scrollbar {
+      width: 6px;
+    }
+    .sidebar-content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .sidebar-content::-webkit-scrollbar-thumb {
+      background: #d0d0e8;
+      border-radius: 3px;
+    }
+    .sidebar-content::-webkit-scrollbar-thumb:hover {
+      background: #b0b0c8;
+    }
+
+    /* Metadata sections in sidebar */
+    .metadata-section {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 10px;
+      background: #fff;
+      border: 1px solid #e8e8f0;
+      border-radius: 6px;
+    }
+    .metadata-label {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #5c6bc0;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .metadata-value {
+      font-size: 0.8rem;
+      color: #333;
+      word-break: break-word;
+      font-family: 'Monaco', 'Courier New', monospace;
+    }
+    .metadata-value.session-id {
+      font-size: 0.75rem;
+      color: #666;
+    }
+    .req-list {
+      margin: 0;
+      padding-left: 16px;
+      font-size: 0.75rem;
+      color: #333;
+    }
+    .req-list li {
+      margin-bottom: 4px;
+    }
+    .metadata-json-full {
+      margin: 0;
+      padding: 8px;
+      background: #f0f0f8;
+      border: 1px solid #e5e5f0;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      line-height: 1.3;
+      max-height: 200px;
+      overflow-y: auto;
+      color: #333;
+    }
+    .metadata-empty {
+      padding: 16px;
+      text-align: center;
+      color: #999;
+      font-size: 0.8rem;
     }
 
     /* Main chat area */
@@ -973,6 +1190,14 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       .ref-row {
         grid-template-columns: 1fr 1fr;
       }
+      .sidebar {
+        width: 280px;
+      }
+    }
+    @media (max-width: 900px) {
+      .sidebar {
+        width: 240px;
+      }
     }
     @media (max-width: 760px) {
       .chat-area {
@@ -989,6 +1214,16 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       }
       .precall-info {
         display: none;
+      }
+      .sidebar {
+        position: absolute;
+        top: 60px;
+        right: 0;
+        width: 100%;
+        max-width: 280px;
+        height: calc(100vh - 60px);
+        z-index: 100;
+        box-shadow: -2px 0 8px rgba(0,0,0,0.1);
       }
     }
 
@@ -1054,6 +1289,7 @@ export class EstimationFormComponent implements OnInit {
   historyMessageCount = signal(0);
   turnCount = signal(0);
   isExistingSession = signal(false);
+  sidebarOpen = signal(false);
 
   refProjects: ReferenceProject[] = [];
 
