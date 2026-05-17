@@ -1438,7 +1438,7 @@ export class EstimationFormComponent implements OnInit {
       next: (chunk: string) => {
         this.streamingResult.update(prev => prev + chunk);
       },
-      error: (err: HttpErrorResponse) => {
+      error: (err: unknown) => {
         this.isStreaming.set(false);
         this._handleError(err);
       },
@@ -1482,13 +1482,33 @@ export class EstimationFormComponent implements OnInit {
     });
   }
 
-  private _handleError(err: HttpErrorResponse) {
-    const detail = err.error?.detail;
-    if (detail?.reason && (err.status === 400 || err.status === 422)) {
+  private _handleError(err: unknown) {
+    let detail: any = null;
+    let status: number | null = null;
+    let message: string = 'Unknown error';
+
+    // Handle structured error object from streaming service
+    if (err && typeof err === 'object' && 'status' in err && 'detail' in err) {
+      status = (err as any).status;
+      detail = (err as any).detail;
+    }
+    // Handle HttpErrorResponse
+    else if (err instanceof HttpErrorResponse) {
+      status = err.status;
+      detail = err.error?.detail;
+      message = err.message;
+    }
+    // Handle generic Error
+    else if (err instanceof Error) {
+      message = err.message;
+    }
+
+    // Check if it's a guardrail error
+    if (detail?.reason && (status === 400 || status === 422)) {
       this.guardrailError.set(detail as GuardrailError);
     } else {
-      const msg = typeof detail === 'string' ? detail : (detail?.message ?? err.message ?? 'Unknown error');
-      this.error.set(`Estimation failed (${err.status}): ${msg}`);
+      const msg = typeof detail === 'string' ? detail : (detail?.message ?? message ?? 'Unknown error');
+      this.error.set(`Estimation failed${status ? ` (${status})` : ''}: ${msg}`);
     }
     this.loading.set(false);
   }

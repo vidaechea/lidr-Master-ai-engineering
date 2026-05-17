@@ -1,13 +1,14 @@
 from typing import Annotated
+import asyncio
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.config import settings
-from app.guardrails.input import InputGuardrailViolation
+from app.guardrails.input import InputGuardrailViolation, check_input
 from app.prompts.loader import get_examples
 from app.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult, ExampleItem, ExampleFormat
-from app.services.estimation_service import EstimationService
+from app.services.estimation_service import EstimationService, _get_moderation_client
 from app.services.helpers.error_mapper import LLMServiceError
 
 log = structlog.get_logger(__name__)
@@ -74,15 +75,23 @@ async def create_estimation_stream(
 ) -> StreamingResponse:
     log.info("estimation_stream_requested", transcription_chars=len(request.transcription))
 
+    # Validate guardrails BEFORE streaming starts
+    try:
+        await asyncio.to_thread(
+            check_input,
+            request.transcription,
+            openai_client=_get_moderation_client(),
+        )
+    except InputGuardrailViolation as exc:
+        raise HTTPException(
+            status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+            detail={"message": exc.message, "reason": exc.reason},
+        )
+
     async def generate():
         try:
             async for delta in service.estimate_stream(request, prompt_version=prompt_version):
                 yield delta
-        except InputGuardrailViolation as exc:
-            raise HTTPException(
-                status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
-                detail={"message": exc.message, "reason": exc.reason},
-            )
         except LLMServiceError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message)
 

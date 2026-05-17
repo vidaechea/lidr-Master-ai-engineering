@@ -178,8 +178,23 @@ export class EstimationService {
           });
           
           if (!response.ok) {
-            const error = await response.text();
-            subscriber.error(new Error(`HTTP ${response.status}: ${error}`));
+            // Try to parse as JSON for guardrail errors
+            let error = await response.text();
+            try {
+              const jsonError = JSON.parse(error);
+              if (jsonError.detail?.reason) {
+                // It's a guardrail error - throw structured error
+                subscriber.error({
+                  status: response.status,
+                  detail: jsonError.detail,
+                });
+              } else {
+                subscriber.error(new Error(`HTTP ${response.status}: ${error}`));
+              }
+            } catch {
+              // Not JSON, just plain text error
+              subscriber.error(new Error(`HTTP ${response.status}: ${error}`));
+            }
             return;
           }
 
