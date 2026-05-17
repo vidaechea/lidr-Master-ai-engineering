@@ -1,6 +1,9 @@
 {
   "name": "lidr-master-ai-engineering",
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.12-bookworm",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
   "features": {
     "ghcr.io/devcontainers/features/node:1": {
       "version": "20"
@@ -10,6 +13,7 @@
   "remoteUser": "vscode",
   "updateRemoteUserUID": true,
   "postCreateCommand": "bash .devcontainer/postCreate.sh",
+  "postStartCommand": "bash .devcontainer/postStart.sh",
   "customizations": {
     "vscode": {
       "extensions": [

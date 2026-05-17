@@ -363,3 +363,73 @@ describe('EstimationService — createWithAttachments()', () => {
     expect(result?.estimation).toContain('Phase 1');
   });
 });
+
+describe('EstimationService — createWithAttachmentsStream()', () => {
+  let service: EstimationService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('includes the bearer token from localStorage in the streaming request', async () => {
+    localStorage.setItem('access_token', 'stream.token');
+
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode('chunk-1') })
+            .mockResolvedValueOnce({ done: true, value: undefined }),
+        }),
+      },
+    } as unknown as Response);
+
+    await new Promise<void>((resolve, reject) => {
+      service.createWithAttachmentsStream('sid-stream', new FormData()).subscribe({
+        complete: () => resolve(),
+        error: reject,
+      });
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0];
+    const headers = init?.headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer stream.token');
+  });
+
+  it('omits Authorization when there is no stored token', async () => {
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode('chunk-1') })
+            .mockResolvedValueOnce({ done: true, value: undefined }),
+        }),
+      },
+    } as unknown as Response);
+
+    await new Promise<void>((resolve, reject) => {
+      service.createWithAttachmentsStream('sid-stream', new FormData()).subscribe({
+        complete: () => resolve(),
+        error: reject,
+      });
+    });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const headers = init?.headers as Headers;
+    expect(headers.has('Authorization')).toBe(false);
+  });
+});

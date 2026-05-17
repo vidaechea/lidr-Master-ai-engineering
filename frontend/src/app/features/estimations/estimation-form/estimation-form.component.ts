@@ -157,25 +157,195 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
               </div>
 
               <!-- Options row -->
-              <div class="options-row">
+              <!-- Primary row: Project type / Output format / Detail level -->
+              <div class="selects-row">
                 <div class="select-group">
-                  <label class="select-label">Output format</label>
-                  <select class="select" name="outputFormat" [(ngModel)]="form.output_format">
-                    <option value="phases_table">Phases table</option>
-                    <option value="line_items">Line items</option>
-                    <option value="narrative">Narrative</option>
-                  </select>
+                  <label class="select-label"><mat-icon class="select-icon">category</mat-icon> Project type</label>
+                  <div class="select-wrap">
+                    <select class="select" name="projectType" [(ngModel)]="form.project_type">
+                      <option value="">None</option>
+                      <option value="mobile_app">Mobile App</option>
+                      <option value="web_saas">Web SaaS</option>
+                      <option value="internal_tool">Internal Tool</option>
+                      <option value="data_pipeline">Data Pipeline</option>
+                    </select>
+                    <mat-icon class="chevron">expand_more</mat-icon>
+                  </div>
                 </div>
                 <div class="select-group">
-                  <label class="select-label">Model</label>
-                  <select class="select" name="model" [(ngModel)]="form.model">
-                    <option value="">Auto</option>
-                    <option value="gpt-4o-mini">GPT-4o mini</option>
-                    <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                    <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-                  </select>
+                  <label class="select-label">
+                    <mat-icon class="select-icon">table_chart</mat-icon> Output format
+                  </label>
+                  <div class="select-wrap">
+                    <select class="select" name="outputFormat" [(ngModel)]="form.output_format">
+                      <option value="phases_table">Phases table</option>
+                      <option value="line_items">Line items</option>
+                      <option value="narrative">Narrative</option>
+                    </select>
+                    <mat-icon class="chevron">expand_more</mat-icon>
+                  </div>
+                </div>
+                <div class="select-group">
+                  <label class="select-label"><mat-icon class="select-icon">tune</mat-icon> Detail level</label>
+                  <div class="select-wrap">
+                    <select class="select" name="detailLevel" [(ngModel)]="form.detail_level">
+                      <option value="">Default</option>
+                      <option value="summary">Summary</option>
+                      <option value="medium">Medium</option>
+                      <option value="detailed">Detailed</option>
+                    </select>
+                    <mat-icon class="chevron">expand_more</mat-icon>
+                  </div>
                 </div>
               </div>
+
+              <!-- Pre-call checkbox -->
+              <label class="precall-card">
+                <input type="checkbox" name="preCal" [(ngModel)]="form.pre_call" class="precall-check">
+                <div class="precall-text">
+                  <span class="precall-title">Extract requirements before estimating (pre_call)</span>
+                  <span class="precall-desc">Use AI to extract and structure requirements before generating the estimate.</span>
+                </div>
+                <mat-icon class="precall-info">info_outline</mat-icon>
+              </label>
+
+              <!-- Advanced options (collapsed) -->
+              <mat-expansion-panel class="advanced-panel">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>Advanced options</mat-panel-title>
+                  <mat-panel-description>Project type, sampling &amp; generation parameters</mat-panel-description>
+                </mat-expansion-panel-header>
+
+                <div class="selects-row adv-row">
+                  <div class="select-group">
+                    <label class="select-label">
+                      <mat-icon class="select-icon">smart_toy</mat-icon> Model
+                    </label>
+                    <div class="select-wrap">
+                      <select class="select" name="model" [(ngModel)]="form.model">
+                        <option value="">Select model</option>
+                        <option value="gpt-4o-mini">GPT-4o mini</option>
+                        <option value="gpt-5.4-mini">GPT-5.4 mini</option>
+                        <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                      </select>
+                      <mat-icon class="chevron">expand_more</mat-icon>
+                    </div>
+                  </div>
+                  <div class="select-group">
+                    <label class="select-label"><mat-icon class="select-icon">format_list_bulleted</mat-icon> Example format</label>
+                    <div class="select-wrap">
+                      <select class="select" name="exampleFormat" [(ngModel)]="form.example_format">
+                        <option value="markdown">Markdown</option>
+                        <option value="json">JSON</option>
+                        <option value="narrative">Narrative</option>
+                      </select>
+                      <mat-icon class="chevron">expand_more</mat-icon>
+                    </div>
+                  </div>
+                  <div class="select-group">
+                    <label class="select-label">
+                      <mat-icon class="select-icon">auto_awesome</mat-icon> Prompt version
+                    </label>
+                    <div class="select-wrap">
+                      <select class="select" name="promptVersion" [(ngModel)]="form.prompt_version">
+                        <option value="v1">v1</option>
+                        <option value="v2">v2</option>
+                      </select>
+                      <mat-icon class="chevron">expand_more</mat-icon>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="selects-row adv-row">
+                  <div class="select-group">
+                    <label class="select-label"><mat-icon class="select-icon">psychology</mat-icon> Reasoning effort</label>
+                    <div class="select-wrap">
+                      <select class="select" name="reasoningEffort" [(ngModel)]="form.reasoning_effort">
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                      <mat-icon class="chevron">expand_more</mat-icon>
+                    </div>
+                  </div>
+                  <div class="input-group">
+                    <label class="select-label"><mat-icon class="select-icon">thermostat</mat-icon> Temperature (0–1)</label>
+                    <input class="text-input" type="number" name="temperature"
+                      [(ngModel)]="form.temperature" min="0" max="1" step="0.05" placeholder="Default">
+                  </div>
+                  <div class="input-group">
+                    <label class="select-label"><mat-icon class="select-icon">format_list_numbered</mat-icon> Examples (0–5)</label>
+                    <input class="text-input" type="number" name="numExamples"
+                      [(ngModel)]="form.num_examples" min="0" max="5" step="1">
+                  </div>
+                  <div class="input-group">
+                    <label class="select-label"><mat-icon class="select-icon">token</mat-icon> Max output tokens</label>
+                    <input class="text-input" type="number" name="maxOutputTokens"
+                      [(ngModel)]="form.max_output_tokens" min="256" max="32768" step="256">
+                  </div>
+                </div>
+              </mat-expansion-panel>
+
+              <!-- Reference projects -->
+              <div class="ref-section">
+                <div class="ref-section-head">
+                  <span class="field-label">Reference projects <em class="optional-tag">(optional)</em></span>
+                </div>
+                <div class="ref-counter-row">
+                  <span class="select-label">Number of reference projects</span>
+                  <div class="counter-ctrl">
+                    <span class="counter-val">{{ refProjects.length }}</span>
+                    <button type="button" class="counter-btn" (click)="removeRefProject()" [disabled]="refProjects.length === 0">−</button>
+                    <button type="button" class="counter-btn counter-btn--add" (click)="addRefProject()">+</button>
+                  </div>
+                </div>
+                @for (proj of refProjects; track $index; let i = $index) {
+                  <div class="ref-project">
+                    <div class="ref-project-title">Project {{ i + 1 }}</div>
+                    <div class="ref-row">
+                      <div class="ref-col ref-col--name">
+                        <label class="select-label">Name</label>
+                        <input class="text-input" type="text" [name]="'refName' + i"
+                          [(ngModel)]="proj.name" placeholder="e.g. HR Tool v1">
+                      </div>
+                      <div class="ref-col ref-col--desc">
+                        <label class="select-label">Description</label>
+                        <input class="text-input" type="text" [name]="'refDesc' + i"
+                          [(ngModel)]="proj.description" placeholder="e.g. Basic HR CRUD app">
+                      </div>
+                      <div class="ref-col ref-col--num">
+                        <label class="select-label">Hours</label>
+                        <div class="num-ctrl">
+                          <input class="text-input num-input" type="number" [name]="'refHours' + i"
+                            [(ngModel)]="proj.total_hours" min="0" placeholder="0">
+                          <button type="button" class="counter-btn" (click)="proj.total_hours = (proj.total_hours ?? 0) - 1" [disabled]="(proj.total_hours ?? 0) <= 0">−</button>
+                          <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_hours = (proj.total_hours ?? 0) + 1">+</button>
+                        </div>
+                      </div>
+                      <div class="ref-col ref-col--num">
+                        <label class="select-label">Cost (EUR)</label>
+                        <div class="num-ctrl">
+                          <input class="text-input num-input" type="number" [name]="'refCost' + i"
+                            [(ngModel)]="proj.total_cost" min="0" placeholder="0">
+                          <button type="button" class="counter-btn" (click)="proj.total_cost = (proj.total_cost ?? 0) - 1" [disabled]="(proj.total_cost ?? 0) <= 0">−</button>
+                          <button type="button" class="counter-btn counter-btn--add" (click)="proj.total_cost = (proj.total_cost ?? 0) + 1">+</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                }
+              </div>
+
+              @if (guardrailError()) {
+                <div class="guardrail-warning" [attr.data-reason]="guardrailError()!.reason">
+                  <mat-icon>{{ guardrailIcon(guardrailError()!.reason) }}</mat-icon>
+                  <span>{{ guardrailError()!.message }}</span>
+                </div>
+              }
+              @if (error()) {
+                <p class="error-msg">{{ error() }}</p>
+              }
 
               <!-- Submit button -->
               <div class="form-actions">
@@ -568,11 +738,15 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       height: 14px;
     }
 
-    /* Options row */
-    .options-row {
+    /* Options rows */
+    .selects-row {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
+    }
+    .adv-row {
+      margin-top: 12px;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
     }
     .select-group {
       display: flex;
@@ -600,10 +774,222 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       background-size: 16px;
       padding-right: 28px;
     }
+    .select-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .select-wrap .select {
+      width: 100%;
+      background-image: none;
+      padding-right: 30px;
+    }
+    .select-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      color: #7c84c8;
+      vertical-align: text-bottom;
+    }
+    .chevron {
+      position: absolute;
+      right: 8px;
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+      color: #999;
+      pointer-events: none;
+    }
     .select:focus {
       outline: none;
       border-color: #5c6bc0;
       box-shadow: 0 0 0 3px rgba(92,107,192,0.12);
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .text-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1.5px solid #e8e8f0;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: #333;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      min-width: 0;
+    }
+    .text-input:focus {
+      outline: none;
+      border-color: #5c6bc0;
+      box-shadow: 0 0 0 3px rgba(92,107,192,0.12);
+    }
+    .num-input {
+      text-align: right;
+    }
+
+    .precall-card {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 10px;
+      border: 1px solid #e8e8f0;
+      background: #fafbff;
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .precall-check {
+      margin: 0;
+      accent-color: #5c6bc0;
+    }
+    .precall-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .precall-title {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #2f3460;
+    }
+    .precall-desc {
+      font-size: 0.72rem;
+      color: #666;
+      line-height: 1.35;
+    }
+    .precall-info {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+      color: #7c84c8;
+    }
+
+    .advanced-panel {
+      margin-top: 4px;
+      border-radius: 8px !important;
+      border: 1px solid #e8e8f0 !important;
+      box-shadow: none !important;
+    }
+
+    .ref-section {
+      border: 1px solid #ececf6;
+      border-radius: 10px;
+      background: #fcfcff;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .ref-counter-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .counter-ctrl {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .counter-val {
+      min-width: 24px;
+      text-align: center;
+      font-weight: 600;
+      color: #2f3460;
+    }
+    .counter-btn {
+      border: 1px solid #d9dff2;
+      background: #fff;
+      color: #4f5fb5;
+      width: 26px;
+      height: 26px;
+      border-radius: 6px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .counter-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .counter-btn--add {
+      background: #eef0ff;
+      border-color: #cfd5fa;
+      font-weight: 700;
+    }
+    .ref-project {
+      border: 1px solid #e7eaf7;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+    .ref-project-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #3f51b5;
+      margin-bottom: 8px;
+    }
+    .ref-row {
+      display: grid;
+      grid-template-columns: 2fr 3fr 1fr 1fr;
+      gap: 8px;
+    }
+    .ref-col {
+      min-width: 0;
+    }
+    .num-ctrl {
+      display: grid;
+      grid-template-columns: 1fr auto auto;
+      gap: 6px;
+      align-items: center;
+    }
+
+    .guardrail-warning,
+    .error-msg {
+      margin: 0;
+      font-size: 0.78rem;
+    }
+    .guardrail-warning {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid #ffdca8;
+      background: #fff8ec;
+      border-radius: 8px;
+      color: #a05900;
+    }
+    .error-msg {
+      color: #c62828;
+      font-weight: 500;
+    }
+
+    @media (max-width: 1100px) {
+      .selects-row,
+      .adv-row,
+      .ref-row {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+    @media (max-width: 760px) {
+      .chat-area {
+        padding: 14px;
+        gap: 14px;
+      }
+      .selects-row,
+      .adv-row,
+      .ref-row {
+        grid-template-columns: 1fr;
+      }
+      .precall-card {
+        grid-template-columns: auto 1fr;
+      }
+      .precall-info {
+        display: none;
+      }
     }
 
     /* Form actions */

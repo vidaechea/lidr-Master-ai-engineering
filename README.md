@@ -244,6 +244,17 @@ docker compose up --build
 docker compose up --build -d
 ```
 
+Si cambiaste `POSTGRES_USER`, `POSTGRES_PASSWORD` o `POSTGRES_DB` después del primer arranque, el contenedor de Postgres no reaplica esos valores sobre un volumen ya inicializado. En ese caso, el backend puede seguir intentando entrar con la clave nueva mientras Postgres conserva la anterior.
+
+Para un entorno local sin datos que preservar, reinicia la base desde cero:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+Si necesitas conservar los datos, cambia la contraseña del usuario dentro de Postgres para que coincida con tu `.env` actual en lugar de borrar el volumen.
+
 | URL | Servicio |
 |---|---|
 | http://localhost:4200 | Frontend Angular |
@@ -253,7 +264,23 @@ docker compose up --build -d
 ### Ejecutar las migraciones (primera vez)
 
 ```bash
-a
+# Opción 1: con Docker Compose (recomendado si levantaste el stack con Docker)
+docker compose exec backend alembic upgrade head
+
+# Opción 2: en local (fuera de Docker)
+cd backend
+uv run alembic upgrade head
+```
+
+### Crear una nueva migración
+
+```bash
+# Opción 1: con Docker Compose
+docker compose exec backend alembic revision --autogenerate -m "descripcion_cambio"
+
+# Opción 2: en local (fuera de Docker)
+cd backend
+uv run alembic revision --autogenerate -m "descripcion_cambio"
 ```
 
 ### Otros comandos útiles

@@ -26,33 +26,7 @@ sudo apt-get install -y --no-install-recommends \
   xvfb
 sudo rm -rf /var/lib/apt/lists/*
 
-echo "[devcontainer] Installing uv..."
-if ! command -v uv >/dev/null 2>&1; then
-  curl -LsSf https://astral.sh/uv/install.sh | sh
-fi
-export PATH="$HOME/.local/bin:$PATH"
-uv --version
-
-echo "[devcontainer] Syncing Python dependencies (backend)..."
-if [[ -f backend/pyproject.toml ]]; then
-  pushd backend >/dev/null
-  uv sync
-  popd >/dev/null
-fi
-
-echo "[devcontainer] Syncing Python dependencies (ai-engine)..."
-if [[ -f estimator-cag/pyproject.toml ]]; then
-  pushd estimator-cag >/dev/null
-  uv sync
-  popd >/dev/null
-fi
-
-echo "[devcontainer] Installing frontend dependencies..."
-if [[ -f frontend/package-lock.json ]]; then
-  pushd frontend >/dev/null
-  npm ci
-  npx playwright install chromium
-  popd >/dev/null
-fi
+echo "[devcontainer] Running workspace bootstrap..."
+bash .devcontainer/postStart.sh
 
 echo "[devcontainer] Setup complete."

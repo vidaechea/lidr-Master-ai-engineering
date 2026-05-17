@@ -162,12 +162,19 @@ export class EstimationService {
   createWithAttachmentsStream(sessionId: string, formData: FormData, promptVersion = 'v1'): Observable<string> {
     return new Observable(subscriber => {
       const url = `${this.sessionsBase}/${sessionId}/estimate?prompt_version=${promptVersion}`;
+      const accessToken = localStorage.getItem('access_token');
+      const headers = new Headers();
+
+      if (accessToken) {
+        headers.set('Authorization', `Bearer ${accessToken}`);
+      }
       
       (async () => {
         try {
           const response = await fetch(url, {
             method: 'POST',
             body: formData,
+            headers,
           });
           
           if (!response.ok) {
