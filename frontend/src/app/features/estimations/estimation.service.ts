@@ -56,6 +56,8 @@ export interface EstimationListItem {
   completed_at: string | null;
 }
 
+export type OutputFormat = 'phases_table' | 'line_items' | 'narrative';
+
 export interface EstimationOut extends EstimationListItem {
   transcription: string;
   prompt_version: string | null;
@@ -67,6 +69,7 @@ export interface EstimationOut extends EstimationListItem {
   output_tokens: number | null;
   turn_cost_usd: number | null;
   error_detail: string | null;
+  output_format: OutputFormat | null;
 }
 
 export interface ReferenceProject {
@@ -102,6 +105,7 @@ export interface SessionEstimationResponse {
   validation: StructureCheck | null;
   prompt_version: string;
   structured_result: EstimationStructuredResult | null;
+  output_format: OutputFormat | null;
 }
 
 export interface SessionMessage {

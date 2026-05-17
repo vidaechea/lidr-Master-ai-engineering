@@ -4,7 +4,9 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatIconModule } from '@angular/material/icon';
 import { DatePipe, DecimalPipe, NgClass, TitleCasePipe } from '@angular/common';
-import { EstimationOut, EstimationService, EstimationStructuredResult, SessionEstimationResponse } from '../estimation.service';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
+import { marked } from 'marked';
+import { EstimationOut, EstimationService, EstimationStructuredResult, OutputFormat, SessionEstimationResponse } from '../estimation.service';
 
 @Component({
   selector: 'app-estimation-result',
@@ -80,13 +82,14 @@ import { EstimationOut, EstimationService, EstimationStructuredResult, SessionEs
                 <div class="content-card__head">
                   <div class="content-card__title">
                     <mat-icon>description</mat-icon> Estimation
+                    <span class="format-badge format-badge--{{ effectiveFormat() }}">{{ effectiveFormat() | titlecase }}</span>
                   </div>
                   <button class="btn-copy" (click)="copyMarkdown()" [ngClass]="{ copied: copied() }">
                     <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
                     {{ copied() ? 'Copied!' : 'Copy' }}
                   </button>
                 </div>
-                <pre class="markdown-pre">{{ inlineMarkdown }}</pre>
+                <div [class]="formatClass()" [innerHTML]="renderMarkdown(inlineMarkdown)"></div>
               </div>
 
               @if (inlineResponse?.requirements) {
@@ -96,7 +99,7 @@ import { EstimationOut, EstimationService, EstimationStructuredResult, SessionEs
                       <mat-icon>list_alt</mat-icon> Extracted Requirements
                     </div>
                   </div>
-                  <pre class="markdown-pre">{{ inlineResponse!.requirements }}</pre>
+                  <div class="md-render md-render--requirements" [innerHTML]="renderMarkdown(inlineResponse!.requirements)"></div>
                 </div>
               }
             </div>
@@ -257,13 +260,14 @@ import { EstimationOut, EstimationService, EstimationStructuredResult, SessionEs
                 <div class="content-card__head">
                   <div class="content-card__title">
                     <mat-icon>description</mat-icon> Estimation
+                    <span class="format-badge format-badge--{{ effectiveFormat() }}">{{ effectiveFormat() | titlecase }}</span>
                   </div>
                   <button class="btn-copy" (click)="copyMarkdown()" [ngClass]="{ copied: copied() }">
                     <mat-icon>{{ copied() ? 'check' : 'content_copy' }}</mat-icon>
                     {{ copied() ? 'Copied!' : 'Copy' }}
                   </button>
                 </div>
-                <pre class="markdown-pre">{{ estimation()!.estimation_markdown }}</pre>
+                <div [class]="formatClass()" [innerHTML]="renderMarkdown(estimation()!.estimation_markdown)"></div>
               </div>
             }
 
@@ -274,7 +278,7 @@ import { EstimationOut, EstimationService, EstimationStructuredResult, SessionEs
                     <mat-icon>list_alt</mat-icon> Extracted Requirements
                   </div>
                 </div>
-                <pre class="markdown-pre">{{ estimation()!.requirements }}</pre>
+                <div class="md-render md-render--requirements" [innerHTML]="renderMarkdown(estimation()!.requirements)"></div>
               </div>
             }
           </div>
@@ -521,6 +525,100 @@ import { EstimationOut, EstimationService, EstimationStructuredResult, SessionEs
       background: #fafbfc;
     }
 
+    /* ── Markdown rendered content ────────────────────────────────────────── */
+    .md-render {
+      padding: 16px 20px; overflow-x: auto; max-height: 600px; overflow-y: auto;
+      font-size: 0.88rem; line-height: 1.65; color: #2d2d3f; background: #fafbfc;
+    }
+
+    /* Common markdown elements */
+    .md-render :is(h1, h2, h3, h4) {
+      color: #1a1a2e; font-weight: 700; margin: 1rem 0 0.4rem;
+    }
+    .md-render h1 { font-size: 1.2rem; border-bottom: 2px solid #e8e8f0; padding-bottom: 6px; }
+    .md-render h2 { font-size: 1.05rem; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+    .md-render h3 { font-size: 0.95rem; color: #3c3c5c; }
+    .md-render p  { margin: 0.5rem 0; }
+    .md-render ul, .md-render ol { padding-left: 1.4rem; margin: 0.4rem 0; }
+    .md-render li { margin: 0.2rem 0; }
+    .md-render strong { color: #1a1a2e; }
+    .md-render code {
+      background: #ebebf5; border-radius: 4px; padding: 1px 5px;
+      font-family: 'Monaco', 'Courier New', monospace; font-size: 0.82em; color: #5c3e9d;
+    }
+    .md-render pre {
+      background: #1e1e2e; border-radius: 8px; padding: 12px 16px;
+      overflow-x: auto; margin: 0.8rem 0;
+    }
+    .md-render pre code { background: none; color: #cdd6f4; padding: 0; font-size: 0.8rem; }
+    .md-render blockquote {
+      border-left: 3px solid #5c6bc0; margin: 0.8rem 0; padding: 4px 12px;
+      background: #f0f0fa; color: #555; border-radius: 0 6px 6px 0;
+    }
+    .md-render hr { border: none; border-top: 1px solid #e8e8f0; margin: 1rem 0; }
+
+    /* ── Table styles (phases_table & line_items) ─────────────────────────── */
+    .md-render table {
+      width: 100%; border-collapse: collapse; font-size: 0.83rem;
+      margin: 0.8rem 0; border-radius: 8px; overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .md-render th {
+      background: #5c6bc0; color: #fff; padding: 9px 12px;
+      text-align: left; font-weight: 600; font-size: 0.78rem;
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .md-render td {
+      padding: 8px 12px; border-bottom: 1px solid #eee;
+      vertical-align: top; color: #333;
+    }
+    .md-render tr:last-child td { border-bottom: none; }
+    .md-render tr:nth-child(even) td { background: #f8f8fc; }
+    .md-render tr:hover td { background: #f0f0fa; transition: background 0.1s; }
+
+    /* Highlight totals / subtotals rows (rows with bold cells) */
+    .md-render td strong { color: #1a1a2e; }
+    .md-render tr:has(td strong:first-child) td {
+      background: #ededf8 !important; font-weight: 600; color: #1a1a2e;
+    }
+
+    /* ── phases_table specific ────────────────────────────────────────────── */
+    .md-render--phases-table h2 { color: #5c6bc0; margin-top: 1.2rem; }
+    .md-render--phases-table h3 { color: #7986cb; }
+
+    /* ── line_items specific ──────────────────────────────────────────────── */
+    .md-render--line-items table th:last-child,
+    .md-render--line-items table td:last-child { text-align: right; }
+
+    /* ── narrative specific ───────────────────────────────────────────────── */
+    .md-render--narrative {
+      font-size: 0.93rem; line-height: 1.8; color: #2c2c3e;
+      background: #fff; max-height: none;
+    }
+    .md-render--narrative p { margin: 0.8rem 0; text-align: justify; }
+    .md-render--narrative h2 {
+      font-size: 1.1rem; color: #3c3c6e; margin-top: 1.4rem;
+      border-bottom: 1px solid #dde; padding-bottom: 6px;
+    }
+    .md-render--narrative h3 { font-size: 1rem; color: #555; }
+
+    /* ── requirements (reqs from pre-call) ───────────────────────────────── */
+    .md-render--requirements {
+      font-size: 0.85rem; max-height: 300px;
+    }
+    .md-render--requirements li { margin: 0.3rem 0; }
+
+    /* ── Format badge ─────────────────────────────────────────────────────── */
+    .format-badge {
+      display: inline-flex; align-items: center;
+      padding: 2px 8px; border-radius: 10px; font-size: 0.68rem;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+      margin-left: 6px;
+    }
+    .format-badge--phases_table { background: #e8eaf6; color: #3949ab; }
+    .format-badge--line_items   { background: #e8f5e9; color: #2e7d32; }
+    .format-badge--narrative    { background: #fff3e0; color: #e65100; }
+
     /* ── Sidebar ──────────────────────────────────────────────────────────── */
     .sidebar { display: flex; flex-direction: column; gap: 12px; }
     .sidebar-card {
@@ -617,11 +715,33 @@ export class EstimationResultComponent implements OnInit {
   @Input() inlineResponse: SessionEstimationResponse | null = null;
   @Input() inlineLoading = false;
   @Input() inlineError: string | null = null;
+  @Input() outputFormat: OutputFormat | null = null;
 
   estimation = signal<EstimationOut | null>(null);
   loading    = signal(false);
   copied     = signal(false);
   inlineRenderedAt = new Date();
+
+  /** Determine effective output format: explicit input → response field → stored estimation → default */
+  effectiveFormat = computed<OutputFormat>(() => {
+    return this.outputFormat
+      ?? this.inlineResponse?.output_format
+      ?? this.estimation()?.output_format
+      ?? 'phases_table';
+  });
+
+  /** Render markdown string to safe HTML via marked */
+  renderMarkdown(text: string | null | undefined): SafeHtml {
+    if (!text) return this.sanitizer.bypassSecurityTrustHtml('');
+    const html = marked.parse(text, { async: false }) as string;
+    return this.sanitizer.bypassSecurityTrustHtml(html);
+  }
+
+  /** CSS class for the rendered content area based on output format */
+  formatClass = computed<string>(() => {
+    const f = this.effectiveFormat();
+    return `md-render md-render--${f.replace('_', '-')}`;
+  });
 
   validation = () => this.inlineResponse?.validation ?? this.estimation()?.validation_result ?? null;
 
@@ -728,6 +848,7 @@ export class EstimationResultComponent implements OnInit {
   constructor(
     private readonly estimationService: EstimationService,
     private readonly route: ActivatedRoute,
+    private readonly sanitizer: DomSanitizer,
   ) {}
 
   ngOnInit() {

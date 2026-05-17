@@ -192,7 +192,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                 (click)="activeTab.set('response')">
                 <mat-icon>{{ isStreaming() ? 'schedule' : 'check_circle' }}</mat-icon>
                 <span>Respuesta</span>
-                @if (isStreaming() || streamingResult()) {
+                @if (isStreaming()) {
                   <span class="tab-badge">●</span>
                 }
               </button>
@@ -468,7 +468,8 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                       [inlineMarkdown]="responseMarkdown()"
                       [inlineResponse]="responsePayload()"
                       [inlineLoading]="isStreaming()"
-                      [inlineError]="error() ?? guardrailError()?.message ?? null">
+                      [inlineError]="error() ?? guardrailError()?.message ?? null"
+                      [outputFormat]="form.output_format ?? 'phases_table'">
                     </app-estimation-result>
                   }
                 </div>
