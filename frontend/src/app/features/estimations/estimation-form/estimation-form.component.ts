@@ -3,6 +3,7 @@ import { JsonPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { MatButtonModule } from '@angular/material/button';
 import { MatExpansionModule } from '@angular/material/expansion';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
@@ -31,6 +32,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
   imports: [
     FormsModule,
     JsonPipe,
+    MatButtonModule,
     MatExpansionModule,
     MatIconModule,
     MatProgressSpinnerModule,
@@ -43,11 +45,9 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
         <div class="chat-header">
           <div class="header-left">
             <h2 class="head-title">{{ isExistingSession() ? 'Estimation' : 'New Estimation' }}</h2>
-            <p class="head-sub">Session: {{ sessionId() ?? 'creating...' }}</p>
           </div>
-          <button type="button" class="btn-secondary" (click)="startNewConversation()" [disabled]="loading()">
-            <mat-icon>add_comment</mat-icon>
-            <span>Nueva conversación</span>
+          <button mat-raised-button color="primary" (click)="startNewConversation()" [disabled]="loading()">
+            <mat-icon>add</mat-icon> New Estimation
           </button>
           <!-- Sidebar toggle -->
           <button type="button" class="btn-sidebar-toggle" 
@@ -182,7 +182,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                 [class.tab-active]="activeTab() === 'form'"
                 (click)="activeTab.set('form')">
                 <mat-icon>description</mat-icon>
-                <span>Formulario</span>
+                <span>Form</span>
               </button>
               <button 
                 type="button" 
@@ -190,7 +190,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                 [class.tab-active]="activeTab() === 'response'"
                 (click)="activeTab.set('response')">
                 <mat-icon>{{ isStreaming() ? 'schedule' : 'check_circle' }}</mat-icon>
-                <span>Respuesta</span>
+                <span>Response</span>
                 @if (isStreaming()) {
                   <span class="tab-badge">●</span>
                 }
@@ -1285,16 +1285,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
   `],
 })
 export class EstimationFormComponent implements OnInit {
-  form: EstimationCreate = {
-    transcription: '',
-    output_format: 'phases_table',
-    example_format: 'markdown',
-    prompt_version: 'v1',
-    pre_call: false,
-    num_examples: 3,
-    max_output_tokens: 2048,
-    reasoning_effort: 'medium',
-  };
+  form: EstimationCreate = this.buildDefaultForm();
 
   loading = signal(false);
   error = signal<string | null>(null);
@@ -1408,8 +1399,38 @@ export class EstimationFormComponent implements OnInit {
     private readonly route: ActivatedRoute,
   ) {
     this.route.queryParams.subscribe(p => {
-      if (p['projectId']) this.form.project_id = p['projectId'];
+      this.form.project_id = p['projectId'] ?? undefined;
     });
+  }
+
+  private buildDefaultForm(projectId?: string): EstimationCreate {
+    return {
+      transcription: '',
+      output_format: 'phases_table',
+      example_format: 'markdown',
+      prompt_version: 'v1',
+      pre_call: false,
+      num_examples: 3,
+      max_output_tokens: 2048,
+      reasoning_effort: 'medium',
+      project_id: projectId,
+    };
+  }
+
+  private resetFormForNewEstimation() {
+    const projectId = this.route.snapshot.queryParamMap.get('projectId') ?? undefined;
+
+    this.form = this.buildDefaultForm(projectId);
+    this.refProjects = [];
+    this.attachments.set([]);
+    this.streamingResult.set('');
+    this.isStreaming.set(false);
+    this.activeTab.set('form');
+    this.projectMetadata.set(null);
+    this.historyMessageCount.set(0);
+    this.turnCount.set(0);
+    this.cacheMetrics.set(null);
+    this.cacheMetricsError.set(null);
   }
 
   ngOnInit(): void {
@@ -1469,10 +1490,10 @@ export class EstimationFormComponent implements OnInit {
 
   startNewConversation() {
     this.loading.set(true);
+    this.resetFormForNewEstimation();
     this.error.set(null);
     this.guardrailError.set(null);
     this.inlineResult.set(null);
-    this.attachments.set([]);
 
     this.estimationService.createSession().subscribe({
       next: ({ session_id }) => {

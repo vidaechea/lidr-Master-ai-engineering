@@ -96,6 +96,44 @@ describe('EstimationFormComponent — initial state', () => {
     const { component } = setup();
     expect(component.guardrailError()).toBeNull();
   });
+
+  it('cleans form state when starting a new conversation', () => {
+    const { component, httpMock } = setup();
+
+    component.form.transcription = VALID_TRANSCRIPTION;
+    component.form.project_type = 'web_saas';
+    component.form.detail_level = 'detailed';
+    component.form.temperature = 0.8;
+    component.addRefProject();
+    component.refProjects[0].name = 'Legacy project';
+    component.activeTab.set('response');
+    const input = document.createElement('input');
+    Object.defineProperty(input, 'files', { value: makeFileList(makeFile('spec.pdf', 'application/pdf')) });
+    component.onFilesSelected({ target: input } as unknown as Event);
+
+    component.startNewConversation();
+
+    expect(component.form.transcription).toBe('');
+    expect(component.form.project_type).toBeUndefined();
+    expect(component.form.detail_level).toBeUndefined();
+    expect(component.form.temperature).toBeUndefined();
+    expect(component.refProjects.length).toBe(0);
+    expect(component.attachments()).toEqual([]);
+    expect(component.activeTab()).toBe('form');
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-new' });
+    httpMock.expectOne(`${SESSIONS_BASE}/sid-new`).flush({
+      session_id: 'sid-new',
+      project_metadata: {
+        project_name: null,
+        assumed_team_size: null,
+        mentioned_technologies: [],
+        agreed_scope: null,
+      },
+      history: [],
+      turn_count: 0,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
