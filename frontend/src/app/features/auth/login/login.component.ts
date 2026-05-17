@@ -73,7 +73,7 @@ export class LoginComponent {
   submit() {
     this.error.set(null);
     this.auth.login(this.email, this.password).subscribe({
-      next: () => this.router.navigate(['/projects']),
+      next: () => this.router.navigate(['/estimations'], { replaceUrl: true }),
       error: () => this.error.set('Invalid email or password'),
     });
   }

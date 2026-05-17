@@ -37,6 +37,9 @@ class InputGuardrailViolation(Exception):
 
 _PROMPT_INJECTION_PATTERNS: list[re.Pattern[str]] = [
     re.compile(r"ignore\s+(previous|prior|all|the)\s+(instructions?|prompts?|rules?)", re.IGNORECASE),
+    re.compile(r"ignora\s+(las?\s+)?(instrucciones?|reglas?|prompts?)", re.IGNORECASE),
+    re.compile(r"olvida\s+(tus?\s+)?(instrucciones?|reglas?|prompts?)", re.IGNORECASE),
+    re.compile(r"haz\s+caso\s+omiso\s+de\s+(las?\s+)?(instrucciones?|reglas?|prompts?)", re.IGNORECASE),
     re.compile(r"</?\s*(system|instructions?|prompt)\s*>", re.IGNORECASE),
     re.compile(r"new\s+instructions?\s*[:.\-]", re.IGNORECASE),
     re.compile(r"forget\s+(everything|all|previous)", re.IGNORECASE),

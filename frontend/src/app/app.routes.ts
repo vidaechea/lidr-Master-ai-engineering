@@ -2,7 +2,7 @@ import { Routes } from '@angular/router';
 import { authGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
-  { path: '', redirectTo: '/projects', pathMatch: 'full' },
+  { path: '', redirectTo: '/estimations', pathMatch: 'full' },
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   {
@@ -66,5 +66,5 @@ export const routes: Routes = [
     ],
   },
 
-  { path: '**', redirectTo: '/projects' },
+  { path: '**', redirectTo: '/estimations' },
 ];
