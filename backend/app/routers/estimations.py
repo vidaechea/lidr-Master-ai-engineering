@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from app.dependencies import DbDep, CurrentUser
 from app.schemas.estimation import (
     AsyncEstimationOut,
+    CacheMetricsOut,
     EstimationCreate,
     EstimationListItem,
     EstimationOut,
@@ -18,6 +19,14 @@ from app.schemas.estimation import (
 from app.services import ai_client, estimation_service
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
+
+
+@router.get("/cache/metrics", response_model=CacheMetricsOut)
+async def get_cache_metrics(current_user: CurrentUser):
+    """Return cache metrics from the AI engine for the authenticated user."""
+    _ = current_user
+    payload = await ai_client.get_cache_metrics()
+    return CacheMetricsOut(**payload)
 
 
 @router.post("/sessions", response_model=SessionCreateResponse, status_code=status.HTTP_201_CREATED)

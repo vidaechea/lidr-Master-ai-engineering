@@ -16,8 +16,17 @@ import pytest
 
 from app.schemas.estimation import EstimationRequest, EstimationResponse
 from app.services.cache_service import CachedEstimationService
+from app.services.sessions import ConversationHistory
 
 VALID_TX = "Build a multi-tenant SaaS analytics platform with reporting and user authentication."
+
+
+@pytest.fixture(autouse=True)
+def _enable_exact_cache(monkeypatch):
+    """This module validates layer-1 exact cache behavior, so keep it enabled."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "cache_enabled", True)
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +300,68 @@ class TestEstimateLLMFallthrough:
 
         # Call completes successfully despite the store failure
         assert result.model == llm_resp.model
+
+
+# ---------------------------------------------------------------------------
+# Multi-turn cache (session flow)
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateMultiTurn:
+    async def test_multi_turn_cache_hit_skips_inner_and_updates_history(self):
+        inner = MagicMock()
+        inner.estimate_multi_turn = AsyncMock()
+        resp = _resp(turn_cost_usd=0.04)
+        svc = CachedEstimationService(inner, semantic_cache=None)
+        redis_mock = _make_redis_mock(cached=resp.model_dump_json())
+        history = ConversationHistory()
+
+        with (
+            patch.object(svc, "_get_redis", return_value=redis_mock),
+            patch.object(svc, "_record_metrics", AsyncMock()),
+        ):
+            result = await svc.estimate_multi_turn(_req(), history=history)
+
+        inner.estimate_multi_turn.assert_not_called()
+        assert result.turn_cost_usd == 0.0
+        roles = [m.role for m in history.messages()]
+        assert roles == ["user", "assistant"]
+
+    async def test_multi_turn_double_miss_calls_inner_and_stores_exact_cache(self):
+        inner = MagicMock()
+        llm_resp = _resp()
+        inner.estimate_multi_turn = AsyncMock(return_value=llm_resp)
+        svc = CachedEstimationService(inner, semantic_cache=None)
+        redis_mock = _make_redis_mock()
+        history = ConversationHistory()
+
+        with (
+            patch.object(svc, "_get_redis", return_value=redis_mock),
+            patch.object(svc, "_record_metrics", AsyncMock()),
+        ):
+            result = await svc.estimate_multi_turn(_req(), history=history)
+
+        inner.estimate_multi_turn.assert_called_once()
+        assert redis_mock.setex.call_count == 2
+        assert result.model == llm_resp.model
+
+    async def test_multi_turn_turn_exact_fallback_hits_when_strict_key_misses(self):
+        inner = MagicMock()
+        inner.estimate_multi_turn = AsyncMock()
+        resp = _resp(turn_cost_usd=0.03)
+        svc = CachedEstimationService(inner, semantic_cache=None)
+        redis_mock = _make_redis_mock()
+        redis_mock.get.side_effect = [None, resp.model_dump_json()]
+        history = ConversationHistory()
+
+        with (
+            patch.object(svc, "_get_redis", return_value=redis_mock),
+            patch.object(svc, "_record_metrics", AsyncMock()),
+        ):
+            result = await svc.estimate_multi_turn(_req(), history=history)
+
+        inner.estimate_multi_turn.assert_not_called()
+        assert result.turn_cost_usd == 0.0
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ from app.services.attachment_service import (
     AttachmentExtractionError,
     UnsupportedAttachmentType,
 )
+from app.services.cache_service import CachedEstimationService
 from app.services.estimation_service import EstimationService
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.metadata_extractor import MetadataExtractor
@@ -37,6 +38,13 @@ _LLM_ERROR_RESPONSES = {
 
 def _get_estimation_service() -> EstimationService:
     return EstimationService()
+
+
+def _get_cached_estimation_service() -> EstimationService | CachedEstimationService:
+    service = EstimationService()
+    if settings.cache_enabled:
+        return CachedEstimationService(service)
+    return service
 
 
 def _get_attachment_service() -> AttachmentService:
@@ -108,7 +116,10 @@ async def get_session_state(session_id: str) -> SessionStateResponse:
 )
 async def create_session_estimation(
     session_id: str,
-    estimation_service: Annotated[EstimationService, Depends(_get_estimation_service)],
+    estimation_service: Annotated[
+        EstimationService | CachedEstimationService,
+        Depends(_get_cached_estimation_service),
+    ],
     attachment_svc: Annotated[AttachmentService, Depends(_get_attachment_service)],
     metadata_extractor: Annotated[MetadataExtractor, Depends(_get_metadata_extractor)],
     transcript: Annotated[

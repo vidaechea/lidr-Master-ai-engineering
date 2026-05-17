@@ -183,3 +183,36 @@ async def estimate_session_multipart(
         except RequestError as exc:
             log.error("ai_engine_connection_error", error=str(exc))
             raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+
+
+async def get_cache_metrics() -> dict[str, Any]:
+    """Call ``GET /api/v1/cache/metrics`` on the AI Engine."""
+    async with AsyncClient(
+        base_url=settings.ai_engine_url,
+        headers=_HEADERS,
+        timeout=30.0,
+    ) as client:
+        try:
+            response = await client.get("/api/v1/cache/metrics")
+            response.raise_for_status()
+            return response.json()
+        except HTTPStatusError as exc:
+            status_code = exc.response.status_code
+            detail: Any
+            try:
+                detail = exc.response.json().get("detail")
+            except Exception:
+                detail = exc.response.text
+
+            if status_code == 400:
+                raise HTTPException(status_code=400, detail=detail) from exc
+
+            log.error(
+                "ai_engine_cache_metrics_http_error",
+                status_code=status_code,
+                detail=str(detail)[:200],
+            )
+            raise HTTPException(status_code=502, detail=f"AI Engine returned {status_code}") from exc
+        except RequestError as exc:
+            log.error("ai_engine_connection_error", error=str(exc))
+            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc

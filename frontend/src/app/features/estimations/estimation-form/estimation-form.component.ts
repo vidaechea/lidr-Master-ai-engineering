@@ -8,6 +8,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { switchMap } from 'rxjs';
 import {
+  CacheMetrics,
   EstimationCreate,
   EstimationService,
   GuardrailError,
@@ -43,7 +44,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
           <!-- Sidebar toggle -->
           <button type="button" class="btn-sidebar-toggle" 
             [class.active]="sidebarOpen()"
-            (click)="sidebarOpen.update(v => !v)"
+            (click)="toggleSidebar()"
             title="Toggle metadata sidebar">
             <mat-icon>{{ sidebarOpen() ? 'close' : 'info' }}</mat-icon>
           </button>
@@ -73,6 +74,49 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                   <div class="metadata-section">
                     <div class="metadata-label">History Messages</div>
                     <div class="metadata-value">{{ historyMessageCount() }}</div>
+                  </div>
+
+                  <div class="metadata-section">
+                    <div class="metadata-label metadata-label-row">
+                      <span>Cache Metrics</span>
+                      <button type="button" class="btn-cache-refresh" (click)="refreshCacheMetrics()">
+                        <mat-icon>refresh</mat-icon>
+                      </button>
+                    </div>
+                    @if (cacheMetricsLoading()) {
+                      <div class="metadata-value">Loading cache metrics...</div>
+                    } @else if (cacheMetricsError()) {
+                      <div class="metadata-value metadata-value-error">{{ cacheMetricsError() }}</div>
+                    } @else if (cacheMetrics(); as metrics) {
+                      <div class="metrics-grid">
+                        <div class="metric-card">
+                          <div class="metric-k">Hit rate</div>
+                          <div class="metric-v">{{ metrics.hit_rate_pct }}%</div>
+                        </div>
+                        <div class="metric-card">
+                          <div class="metric-k">Hits</div>
+                          <div class="metric-v">{{ metrics.hits }}</div>
+                        </div>
+                        <div class="metric-card">
+                          <div class="metric-k">Misses</div>
+                          <div class="metric-v">{{ metrics.misses }}</div>
+                        </div>
+                        <div class="metric-card">
+                          <div class="metric-k">Cost avoided</div>
+                          <div class="metric-v">{{ formatCost(metrics.cost_avoided_usd) }}</div>
+                        </div>
+                        <div class="metric-card">
+                          <div class="metric-k">Speedup</div>
+                          <div class="metric-v">{{ metrics.speedup_x ?? 'N/A' }}x</div>
+                        </div>
+                        <div class="metric-card">
+                          <div class="metric-k">Stale reports</div>
+                          <div class="metric-v">{{ metrics.stale_reports }}</div>
+                        </div>
+                      </div>
+                    } @else {
+                      <div class="metadata-value">No cache metrics yet.</div>
+                    }
                   </div>
 
                   @if (metadata.project_name) {
@@ -1330,6 +1374,9 @@ export class EstimationFormComponent implements OnInit {
   projectMetadata = signal<SessionProjectMetadata | null>(null);
   historyMessageCount = signal(0);
   turnCount = signal(0);
+  cacheMetrics = signal<CacheMetrics | null>(null);
+  cacheMetricsLoading = signal(false);
+  cacheMetricsError = signal<string | null>(null);
   isExistingSession = signal(false);
   sidebarOpen = signal(false);
   activeTab = signal<'form' | 'response'>('form');
@@ -1391,6 +1438,32 @@ export class EstimationFormComponent implements OnInit {
 
   formatCost(cost: number): string {
     return '$' + cost.toFixed(6);
+  }
+
+  toggleSidebar() {
+    this.sidebarOpen.update(value => {
+      const next = !value;
+      if (next) {
+        this.refreshCacheMetrics();
+      }
+      return next;
+    });
+  }
+
+  refreshCacheMetrics() {
+    this.cacheMetricsLoading.set(true);
+    this.cacheMetricsError.set(null);
+    this.estimationService.getCacheMetrics().subscribe({
+      next: (metrics: CacheMetrics) => {
+        this.cacheMetrics.set(metrics);
+        this.cacheMetricsLoading.set(false);
+      },
+      error: (err: HttpErrorResponse) => {
+        const msg = err?.error?.detail ?? err?.message ?? 'Unable to load cache metrics';
+        this.cacheMetricsError.set(String(msg));
+        this.cacheMetricsLoading.set(false);
+      },
+    });
   }
 
   constructor(
@@ -1488,6 +1561,9 @@ export class EstimationFormComponent implements OnInit {
       complete: () => {
         this.isStreaming.set(false);
         this.loading.set(false);
+        if (this.sidebarOpen()) {
+          this.refreshCacheMetrics();
+        }
         // Refresh session state after streaming completes
         this.estimationService.getSessionState(sessionId).subscribe({
           next: sessionState => {
@@ -1507,6 +1583,9 @@ export class EstimationFormComponent implements OnInit {
         this.projectMetadata.set(sessionState.project_metadata);
         this.historyMessageCount.set(sessionState.history.length);
         this.turnCount.set(sessionState.turn_count);
+        if (this.sidebarOpen()) {
+          this.refreshCacheMetrics();
+        }
         this.loading.set(false);
       },
       error: (err: HttpErrorResponse) => this._handleError(err),

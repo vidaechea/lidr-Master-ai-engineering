@@ -8,6 +8,7 @@ from app.config import settings
 from app.guardrails.input import InputGuardrailViolation, check_input
 from app.prompts.loader import get_examples
 from app.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult, ExampleItem, ExampleFormat
+from app.services.cache_service import CachedEstimationService
 from app.services.estimation_service import EstimationService, _get_moderation_client
 from app.services.helpers.error_mapper import LLMServiceError
 
@@ -22,6 +23,13 @@ _GUARDRAIL_STATUS: dict[str, int] = {
 
 def get_estimation_service() -> EstimationService:
     return EstimationService()
+
+
+def get_cached_estimation_service() -> EstimationService | CachedEstimationService:
+    service = EstimationService()
+    if settings.cache_enabled:
+        return CachedEstimationService(service)
+    return service
 
 router = APIRouter(prefix="", tags=["estimations"])
 
@@ -50,7 +58,10 @@ def get_examples_endpoint():
 @router.post("/estimate", responses=_LLM_ERROR_RESPONSES)
 async def create_estimation(
     request: EstimationRequest,
-    service: Annotated[EstimationService, Depends(get_estimation_service)],
+    service: Annotated[
+        EstimationService | CachedEstimationService,
+        Depends(get_cached_estimation_service),
+    ],
     prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
 ) -> EstimationResponse:
     try:

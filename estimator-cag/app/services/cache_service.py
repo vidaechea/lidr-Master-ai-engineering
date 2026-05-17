@@ -8,8 +8,10 @@ import redis.asyncio as aioredis
 import structlog
 
 from app.cache.semantic import EstimationSemanticCache
-from app.config import settings
+from app.config import MODEL_REGISTRY, settings
 from app.schemas.estimation import EstimationRequest, EstimationResponse
+from app.services.helpers.prompt_builder import PromptBuilder
+from app.services.sessions import ConversationHistory, ProjectMetadata
 from app.services.estimation_service import EstimationService
 
 log = structlog.get_logger(__name__)
@@ -119,6 +121,91 @@ class CachedEstimationService:
         )
         digest = hashlib.sha256(payload.encode()).hexdigest()
         return f"llm:{digest}"
+
+    def _cache_key_multi_turn(
+        self,
+        request: EstimationRequest,
+        history: ConversationHistory,
+        prompt_version: str,
+        project_metadata: ProjectMetadata | None,
+    ) -> str:
+        payload = json.dumps(
+            {
+                "transcription": request.transcription,
+                "model": request.model or settings.llm_model,
+                "temperature": request.temperature,
+                "top_p": request.top_p,
+                "top_k": request.top_k,
+                "reasoning_effort": request.reasoning_effort,
+                "max_output_tokens": request.max_output_tokens,
+                "example_format": str(request.example_format),
+                "num_examples": request.num_examples,
+                "output_format": str(request.output_format),
+                "pre_call": request.pre_call,
+                "prompt_version": prompt_version,
+                "history": history.as_dicts(),
+                "project_metadata": (
+                    project_metadata.model_dump(mode="json")
+                    if project_metadata is not None
+                    else None
+                ),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        digest = hashlib.sha256(payload.encode()).hexdigest()
+        return f"llm:multi:{digest}"
+
+    def _cache_key_multi_turn_turn_exact(
+        self,
+        request: EstimationRequest,
+        prompt_version: str,
+    ) -> str:
+        """Exact key for the current user turn, independent of prior history.
+
+        This keeps session cache useful when the same transcript is submitted
+        again in the same conversation and history has already grown.
+        """
+        payload = json.dumps(
+            {
+                "transcription": request.transcription,
+                "model": request.model or settings.llm_model,
+                "temperature": request.temperature,
+                "top_p": request.top_p,
+                "top_k": request.top_k,
+                "reasoning_effort": request.reasoning_effort,
+                "max_output_tokens": request.max_output_tokens,
+                "example_format": str(request.example_format),
+                "num_examples": request.num_examples,
+                "output_format": str(request.output_format),
+                "pre_call": request.pre_call,
+                "prompt_version": prompt_version,
+            },
+            sort_keys=True,
+            default=str,
+        )
+        digest = hashlib.sha256(payload.encode()).hexdigest()
+        return f"llm:multi:turn:{digest}"
+
+    @staticmethod
+    def _append_history_for_cached_multi_turn(
+        request: EstimationRequest,
+        response: EstimationResponse,
+        history: ConversationHistory,
+        prompt_version: str,
+        project_metadata: ProjectMetadata | None,
+    ) -> None:
+        """Mirror history mutation done by EstimationService.estimate_multi_turn()."""
+        model_name = request.model or settings.llm_model
+        model_cfg = MODEL_REGISTRY[model_name]
+        builder = PromptBuilder(
+            request,
+            model_cfg,
+            prompt_version,
+            project_metadata=project_metadata,
+        )
+        history.add("user", builder.user_prompt)
+        history.add("assistant", response.estimation)
 
     # ------------------------------------------------------------------
     # Metrics helpers
@@ -276,6 +363,80 @@ class CachedEstimationService:
                 )
             except Exception as exc:
                 log.warning("semantic_cache_store_error", error=str(exc))
+
+        await self._record_metrics(hit=False, latency_ms=latency_ms)
+        return response
+
+    async def estimate_multi_turn(
+        self,
+        request: EstimationRequest,
+        history: ConversationHistory,
+        prompt_version: str = "v1",
+        project_metadata: ProjectMetadata | None = None,
+    ) -> EstimationResponse:
+        """Cache-aware wrapper for multi-turn estimations used by session routes.
+
+        Semantic cache is intentionally skipped for multi-turn because history and
+        evolving metadata strongly affect the response.
+        """
+        key = self._cache_key_multi_turn(request, history, prompt_version, project_metadata)
+        turn_key = self._cache_key_multi_turn_turn_exact(request, prompt_version)
+        t0 = time.perf_counter()
+
+        try:
+            cached = await self._get_redis().get(key)
+        except Exception as exc:
+            log.warning("cache_read_error", error=str(exc))
+            cached = None
+
+        if cached is None:
+            try:
+                cached = await self._get_redis().get(turn_key)
+            except Exception as exc:
+                log.warning("cache_read_error", error=str(exc))
+                cached = None
+
+        if cached:
+            raw = json.loads(cached)
+            cost_avoided = float(raw.get("turn_cost_usd") or 0.0)
+            latency_ms = (time.perf_counter() - t0) * 1000
+            log.info(
+                "cache_hit_multi_turn",
+                key_prefix=key[:16],
+                model=raw.get("model"),
+                latency_ms=round(latency_ms, 1),
+            )
+            await self._record_metrics(
+                hit=True,
+                latency_ms=latency_ms,
+                cost_avoided_usd=cost_avoided,
+            )
+            response = EstimationResponse.model_validate(raw)
+            response = response.model_copy(update={"cache_hit": True, "turn_cost_usd": 0.0})
+            self._append_history_for_cached_multi_turn(
+                request,
+                response,
+                history,
+                prompt_version,
+                project_metadata,
+            )
+            return response
+
+        log.info("cache_miss_multi_turn", key_prefix=key[:16])
+
+        response = await self._inner.estimate_multi_turn(
+            request,
+            history=history,
+            prompt_version=prompt_version,
+            project_metadata=project_metadata,
+        )
+        latency_ms = (time.perf_counter() - t0) * 1000
+
+        try:
+            await self._get_redis().setex(key, self._ttl, response.model_dump_json())
+            await self._get_redis().setex(turn_key, self._ttl, response.model_dump_json())
+        except Exception as exc:
+            log.warning("cache_write_error", error=str(exc))
 
         await self._record_metrics(hit=False, latency_ms=latency_ms)
         return response

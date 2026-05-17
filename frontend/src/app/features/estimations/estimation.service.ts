@@ -121,6 +121,19 @@ export interface SessionStateResponse {
   turn_count: number;
 }
 
+export interface CacheMetrics {
+  hits: number;
+  misses: number;
+  total: number;
+  hit_rate_pct: number;
+  cost_avoided_usd: number;
+  avg_latency_hit_ms: number | null;
+  avg_latency_miss_ms: number | null;
+  speedup_x: number | null;
+  stale_reports: number;
+  stale_rate_pct: number;
+}
+
 export interface EstimationCreate {
   transcription: string;
   project_id?: string;
@@ -232,6 +245,10 @@ export class EstimationService {
 
   getSessionState(sessionId: string) {
     return this.http.get<SessionStateResponse>(`${this.sessionsBase}/${sessionId}`);
+  }
+
+  getCacheMetrics() {
+    return this.http.get<CacheMetrics>(`${this.base}/cache/metrics`);
   }
 
   listSessions() {

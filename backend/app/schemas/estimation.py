@@ -124,6 +124,19 @@ class SessionEstimationOut(BaseModel):
     prompt_version: str
 
 
+class CacheMetricsOut(BaseModel):
+    hits: int
+    misses: int
+    total: int
+    hit_rate_pct: float
+    cost_avoided_usd: float
+    avg_latency_hit_ms: float | None
+    avg_latency_miss_ms: float | None
+    speedup_x: int | None
+    stale_reports: int
+    stale_rate_pct: float
+
+
 # ── Callback payload (ai-engine worker → business backend) ────────────────────
 
 
