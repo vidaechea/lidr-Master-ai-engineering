@@ -1,8 +1,8 @@
-"""Integration tests for the /estimate endpoint when llm_provider="litellm".
+"""Integration tests for the /estimate endpoint through the LiteLLM router pipeline.
 
 These tests verify that the full FastAPI→LiteLLMRouterService pipeline
-produces the same response contract as the OpenAI and Anthropic providers,
-without coupling to any specific upstream HTTP call.
+produces the correct response contract without coupling to any specific
+upstream HTTP call.
 
 The litellm.Router is mocked at construction time so no real API keys are needed.
 """
@@ -70,11 +70,9 @@ def _patch_litellm_router(mock_response: MagicMock):
 
 @pytest.fixture()
 def litellm_client(monkeypatch) -> TestClient:
-    """Test client with llm_provider forced to 'litellm'."""
-    from app.config import settings
+    """Test client for the LiteLLM router pipeline."""
     from app.main import app
 
-    monkeypatch.setattr(settings, "llm_provider", "litellm")
     return TestClient(app)
 
 

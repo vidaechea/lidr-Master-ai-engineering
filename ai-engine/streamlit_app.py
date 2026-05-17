@@ -494,9 +494,9 @@ if "_session_bootstrap_done" not in st.session_state:
     st.session_state._session_bootstrap_done = True
 
 if "litellm_primary" not in st.session_state:
-    st.session_state.litellm_primary = settings.litellm_primary_model
+    st.session_state.litellm_primary = settings.llm_model
 if "litellm_fallback" not in st.session_state:
-    st.session_state.litellm_fallback = settings.litellm_fallback_model
+    st.session_state.litellm_fallback = settings.llm_fallback
 
 _get_event_loop()
 

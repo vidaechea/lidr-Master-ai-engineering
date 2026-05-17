@@ -60,8 +60,7 @@ class Settings(BaseSettings):
 
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
-    llm_model: LLMModel = "gpt-4o-mini"
-    llm_provider: str = "openai"
+    llm_model: str = "gpt-4o-mini"
     app_env: str = "development"
     log_level: str = "DEBUG"
     example_fixture: Optional[Literal["short", "long"]] = None
@@ -89,9 +88,8 @@ class Settings(BaseSettings):
     router_allowed_fails: int = 3
     router_cooldown_time: int = 30
 
-    # LiteLLM Router — primary and fallback model names
-    litellm_primary_model: str = "gpt-4o-mini"
-    litellm_fallback_model: str = "anthropic/claude-haiku-4-5-20251001"
+    # LiteLLM Router — primary and fallback model names (from LLM_MODEL / LLM_FALLBACK env vars)
+    llm_fallback: str = "claude-haiku-4-5-20251001"
 
     # Internal service auth — set to require X-Internal-API-Key on all /api/* routes.
     # Leave empty in local development to allow open access.
@@ -111,11 +109,13 @@ _FALLBACK_MODEL = "fallback"
 def build_model_list(primary_model: str | None = None, fallback_model: str | None = None) -> list[dict]:
     """Build the LiteLLM Router model_list from the given primary/fallback models.
 
-    Falls back to ``settings.litellm_primary_model`` / ``settings.litellm_fallback_model``
-    when arguments are not provided.
+    Falls back to ``settings.llm_model`` / ``settings.llm_fallback`` (env vars
+    ``LLM_MODEL`` / ``LLM_FALLBACK``) when arguments are not provided.
     """
-    primary = primary_model or settings.litellm_primary_model
-    fallback = fallback_model or settings.litellm_fallback_model
+    primary_key = primary_model or settings.llm_model
+    fallback_key = fallback_model or settings.llm_fallback
+    primary = MODEL_REGISTRY[primary_key].litellm_model if primary_key in MODEL_REGISTRY else primary_key
+    fallback = MODEL_REGISTRY[fallback_key].litellm_model if fallback_key in MODEL_REGISTRY else fallback_key
 
     # Resolve API key: Anthropic models use the anthropic key, all others use OpenAI key.
     def _api_key(model: str) -> str | None:
