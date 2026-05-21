@@ -6,7 +6,7 @@ from pathlib import Path
 import structlog
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from app.schemas.estimation import EstimationExample, EstimationRequest, ExampleFormat
+from app.schemas.estimation import EstimationExample, EstimationRequest, ExampleFormat, UserTier
 from app.services.sessions import ProjectMetadata
 
 log = structlog.get_logger(__name__)
@@ -22,17 +22,21 @@ _ENV = Environment(
 _EXAMPLES_CACHE: dict[str, list[EstimationExample]] = {}
 
 
-def _load_examples_from_template(version: str = "v1") -> list[EstimationExample]:
-    """Load estimation examples from the examples_data.json template."""
-    if version in _EXAMPLES_CACHE:
-        return _EXAMPLES_CACHE[version]
-    
-    template_path = f"estimation/{version}/examples_data.json"
+def _load_examples_from_template(template_dir: str) -> list[EstimationExample]:
+    """Load estimation examples from examples_data.json at estimation/{template_dir}/.
+
+    Args:
+        template_dir: Path relative to estimation/, e.g. "developer/v1" or "pm/v2".
+    """
+    if template_dir in _EXAMPLES_CACHE:
+        return _EXAMPLES_CACHE[template_dir]
+
+    template_path = f"estimation/{template_dir}/examples_data.json"
     try:
         template = _ENV.get_template(template_path)
         json_data = template.render()
         data = json.loads(json_data)
-        
+
         examples = [
             EstimationExample(
                 title=ex["title"],
@@ -46,17 +50,23 @@ def _load_examples_from_template(version: str = "v1") -> list[EstimationExample]
             )
             for ex in data
         ]
-        _EXAMPLES_CACHE[version] = examples
-        log.debug("examples_loaded_from_template", version=version, count=len(examples))
+        _EXAMPLES_CACHE[template_dir] = examples
+        log.debug("examples_loaded_from_template", template_dir=template_dir, count=len(examples))
         return examples
     except Exception as e:
-        log.error("failed_to_load_examples_from_template", version=version, error=str(e))
+        log.error("failed_to_load_examples_from_template", template_dir=template_dir, error=str(e))
         return []
 
 
-def get_examples(version: str = "v1") -> list[EstimationExample]:
-    """Get estimation examples for a given template version."""
-    return _load_examples_from_template(version)
+def get_examples(version: str = "v1", tier: str | None = None) -> list[EstimationExample]:
+    """Get estimation examples for a given tier and version.
+
+    Args:
+        version: Template version, e.g. "v1" or "v2".
+        tier: User tier key ("developer", "pm", "executive"). Defaults to "developer".
+    """
+    resolved_tier = tier or "developer"
+    return _load_examples_from_template(f"{resolved_tier}/{version}")
 
 
 def format_examples_for_prompt(
@@ -127,22 +137,36 @@ def format_examples_for_prompt(
 def render_estimation_prompt(
     request: EstimationRequest,
     version: str = "v1",
+    tier: UserTier | None = None,
     project_metadata: ProjectMetadata | None = None,
 ) -> tuple[str, str]:
     """Render the system and user prompts for an estimation request.
-    
+
+    When *tier* is provided the tier-specific template folder takes precedence
+    over the versioned folder (``estimation/{tier.value}/``).  This implements
+    the "same pipeline, different template" pattern without changing any other
+    service logic.
+
     Args:
         request: EstimationRequest with transcription, output_format, detail_level, etc.
-        version: Template version (default "v1").
-    
+        version: Template version (default "v1"). Used only when tier is None.
+        tier: Optional UserTier that selects the per-profile template folder.
+
     Returns:
         Tuple of (system_prompt, user_prompt) ready to send to the model.
     """
-    template_root = f"estimation/{version}"
+    if tier is not None:
+        template_root = f"estimation/{tier.value}/{version}"
+        examples_key = f"{tier.value}/{version}"
+    else:
+        # No tier context: default to developer so the path is always valid.
+        template_root = f"estimation/developer/{version}"
+        examples_key = f"developer/{version}"
+
     system_template = _ENV.get_template(f"{template_root}/system.j2")
     user_template = _ENV.get_template(f"{template_root}/user.j2")
 
-    examples = get_examples(version)
+    examples = _load_examples_from_template(examples_key)
     selected_examples = examples[: request.num_examples]
     formatted_examples = format_examples_for_prompt(selected_examples, fmt=request.example_format)
 
@@ -159,14 +183,15 @@ def render_estimation_prompt(
 
     system_prompt = system_template.render(**context).strip()
     user_prompt = user_template.render(**context).strip()
-    
+
     log.debug(
         "prompts_rendered",
         version=version,
+        tier=tier.value if tier else None,
         system_prompt_len=len(system_prompt),
         user_prompt_len=len(user_prompt),
     )
-    
+
     return system_prompt, user_prompt
 
 

@@ -20,6 +20,7 @@ Estimator is a web application that generates software development effort estima
 - 📊 **Complete REST API** with Swagger/OpenAPI
 - 🎨 **Modern Angular UI** with responsive design
 - 🤖 **Async processing** with ARQ worker
+- 🎯 **Tier-based adaptive prompts**: Developer / PM / Executive audiences receive distinct, role-specific system prompts selected automatically from the JWT claim
 
 ---
 
@@ -181,6 +182,7 @@ Internal service that receives a meeting transcription and returns effort estima
 
 **Responsibilities:**
 - CAG pipeline: build system prompt with examples + call LLM + validate result
+- **Tier-based adaptive prompts**: resolves `estimation/{tier}/{version}/system.j2` based on the `tier` JWT claim — `developer`, `pm`, or `executive`
 - Multi-model routing via LiteLLM (OpenAI, Anthropic)
 - Exact caching with Redis (SHA-256 key on transcription + params, TTL 24h)
 - Cost calculation per call (MODEL_REGISTRY with per-token pricing)

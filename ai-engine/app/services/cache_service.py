@@ -9,7 +9,7 @@ import structlog
 
 from app.cache.semantic import EstimationSemanticCache
 from app.config import MODEL_REGISTRY, settings
-from app.schemas.estimation import EstimationRequest, EstimationResponse
+from app.schemas.estimation import EstimationRequest, EstimationResponse, UserTier
 from app.services.helpers.prompt_builder import PromptBuilder
 from app.services.sessions import ConversationHistory, ProjectMetadata
 from app.services.estimation_service import EstimationService
@@ -294,7 +294,8 @@ class CachedEstimationService:
     # ------------------------------------------------------------------
 
     async def estimate(
-        self, request: EstimationRequest, prompt_version: str = "v1"
+        self, request: EstimationRequest, prompt_version: str = "v1",
+        tier: UserTier | None = None,
     ) -> EstimationResponse:
         key = self._cache_key(request, prompt_version)
         t0 = time.perf_counter()
@@ -346,7 +347,7 @@ class CachedEstimationService:
         # -------------------------------------------------------------------
         # Layer 3: LLM call
         # -------------------------------------------------------------------
-        response = await self._inner.estimate(request, prompt_version=prompt_version)
+        response = await self._inner.estimate(request, prompt_version=prompt_version, tier=tier)
         latency_ms = (time.perf_counter() - t0) * 1000
 
         # Persist in exact cache

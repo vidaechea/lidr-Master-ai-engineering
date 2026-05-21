@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     # Leave empty in local development to allow open access.
     internal_api_key: Optional[str] = None
 
+    # JWT verification — must match the backend's secret_key and algorithm so the
+    # ai-engine can extract the tier claim from the Bearer token without a DB lookup.
+    secret_key: str = "changeme-use-env-in-production"
+    algorithm: str = "HS256"
+
 
 settings = Settings()
 

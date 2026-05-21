@@ -1,0 +1,26 @@
+[
+  {
+    "title": "Dispatch Operations Dashboard",
+    "meeting_summary": "A regional logistics company needs a dispatch dashboard to assign drivers, track deliveries in real time, and generate daily performance reports. The system must integrate with their existing fleet API and support dispatcher and manager roles.",
+    "breakdown": [
+      {"task": "Total investment", "hours": 272, "cost_eur": 17000}
+    ],
+    "total_hours": 272,
+    "total_cost_eur": 17000,
+    "team": ["Cross-functional delivery team (4 people)"],
+    "duration_weeks": 12,
+    "estimation_markdown": "## Investment Summary: Dispatch Operations Dashboard\n\nWe propose building a real-time dispatch operations platform for your logistics network. The solution will allow dispatchers to assign drivers, monitor live delivery status, and generate daily performance reports — replacing the current manual coordination process. Total investment: **17,000 EUR** over **12 weeks**.\n\n### Key Deliverables\n\n- Real-time dispatch dashboard accessible to dispatchers and managers\n- Automated daily performance reports with CSV export\n- Integration with your existing fleet tracking API\n- Role-based access: dispatcher view vs. manager view\n- Production-ready system with monitoring and documentation\n\n### Timeline\n\nGo-live in **12 weeks** from kick-off, subject to timely provision of fleet API access (required by end of week 2).\n\n### Business Risks\n\n- **Third-party dependency:** Integration timeline depends on the Fleet API provider's responsiveness. Delay here cascades to the go-live date.\n- **Scope expansion:** Any new feature requests after week 4 will require a change request and may extend the timeline.\n- **Change management:** Dispatcher adoption requires a 1-day training session not included in this estimate.\n\n### Indicative ROI\n\nBased on reducing manual dispatch coordination by an estimated 2 hours/day per dispatcher (4 dispatchers), the system pays back within 8 months at current staffing costs.\n\n### Recommended Next Step\n\nApprove the budget and schedule a kick-off workshop for the first week of the engagement."
+  },
+  {
+    "title": "HR Employee Onboarding Portal",
+    "meeting_summary": "An HR department needs an internal web portal to automate the onboarding of new hires. The portal should manage document collection, task assignments, and integrate with their Active Directory for SSO and Slack for notifications.",
+    "breakdown": [
+      {"task": "Total investment", "hours": 228, "cost_eur": 14250}
+    ],
+    "total_hours": 228,
+    "total_cost_eur": 14250,
+    "team": ["Cross-functional delivery team (3 people)"],
+    "duration_weeks": 9,
+    "estimation_markdown": "## Investment Summary: HR Employee Onboarding Portal\n\nWe propose building an automated onboarding portal that replaces the current manual HR process for new-hire intake, document collection, and task coordination. The system will integrate with your existing Active Directory and Slack infrastructure. Total investment: **14,250 EUR** over **9 weeks**.\n\n### Key Deliverables\n\n- Self-service onboarding portal for new hires with guided document submission\n- Automated task assignment to HR, IT, and manager on each new hire\n- Single sign-on via Active Directory — no separate credentials\n- Slack notifications for onboarding milestones and overdue tasks\n- HR admin dashboard with onboarding status tracking\n\n### Timeline\n\nGo-live in **9 weeks** from kick-off, contingent on IT providing Active Directory access credentials by week 2.\n\n### Business Risks\n\n- **IT dependency:** Active Directory integration requires IT security review, which may add up to one week.\n- **Adoption:** New-hire experience depends on HR completing content setup before go-live.\n- **Scope creep:** E-signature functionality was mentioned informally; if required, it adds approximately 30 hours and one week.\n\n### Indicative ROI\n\nEstimated 3 hours saved per new hire in HR coordination. At 20 hires per month, payback is achieved in under 3 months.\n\n### Recommended Next Step\n\nApprove the budget and confirm IT availability for the Active Directory integration in week 2."
+  }
+]

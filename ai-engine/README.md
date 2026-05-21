@@ -46,6 +46,7 @@ Every `POST /api/v1/estimate` request flows through three layers:
 ## Features
 
 - ✅ **CAG Pipeline** — Curated examples in system prompt for consistent output
+- ✅ **Tier-Based Adaptive Prompts** — Developer / PM / Executive audiences get distinct system prompts from JWT claim
 - ✅ **Typed Responses** — Validated `EstimationResult` with phases, costs, duration, confidence
 - ✅ **Multi-Provider** — OpenAI, Anthropic via LiteLLM; switch models per-request
 - ✅ **Redis Caching** — Identical requests served from cache without LLM calls
@@ -86,10 +87,19 @@ ai-engine/
 │   │   └── output.py
 │   ├── cache/                          # Caching utilities
 │   │   └── semantic.py
-│   └── prompts/
-│       ├── loader.py
-│       ├── estimation/v1/              # system.j2, user.j2, examples.j2, examples_data.json
-│       ├── estimation/v2/              # system.j2, user.j2, examples.j2, examples_data.json
+   ├── dependencies.py                 # get_request_tier() — extracts UserTier from JWT
+   └── prompts/
+       ├── loader.py
+       ├── estimation/
+       │   ├── developer/
+       │   │   ├── v1/                 # system.j2, user.j2, examples.j2, examples_data.json (3 examples)
+       │   │   └── v2/                 # enhanced version + Confidence Level (1 example)
+       │   ├── pm/
+       │   │   ├── v1/                 # milestone-oriented prompt (2 examples)
+       │   │   └── v2/                 # + Confidence Level
+       │   └── executive/
+       │       ├── v1/                 # ROI/investment-focused prompt (2 examples)
+       │       └── v2/                 # + Confidence Level
 │       └── requirements_extraction/v1/ # pre-call templates
 ├── tests/
 │   ├── __init__.py
@@ -103,6 +113,36 @@ ai-engine/
 ├── docker-compose.yml                  # Local stack (API + Redis)
 └── Dockerfile                          # Production image
 ```
+
+---
+
+## Tier-Based Adaptive Prompts
+
+Every estimation request uses a **system prompt tailored to the caller's role**. The tier is read from the `tier` claim of the Bearer JWT — it is never accepted as a body parameter.
+
+| Tier | Audience | Prompt focus |
+|------|----------|--------------|
+| `developer` | Engineers & architects | Technical breakdown — tasks, roles, subtasks, risks |
+| `pm` | Project managers | Milestone-oriented — phases, dependencies, timeline |
+| `executive` | Stakeholders | ROI / investment summary — cost, value, strategic risks |
+
+### How it works
+
+```
+JWT (backend login)
+  └─ tier claim ──► get_request_tier() ──► TierDep ──► PromptBuilder
+                                                              │
+                             estimation/{tier}/v{n}/system.j2 ◄─┘
+```
+
+1. **Backend** embeds `tier` into the access token at login (`create_access_token(user_id, tier)`).
+2. **AI engine** extracts it via `get_request_tier()` (`app/dependencies.py`) — invalid or missing tokens fall back to `developer`.
+3. **`PromptBuilder`** resolves `prompts/estimation/{tier}/{version}/system.j2` and injects the matching CAG examples.
+4. The same `EstimationRequest` schema is used for all tiers — the response format (`EstimationResult`, `EstimationResponse`) does not change.
+
+### Security principle — tier never from client body
+
+`EstimationRequest` has **no `tier` field**. Injecting `"tier": "executive"` in the JSON body is rejected (422) or silently ignored. The only trusted source is the signed JWT.
 
 ---
 
@@ -136,10 +176,13 @@ ai-engine/
 
 ### Sync Estimation
 
+The `Authorization` header carries the JWT issued by the backend. The `tier` claim inside it selects the system prompt automatically.
+
 **Request:**
 ```bash
 curl -X POST http://localhost:8001/api/v1/estimate \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <access_token>" \
   -d '{
     "transcription": "In the meeting we discussed building a mobile app with auth...",
     "model": "gpt-4o-mini",
@@ -312,22 +355,24 @@ The API and UI automatically pick up the new model.
 
 ### Modifying Prompts
 
-Prompts are Jinja2 templates in `app/prompts/`. Two versions are available:
+Prompts are Jinja2 templates in `app/prompts/estimation/{tier}/{version}/`. Each tier (`developer`, `pm`, `executive`) contains two versions:
 
-- **v1**: Original CAG format
-- **v2**: Enhanced version with improved structure
+- **v1**: Standard CAG format with curated examples
+- **v2**: Enhanced version adding Confidence Level and numbered estimation rules
 
-Edit `system.j2` or `user.j2`, then test:
+Edit `system.j2` or `user.j2` inside the relevant tier folder, then test:
 
 ```bash
 uv run python -c "
 from app.services.helpers.prompt_builder import PromptBuilder
-from app.schemas.estimation import EstimationRequest
+from app.schemas.estimation import EstimationRequest, UserTier
 
-builder = PromptBuilder()
-request = EstimationRequest(transcription='test', prompt_version='v2')
-prompts = builder.build(request)
-print(prompts['system'][:200])
+request = EstimationRequest(transcription='test transcription')
+
+for tier in UserTier:
+    builder = PromptBuilder(request, model_cfg=None, version='v1', tier=tier)
+    system, _ = builder.render()
+    print(f'{tier.value}: {system[:80]}...')
 "
 ```
 

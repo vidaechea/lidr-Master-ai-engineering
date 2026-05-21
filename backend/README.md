@@ -79,7 +79,7 @@ backend/
 ### Models (`models/`)
 
 **User** — Registered application users
-- Fields: `id`, `email` (unique), `password_hash`, `created_at`, `updated_at`
+- Fields: `id`, `email` (unique), `password_hash`, `tier` (`developer` / `pm` / `executive`), `created_at`, `updated_at`
 - Relations: One-to-many with `Project`
 
 **Project** — Collections of estimations per user
@@ -102,7 +102,7 @@ backend/
 ### Services (`services/`)
 
 **AuthService**
-- JWT token generation and validation
+- JWT token generation and validation — embeds `tier` claim at login so the AI engine can select the appropriate system prompt
 - Password hashing with bcrypt
 - OAuth2 integration (extensible)
 - User registration and login logic

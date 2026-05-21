@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.config import ModelConfig
 from app.prompts.loader import render_estimation_prompt
-from app.schemas.estimation import EstimationRequest
+from app.schemas.estimation import EstimationRequest, UserTier
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.sessions import ProjectMetadata
 
@@ -15,12 +15,13 @@ class PromptBuilder:
         request: EstimationRequest,
         model_cfg: ModelConfig,
         prompt_version: str = "v1",
+        tier: UserTier | None = None,
         project_metadata: ProjectMetadata | None = None,
     ) -> None:
         self._request = request
         self._model_cfg = model_cfg
         self._system_prompt, self._user_prompt = render_estimation_prompt(
-            request, version=prompt_version, project_metadata=project_metadata
+            request, version=prompt_version, tier=tier, project_metadata=project_metadata
         )
 
     @property

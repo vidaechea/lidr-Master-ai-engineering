@@ -15,6 +15,7 @@ from app.schemas.estimation import (
     EstimationResponse,
     EstimationResult,
     ExtractedRequirements,
+    UserTier,
 )
 from app.services.helpers.cost_calculator import CostCalculator
 from app.services.helpers.error_mapper import LLMServiceError
@@ -53,6 +54,7 @@ class EstimationService:
 
     async def estimate(
         self, request: EstimationRequest, prompt_version: str = "v1",
+        tier: UserTier | None = None,
         project_metadata: ProjectMetadata | None = None,
     ) -> EstimationResponse:
         await asyncio.to_thread(
@@ -63,7 +65,7 @@ class EstimationService:
         model_name = request.model or settings.llm_model
         model_cfg = MODEL_REGISTRY[model_name]
 
-        builder = PromptBuilder(request, model_cfg, prompt_version, project_metadata=project_metadata)
+        builder = PromptBuilder(request, model_cfg, prompt_version, tier=tier, project_metadata=project_metadata)
         builder.validate_context_window()
 
         estimated_input_tokens = builder.estimated_input_tokens
@@ -124,12 +126,14 @@ class EstimationService:
             pre_call_cost_usd=pre_call_cost_usd,
             validation=validation,
             prompt_version=prompt_version,
+            tier=tier,
         )
 
     async def estimate_stream(
         self,
         request: EstimationRequest,
         prompt_version: str = "v1",
+        tier: UserTier | None = None,
         response_out: list[EstimationResponse] | None = None,
     ) -> AsyncIterator[str]:
         """Stream estimation deltas directly from the LLM.
@@ -146,7 +150,7 @@ class EstimationService:
         model_name = request.model or settings.llm_model
         model_cfg = MODEL_REGISTRY[model_name]
 
-        builder = PromptBuilder(request, model_cfg, prompt_version)
+        builder = PromptBuilder(request, model_cfg, prompt_version, tier=tier)
         builder.validate_context_window()
 
         log.info(
@@ -337,7 +341,7 @@ class EstimationService:
         )
 
     async def estimate_structured(
-        self, request: EstimationRequest, prompt_version: str = "v1"
+        self, request: EstimationRequest, prompt_version: str = "v1", tier: UserTier | None = None
     ) -> tuple[EstimationResult, EstimationResponse]:
         """Use instructor + litellm Router to produce a structured EstimationResult.
 
@@ -354,7 +358,7 @@ class EstimationService:
         model_name = request.model or settings.llm_model
         model_cfg = MODEL_REGISTRY[model_name]
 
-        builder = PromptBuilder(request, model_cfg, prompt_version)
+        builder = PromptBuilder(request, model_cfg, prompt_version, tier=tier)
         builder.validate_context_window()
 
         estimated_input_tokens = builder.estimated_input_tokens

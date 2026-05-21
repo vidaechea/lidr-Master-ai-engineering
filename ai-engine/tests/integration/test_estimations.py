@@ -1,7 +1,9 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from jose import jwt
 
 from app.prompts.loader import get_examples
 
@@ -781,4 +783,117 @@ class TestGuardrailsHTTPContract:
             )
         assert response.status_code == 200
         assert response.json()["estimation"] == FAKE_OUTPUT
+
+
+# --------------------------------------------------------------------------- #
+# POST /api/v1/estimate — tier propagation from JWT
+# --------------------------------------------------------------------------- #
+
+def _make_tier_token(tier: str) -> str:
+    """Create a signed JWT with the given tier claim using the app's default secret."""
+    from app.config import settings
+    payload = {
+        "sub": "test-user",
+        "tier": tier,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
+    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+
+
+def _capture_system_prompt(client: TestClient, headers: dict | None = None) -> str:
+    """POST /estimate, capture the system prompt that was sent to the LLM."""
+    complete_mock = AsyncMock(return_value=_make_litellm_mock())
+    with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock):
+        client.post(
+            "/api/v1/estimate",
+            json={"transcription": VALID_TRANSCRIPTION},
+            headers=headers or {},
+        )
+    return complete_mock.call_args.kwargs["messages"][0]["content"]
+
+
+class TestTierPropagation:
+    """Tier must come from the JWT claim, never from the request body."""
+
+    def test_no_jwt_falls_back_to_developer_template(self, client: TestClient):
+        system = _capture_system_prompt(client)
+        assert "technical" in system.lower() or "engineer" in system.lower()
+
+    def test_pm_jwt_uses_pm_template(self, client: TestClient):
+        token = _make_tier_token("pm")
+        system = _capture_system_prompt(client, headers={"Authorization": f"Bearer {token}"})
+        assert "milestone" in system.lower() or "project manager" in system.lower()
+
+    def test_executive_jwt_uses_executive_template(self, client: TestClient):
+        token = _make_tier_token("executive")
+        system = _capture_system_prompt(client, headers={"Authorization": f"Bearer {token}"})
+        assert "executive" in system.lower() or "investment" in system.lower()
+
+    def test_developer_jwt_uses_developer_template(self, client: TestClient):
+        token = _make_tier_token("developer")
+        system = _capture_system_prompt(client, headers={"Authorization": f"Bearer {token}"})
+        assert "technical" in system.lower() or "engineer" in system.lower()
+
+    def test_different_tiers_produce_different_system_prompts(self, client: TestClient):
+        dev_system = _capture_system_prompt(
+            client, headers={"Authorization": f"Bearer {_make_tier_token('developer')}"}
+        )
+        pm_system = _capture_system_prompt(
+            client, headers={"Authorization": f"Bearer {_make_tier_token('pm')}"}
+        )
+        exec_system = _capture_system_prompt(
+            client, headers={"Authorization": f"Bearer {_make_tier_token('executive')}"}
+        )
+        assert dev_system != pm_system
+        assert pm_system != exec_system
+        assert dev_system != exec_system
+
+    def test_tier_field_in_body_is_rejected_or_ignored(self, client: TestClient):
+        """Client cannot escalate tier by injecting it in the request body.
+
+        Sending ``tier=executive`` in the body must:
+        - Either be rejected with 422 (Pydantic rejects unknown field), or
+        - Be silently ignored and the response still uses developer template
+          (because EstimationRequest has no tier field).
+        """
+        complete_mock = AsyncMock(return_value=_make_litellm_mock())
+        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION, "tier": "executive"},
+            )
+        # Either rejected outright or silently ignored (not 5xx)
+        assert response.status_code in (200, 422)
+        if response.status_code == 200:
+            # If accepted, tier must have been ignored — system prompt must be developer-level
+            system = complete_mock.call_args.kwargs["messages"][0]["content"]
+            assert "technical" in system.lower() or "engineer" in system.lower()
+
+    def test_invalid_jwt_falls_back_to_developer(self, client: TestClient):
+        system = _capture_system_prompt(
+            client, headers={"Authorization": "Bearer this.is.not.a.valid.jwt"}
+        )
+        assert "technical" in system.lower() or "engineer" in system.lower()
+
+    def test_returns_200_with_pm_jwt(self, client: TestClient):
+        token = _make_tier_token("pm")
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+
+    def test_returns_200_with_executive_jwt(self, client: TestClient):
+        token = _make_tier_token("executive")
+        mock_response = _make_litellm_mock()
+        with _patch_litellm_complete(mock_response):
+            response = client.post(
+                "/api/v1/estimate",
+                json={"transcription": VALID_TRANSCRIPTION},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
 

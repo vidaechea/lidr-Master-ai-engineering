@@ -5,6 +5,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.config import settings
+from app.dependencies import TierDep
 from app.guardrails.input import InputGuardrailViolation, check_input
 from app.prompts.loader import get_examples
 from app.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult, ExampleItem, ExampleFormat
@@ -46,9 +47,12 @@ _LLM_ERROR_RESPONSES = {
 
 
 @router.get("/examples", response_model=list[ExampleItem])
-def get_examples_endpoint():
-    examples = get_examples()
-    log.debug("examples_requested", count=len(examples))
+def get_examples_endpoint(
+    tier: Annotated[str, Query(description="User tier: developer | pm | executive")] = "developer",
+    version: Annotated[str, Query(description="Prompt template version: v1 | v2")] = "v1",
+):
+    examples = get_examples(version=version, tier=tier)
+    log.debug("examples_requested", tier=tier, version=version, count=len(examples))
     return [
         ExampleItem(title=ex.title, meeting_summary=ex.meeting_summary, estimation_markdown=ex.estimation_markdown)
         for ex in examples
@@ -62,10 +66,11 @@ async def create_estimation(
         EstimationService | CachedEstimationService,
         Depends(get_cached_estimation_service),
     ],
+    tier: TierDep,
     prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
 ) -> EstimationResponse:
     try:
-        return await service.estimate(request, prompt_version=prompt_version)
+        return await service.estimate(request, prompt_version=prompt_version, tier=tier)
     except InputGuardrailViolation as exc:
         raise HTTPException(
             status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
@@ -82,6 +87,7 @@ async def create_estimation(
 async def create_estimation_stream(
     request: EstimationRequest,
     service: Annotated[EstimationService, Depends(get_estimation_service)],
+    tier: TierDep,
     prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
 ) -> StreamingResponse:
     log.info("estimation_stream_requested", transcription_chars=len(request.transcription))
@@ -101,7 +107,7 @@ async def create_estimation_stream(
 
     async def generate():
         try:
-            async for delta in service.estimate_stream(request, prompt_version=prompt_version):
+            async for delta in service.estimate_stream(request, prompt_version=prompt_version, tier=tier):
                 yield delta
         except LLMServiceError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message)
@@ -117,6 +123,7 @@ async def create_estimation_stream(
 async def create_structured_estimation(
     request: EstimationRequest,
     service: Annotated[EstimationService, Depends(get_estimation_service)],
+    tier: TierDep,
     prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
 ) -> EstimationResponse:
     """Like /estimate but uses instructor + litellm Router to enforce a typed
@@ -126,7 +133,7 @@ async def create_structured_estimation(
     breakdown, and a rendered markdown ``estimation`` field for display.
     """
     try:
-        _, response = await service.estimate_structured(request, prompt_version=prompt_version)
+        _, response = await service.estimate_structured(request, prompt_version=prompt_version, tier=tier)
         return response
     except InputGuardrailViolation as exc:
         raise HTTPException(

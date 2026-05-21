@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Annotated, Literal, Optional, Union
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.config import LLMModel
 from app.config import settings as _settings
@@ -225,6 +225,85 @@ class StructureCheck(BaseModel):
 EstimationValidation = StructureCheck
 
 
+# ---------------------------------------------------------------------------
+# Tier — product dimension, not authorization
+# ---------------------------------------------------------------------------
+
+class UserTier(str, Enum):
+    DEVELOPER = "developer"
+    PM = "pm"
+    EXECUTIVE = "executive"
+
+
+# ── Per-tier output schemas ──────────────────────────────────────────────────
+
+
+class TaskDetail(BaseModel):
+    """A single implementation task within a phase (developer tier)."""
+    name: str
+    hours: int
+    cost_eur: int
+    role: str
+    notes: str | None = None
+
+
+class PhaseDetail(BaseModel):
+    """A development phase with granular task breakdown (developer tier)."""
+    name: str
+    tasks: list[TaskDetail]
+    subtotal_hours: int
+    subtotal_cost_eur: int
+    duration_weeks: int
+
+
+class DeveloperEstimate(BaseModel):
+    """Granular technical breakdown: phases → tasks, hours per role, risks, assumptions."""
+    phases: list[PhaseDetail]
+    total_hours: int
+    total_cost_eur: int
+    team_composition: list[str]
+    duration_weeks: int
+    technical_risks: list[str]
+    assumptions: list[str]
+
+
+class Milestone(BaseModel):
+    """A delivery milestone with linked deliverables and dependencies (pm tier)."""
+    name: str
+    week: int
+    deliverables: list[str]
+    dependencies: list[str] = []
+
+
+class PmEstimate(BaseModel):
+    """Milestone-oriented: phases, dependencies, resource plan, delivery timeline."""
+    phases: list[Phase]
+    milestones: list[Milestone]
+    total_hours: int
+    total_cost_eur: int
+    team_by_phase: dict[str, list[str]]
+    duration_weeks: int
+    dependencies: list[str]
+    management_risks: list[str]
+
+
+class ExecutiveEstimate(BaseModel):
+    """Investment summary: total investment, indicative ROI, business risks, go-live."""
+    investment_summary: str
+    total_cost_eur: int
+    duration_weeks: int
+    key_deliverables: list[str]
+    business_risks: list[str]
+    indicative_roi: str | None = None
+    recommended_next_step: str | None = None
+
+
+TierEstimate = Annotated[
+    Union[DeveloperEstimate, PmEstimate, ExecutiveEstimate],
+    Field(discriminator=None),  # no discriminator — resolved at service layer
+]
+
+
 class EstimationResponse(BaseModel):
     estimation: str
     model: str
@@ -239,5 +318,7 @@ class EstimationResponse(BaseModel):
     pre_call_cost_usd: float | None
     validation: StructureCheck | None
     prompt_version: str
+    tier: UserTier | None = None
     structured_result: Optional[EstimationResult] = None
     extracted_requirements: Optional[ExtractedRequirements] = None
+    tier_result: Optional[Union[DeveloperEstimate, PmEstimate, ExecutiveEstimate]] = None
