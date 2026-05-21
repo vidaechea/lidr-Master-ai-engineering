@@ -23,6 +23,7 @@ dependencies = [
     "structlog>=25.5.0",
     "tiktoken>=0.12.0",
     "uvicorn>=0.46.0",
+    "deepeval>=4.0.3",
 ]
 
 [dependency-groups]
@@ -32,8 +33,13 @@ dev = [
     "httpx>=0.27.0",
     "pytest-mock>=3.14.0",
     "pytest-cov>=7.1.0",
+    "deepeval>=2.0.0",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow — multiple LLM calls per case (deselect with '-m \"not slow\"')",
+    "llm_live: marks tests that make real LLM API calls (requires valid API keys in env)",
+]

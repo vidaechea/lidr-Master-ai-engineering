@@ -386,7 +386,21 @@ Tests use in-memory SQLite — no PostgreSQL or active `ai-engine` required. HTT
 
 ```bash
 cd ai-engine
-uv run pytest tests/ -v
+
+# Family 1 — Hard determinism (fast, no API keys needed)
+uv run pytest tests/unit/ tests/integration/ -v
+
+# Exclude slow tests explicitly
+uv run pytest tests/ -m "not slow" -v
+
+# Family 2 — Soft determinism (requires API keys, ~9 LLM calls)
+uv run pytest tests/eval/test_soft_determinism.py -m "slow and llm_live" -v
+
+# Family 3 — LLM-as-judge via DeepEval (~12 LLM calls)
+uv run pytest tests/eval/test_llm_judge.py -m "slow and llm_live" -v
+
+# Full eval suite (pre-merge)
+uv run pytest tests/ -m "slow and llm_live" -v
 ```
 
 ---

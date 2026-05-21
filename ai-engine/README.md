@@ -314,11 +314,23 @@ uv run streamlit run streamlit_app.py  # UI at http://localhost:8501
 
 ### Running Tests
 
+The test suite is organised into **three families** following the LLM testing pyramid:
+
+| Family | Location | LLM calls | When to run |
+|--------|----------|-----------|-------------|
+| **1 — Hard determinism** | `tests/unit/`, `tests/integration/` | None (all mocked) | Every commit, local and CI |
+| **2 — Soft determinism** | `tests/eval/test_soft_determinism.py` | Real (N runs per golden) | Pre-merge in CI |
+| **3 — LLM-as-judge** | `tests/eval/test_llm_judge.py` | Real (2 calls per case) | Pre-merge in CI |
+
+Families 2 and 3 are gated behind two pytest marks — `slow` and `llm_live` — and require valid API keys in the environment.
+
 ```bash
 cd ai-engine
 
-# All tests
-uv run pytest tests/ -v
+# ── Family 1 — Hard determinism (fast, no API keys needed) ──────────────────
+
+# All hard tests (unit + integration)
+uv run pytest tests/unit/ tests/integration/ -v
 
 # Unit tests only
 uv run pytest tests/unit/ -v
@@ -326,12 +338,44 @@ uv run pytest tests/unit/ -v
 # Integration tests only
 uv run pytest tests/integration/ -v
 
-# Specific test file
-uv run pytest tests/unit/test_estimation_service.py -v
+# Explicit exclusion of slow tests (same result, useful in scripts)
+uv run pytest tests/ -m "not slow" -v
 
-# With coverage
-uv run pytest tests/ --cov=app --cov-report=html
+# Specific file
+uv run pytest tests/unit/test_output_validator.py -v
+
+# With coverage report
+uv run pytest tests/unit/ tests/integration/ --cov=app --cov-report=html
+
+
+# ── Family 2 — Soft determinism (requires API keys, ~9 LLM calls) ───────────
+
+uv run pytest tests/eval/test_soft_determinism.py -m "slow and llm_live" -v
+
+
+# ── Family 3 — LLM-as-judge via DeepEval GEval (~12 LLM calls) ──────────────
+
+uv run pytest tests/eval/test_llm_judge.py -m "slow and llm_live" -v
+
+
+# ── All three families together (full eval suite, pre-merge) ─────────────────
+
+uv run pytest tests/ -m "slow and llm_live" -v
 ```
+
+#### Golden dataset
+
+Eval tests are parametrized against a curated golden dataset defined in `tests/eval/golden_dataset.py`. It contains five cases covering the full input spectrum:
+
+| ID | Category | Expected hours |
+|----|----------|---------------|
+| `small_landing_page` | Small project | 16–120 h |
+| `medium_admin_portal` | Medium project (uses `short_transcription.txt`) | 160–400 h |
+| `large_reservation_system` | Large project with external integrations | 600–2 000 h |
+| `ambiguous_internal_tool` | Ambiguous scope | 40–800 h |
+| `contradictory_scope` | Edge case — scope vs. timeline mismatch | 400–3 000 h |
+
+Families 2 and 3 run only on the first three goldens to control API cost.
 
 ### Adding a New Model
 
