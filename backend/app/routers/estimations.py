@@ -2,18 +2,95 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 
 from app.dependencies import DbDep, CurrentUser
 from app.schemas.estimation import (
     AsyncEstimationOut,
+    CacheMetricsOut,
     EstimationCreate,
     EstimationListItem,
     EstimationOut,
+    OutputFormat,
+    SessionCreateResponse,
+    SessionEstimationOut,
+    SessionStateOut,
 )
-from app.services import estimation_service
+from app.services import ai_client, estimation_service
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
+
+
+@router.get("/cache/metrics", response_model=CacheMetricsOut)
+async def get_cache_metrics(current_user: CurrentUser):
+    """Return cache metrics from the AI engine for the authenticated user."""
+    _ = current_user
+    payload = await ai_client.get_cache_metrics()
+    return CacheMetricsOut(**payload)
+
+
+@router.post("/sessions", response_model=SessionCreateResponse, status_code=status.HTTP_201_CREATED)
+async def create_conversation_session(current_user: CurrentUser):
+    """Create a conversational session in the AI engine (auth required)."""
+    _ = current_user
+    payload = await ai_client.create_session()
+    return SessionCreateResponse(**payload)
+
+
+@router.get("/sessions/{session_id}", response_model=SessionStateOut)
+async def get_conversation_session_state(session_id: str, current_user: CurrentUser):
+    """Fetch current history + project metadata for a conversational session."""
+    _ = current_user
+    payload = await ai_client.get_session_state(session_id)
+    return SessionStateOut(**payload)
+
+
+@router.post("/sessions/{session_id}/estimate", response_model=SessionEstimationOut)
+async def create_conversation_estimation(
+    session_id: str,
+    current_user: CurrentUser,
+    transcript: str = Form(min_length=20),
+    attachments: list[UploadFile] = File(default=[]),
+    model: str | None = Form(default=None),
+    temperature: float | None = Form(default=None, ge=0.0, le=2.0),
+    pre_call: bool = Form(default=False),
+    output_format: OutputFormat = Form(default="phases_table"),
+    prompt_version: str = Query(default="v1"),
+):
+    """Proxy multipart conversational estimation to the AI engine sessions API."""
+    _ = current_user
+
+    form_fields: dict[str, str] = {
+        "transcript": transcript,
+        "pre_call": str(pre_call).lower(),
+        "output_format": output_format,
+    }
+    if model:
+        form_fields["model"] = model
+    if temperature is not None:
+        form_fields["temperature"] = str(temperature)
+
+    proxy_files: list[tuple[str, tuple[str, bytes, str]]] = []
+    for upload in attachments:
+        content = await upload.read()
+        proxy_files.append(
+            (
+                "attachments",
+                (
+                    upload.filename or "attachment.bin",
+                    content,
+                    upload.content_type or "application/octet-stream",
+                ),
+            )
+        )
+
+    payload = await ai_client.estimate_session_multipart(
+        session_id=session_id,
+        form_fields=form_fields,
+        files=proxy_files,
+        prompt_version=prompt_version,
+    )
+    return SessionEstimationOut(**payload)
 
 
 @router.get("", response_model=list[EstimationListItem])

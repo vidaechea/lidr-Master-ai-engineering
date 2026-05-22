@@ -42,6 +42,15 @@ class EstimationCreate(BaseModel):
     prompt_version: str = "v1"
     reference_projects: list[ReferenceProject] | None = None
 
+    # ACB pipeline params — only used when estimation_mode="acb"
+    estimation_mode: Literal["standard", "acb"] = "standard"
+    acb_max_iterations: int = Field(
+        default=2,
+        ge=0,
+        le=3,
+        description="Maximum ACB re-iteration cycles (0–3). Ignored in standard mode.",
+    )
+
 
 # ── Response ──────────────────────────────────────────────────────────────────
 
@@ -84,6 +93,59 @@ class AsyncEstimationOut(BaseModel):
     estimation_id: uuid.UUID
     job_id: str
     status: str = "pending"
+
+
+class SessionCreateResponse(BaseModel):
+    session_id: str
+
+
+class SessionMessageOut(BaseModel):
+    role: str
+    content: str
+
+
+class SessionProjectMetadataOut(BaseModel):
+    project_name: str | None = None
+    assumed_team_size: int | None = None
+    mentioned_technologies: list[str] = Field(default_factory=list)
+    agreed_scope: str | None = None
+
+
+class SessionStateOut(BaseModel):
+    session_id: str
+    project_metadata: SessionProjectMetadataOut
+    history: list[SessionMessageOut]
+    turn_count: int
+
+
+class SessionEstimationOut(BaseModel):
+    estimation: str
+    model: str
+    response_id: str | None
+    input_tokens: int
+    output_tokens: int
+    turn_cost_usd: float
+    total_cost_usd: float
+    estimated_input_tokens: int
+    estimated_precall_cost_usd: float | None
+    requirements: str | None
+    pre_call_cost_usd: float | None
+    validation: dict[str, Any] | None = None
+    prompt_version: str
+    structured_result: dict[str, Any] | None = None
+
+
+class CacheMetricsOut(BaseModel):
+    hits: int
+    misses: int
+    total: int
+    hit_rate_pct: float
+    cost_avoided_usd: float
+    avg_latency_hit_ms: float | None
+    avg_latency_miss_ms: float | None
+    speedup_x: int | None
+    stale_reports: int
+    stale_rate_pct: float
 
 
 # ── Callback payload (ai-engine worker → business backend) ────────────────────

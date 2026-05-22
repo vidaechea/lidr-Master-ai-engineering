@@ -1,0 +1,17 @@
+{% if project_metadata.project_name %}
+Project: {{ project_metadata.project_name }}
+{% endif %}
+{% if project_metadata.agreed_scope %}
+Agreed scope: {{ project_metadata.agreed_scope }}
+{% endif %}
+{% if project_metadata.mentioned_technologies %}
+Technologies mentioned: {{ project_metadata.mentioned_technologies | join(", ") }}
+{% endif %}
+
+Project description:
+{{ project_description }}
+
+---
+
+Candidate estimate to audit:
+{{ candidate_estimate }}

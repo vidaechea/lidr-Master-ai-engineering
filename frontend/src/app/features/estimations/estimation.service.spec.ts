@@ -2,10 +2,17 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 
-import { EstimationService, EstimationCreate, EstimationOut, GuardrailError } from './estimation.service';
+import {
+  EstimationService,
+  EstimationCreate,
+  EstimationOut,
+  GuardrailError,
+  SessionEstimationResponse,
+} from './estimation.service';
 import { environment } from '../../../environments/environment';
 
 const BASE = `${environment.apiUrl}/v1/estimations`;
+const SESSIONS_BASE = `${environment.apiUrl}/v1/estimations/sessions`;
 
 const MOCK_ESTIMATION: EstimationOut = {
   id: 'est-001',
@@ -240,5 +247,229 @@ describe('EstimationService', () => {
       const detail = (caughtError as { error: { detail: GuardrailError } }).error.detail;
       expect(detail.reason).toBe('moderation');
     });
+  });
+
+  // ── create() with ACB mode ─────────────────────────────────────────────────
+
+  describe('create() with ACB mode', () => {
+    it('includes estimation_mode=acb in request body', () => {
+      const acbPayload: EstimationCreate = { ...VALID_PAYLOAD, estimation_mode: 'acb' };
+      service.create(acbPayload).subscribe();
+
+      const req = httpMock.expectOne(BASE);
+      expect(req.request.body.estimation_mode).toBe('acb');
+      req.flush(MOCK_ESTIMATION);
+    });
+
+    it('includes acb_max_iterations in request body when provided', () => {
+      const acbPayload: EstimationCreate = {
+        ...VALID_PAYLOAD,
+        estimation_mode: 'acb',
+        acb_max_iterations: 1,
+      };
+      service.create(acbPayload).subscribe();
+
+      const req = httpMock.expectOne(BASE);
+      expect(req.request.body.acb_max_iterations).toBe(1);
+      req.flush(MOCK_ESTIMATION);
+    });
+
+    it('routes to the same /v1/estimations endpoint as standard mode', () => {
+      const acbPayload: EstimationCreate = {
+        ...VALID_PAYLOAD,
+        estimation_mode: 'acb',
+        acb_max_iterations: 2,
+      };
+      service.create(acbPayload).subscribe();
+
+      // Same base URL — the backend dispatches based on estimation_mode
+      const req = httpMock.expectOne(BASE);
+      expect(req.request.method).toBe('POST');
+      req.flush(MOCK_ESTIMATION);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Session-based estimation (attachment path)
+// ---------------------------------------------------------------------------
+
+const MOCK_SESSION_RESPONSE: SessionEstimationResponse = {
+  estimation: '## Phase 1\n40h',
+  model: 'gpt-4o-mini',
+  response_id: 'resp-abc',
+  input_tokens: 320,
+  output_tokens: 90,
+  turn_cost_usd: 0.000035,
+  total_cost_usd: 0.000035,
+  estimated_input_tokens: 300,
+  estimated_precall_cost_usd: null,
+  requirements: null,
+  pre_call_cost_usd: null,
+  prompt_version: 'v1',
+};
+
+describe('EstimationService — createSession()', () => {
+  let service: EstimationService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('sends POST to the sessions base URL', () => {
+    service.createSession().subscribe();
+
+    const req = httpMock.expectOne(SESSIONS_BASE);
+    expect(req.request.method).toBe('POST');
+    req.flush({ session_id: 'sid-001' });
+  });
+
+  it('returns an object with a session_id field', () => {
+    let result: { session_id: string } | undefined;
+    service.createSession().subscribe(r => (result = r));
+
+    httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-xyz' });
+    expect(result?.session_id).toBe('sid-xyz');
+  });
+});
+
+describe('EstimationService — createWithAttachments()', () => {
+  let service: EstimationService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('sends POST to /sessions/{id}/estimate', () => {
+    const fd = new FormData();
+    fd.append('transcript', 'Hello world');
+
+    service.createWithAttachments('sid-001', fd).subscribe();
+
+    const req = httpMock.expectOne(r => r.url === `${SESSIONS_BASE}/sid-001/estimate`);
+    expect(req.request.method).toBe('POST');
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('sends the FormData body as-is', () => {
+    const fd = new FormData();
+    fd.append('transcript', 'My project description here');
+
+    service.createWithAttachments('sid-002', fd).subscribe();
+
+    const req = httpMock.expectOne(r => r.url.includes('/sid-002/estimate'));
+    expect(req.request.body).toBe(fd);
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('defaults prompt_version query param to v1', () => {
+    service.createWithAttachments('sid-003', new FormData()).subscribe();
+
+    const req = httpMock.expectOne(r => r.url.includes('/sid-003/estimate'));
+    expect(req.request.params.get('prompt_version')).toBe('v1');
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('uses the provided prompt_version query param', () => {
+    service.createWithAttachments('sid-004', new FormData(), 'v2').subscribe();
+
+    const req = httpMock.expectOne(r => r.url.includes('/sid-004/estimate'));
+    expect(req.request.params.get('prompt_version')).toBe('v2');
+    req.flush(MOCK_SESSION_RESPONSE);
+  });
+
+  it('returns the SessionEstimationResponse on success', () => {
+    let result: SessionEstimationResponse | undefined;
+    service.createWithAttachments('sid-005', new FormData()).subscribe(r => (result = r));
+
+    httpMock.expectOne(r => r.url.includes('/sid-005/estimate')).flush(MOCK_SESSION_RESPONSE);
+
+    expect(result?.model).toBe('gpt-4o-mini');
+    expect(result?.input_tokens).toBe(320);
+    expect(result?.estimation).toContain('Phase 1');
+  });
+});
+
+describe('EstimationService — createWithAttachmentsStream()', () => {
+  let service: EstimationService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    vi.restoreAllMocks();
+  });
+
+  it('includes the bearer token from localStorage in the streaming request', async () => {
+    localStorage.setItem('access_token', 'stream.token');
+
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode('chunk-1') })
+            .mockResolvedValueOnce({ done: true, value: undefined }),
+        }),
+      },
+    } as unknown as Response);
+
+    await new Promise<void>((resolve, reject) => {
+      service.createWithAttachmentsStream('sid-stream', new FormData()).subscribe({
+        complete: () => resolve(),
+        error: reject,
+      });
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    const [, init] = fetchSpy.mock.calls[0];
+    const headers = init?.headers as Headers;
+    expect(headers.get('Authorization')).toBe('Bearer stream.token');
+  });
+
+  it('omits Authorization when there is no stored token', async () => {
+    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: vi
+            .fn()
+            .mockResolvedValueOnce({ done: false, value: new TextEncoder().encode('chunk-1') })
+            .mockResolvedValueOnce({ done: true, value: undefined }),
+        }),
+      },
+    } as unknown as Response);
+
+    await new Promise<void>((resolve, reject) => {
+      service.createWithAttachmentsStream('sid-stream', new FormData()).subscribe({
+        complete: () => resolve(),
+        error: reject,
+      });
+    });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const headers = init?.headers as Headers;
+    expect(headers.has('Authorization')).toBe(false);
   });
 });

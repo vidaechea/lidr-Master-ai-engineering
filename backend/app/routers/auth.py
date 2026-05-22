@@ -43,7 +43,7 @@ async def register(body: RegisterRequest, db: DbDep):
 
     user_id = str(user.id)
     return TokenResponse(
-        access_token=create_access_token(user_id),
+        access_token=create_access_token(user_id, tier=user.tier),
         refresh_token=create_refresh_token(user_id),
     )
 
@@ -59,7 +59,7 @@ async def login(db: DbDep, form: OAuth2PasswordRequestForm = Depends()):
         )
     user_id = str(user.id)
     return TokenResponse(
-        access_token=create_access_token(user_id),
+        access_token=create_access_token(user_id, tier=user.tier),
         refresh_token=create_refresh_token(user_id),
     )
 
@@ -77,7 +77,7 @@ async def refresh_token(body: RefreshRequest, db: DbDep):
         raise HTTPException(status_code=401, detail="User not found or inactive")
 
     return TokenResponse(
-        access_token=create_access_token(user_id),
+        access_token=create_access_token(user_id, tier=user.tier),
         refresh_token=create_refresh_token(user_id),
     )
 
@@ -145,6 +145,6 @@ async def google_callback(request: Request, db: DbDep):
     )
     user_id = str(user.id)
     return TokenResponse(
-        access_token=create_access_token(user_id),
+        access_token=create_access_token(user_id, tier=user.tier),
         refresh_token=create_refresh_token(user_id),
     )

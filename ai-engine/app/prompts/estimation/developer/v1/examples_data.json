@@ -1,0 +1,61 @@
+[
+  {
+    "title": "Dispatch Operations Dashboard",
+    "meeting_summary": "A regional logistics company needs a dispatch dashboard to assign drivers, track deliveries in real time, and generate daily performance reports. The system must integrate with their existing fleet API and support dispatcher and manager roles.",
+    "breakdown": [
+      {"task": "Discovery and requirements workshops", "hours": 18, "cost_eur": 1125},
+      {"task": "UI/UX design (dashboard, filters, alerts)", "hours": 32, "cost_eur": 2000},
+      {"task": "Backend API for orders, routes, and driver status", "hours": 60, "cost_eur": 3750},
+      {"task": "Real-time updates (websocket layer)", "hours": 28, "cost_eur": 1750},
+      {"task": "Fleet API integration and data mapping", "hours": 30, "cost_eur": 1875},
+      {"task": "Role-based access control and audit logs", "hours": 16, "cost_eur": 1000},
+      {"task": "Reporting module (daily KPIs, CSV export)", "hours": 20, "cost_eur": 1250},
+      {"task": "QA and UAT support", "hours": 24, "cost_eur": 1500},
+      {"task": "Deployment and monitoring setup", "hours": 12, "cost_eur": 750}
+    ],
+    "total_hours": 240,
+    "total_cost_eur": 15000,
+    "team": ["2 Full-Stack Developers", "1 UX Designer (part-time)", "1 QA Engineer (part-time)"],
+    "duration_weeks": 10,
+    "estimation_markdown": "## Estimate: Dispatch Operations Dashboard\n\n### Phase 1 — Discovery & Design (weeks 1–2)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Discovery and requirements workshops | Tech Lead | 18 | 1,125 |\n| UI/UX design (dashboard, filters, alerts) | Designer | 32 | 2,000 |\n\n**Phase subtotal: 50h / 3,125 EUR**\n\n### Phase 2 — Development (weeks 3–8)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Backend API for orders, routes, driver status | Backend Dev | 60 | 3,750 |\n| Real-time updates (websocket layer) | Backend Dev | 28 | 1,750 |\n| Fleet API integration and data mapping | Backend Dev | 30 | 1,875 |\n| Role-based access control and audit logs | Backend Dev | 16 | 1,000 |\n| Reporting module (daily KPIs, CSV export) | Full-Stack | 20 | 1,250 |\n\n**Phase subtotal: 154h / 9,625 EUR**\n\n### Phase 3 — QA & Deployment (weeks 9–10)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| QA and UAT support | QA | 24 | 1,500 |\n| Deployment and monitoring setup | DevOps | 12 | 750 |\n\n**Phase subtotal: 36h / 2,250 EUR**\n\n### Totals\n\n- **Total hours:** 240\n- **Total cost:** 15,000 EUR\n- **Team:** 2 Full-Stack Devs, 1 Designer (PT), 1 QA (PT)\n- **Duration:** 10 weeks\n\n### Technical Risks\n- Fleet API schema may be undocumented or unstable.\n- WebSocket layer requires load testing under concurrent connections.\n\n### Assumptions\n- Fleet API provides a stable REST interface.\n- Client supplies test credentials by week 1."
+  },
+  {
+    "title": "Fitness Studio Booking App",
+    "meeting_summary": "A boutique fitness studio wants a mobile app where members can book classes, purchase packages, and receive push notifications for schedule changes. Staff need an admin panel to manage instructors and capacity.",
+    "breakdown": [
+      {"task": "Product discovery and user flows", "hours": 20, "cost_eur": 1250},
+      {"task": "Mobile app UI/UX and design system", "hours": 40, "cost_eur": 2500},
+      {"task": "iOS and Android app development", "hours": 110, "cost_eur": 6875},
+      {"task": "Payments and package management", "hours": 24, "cost_eur": 1500},
+      {"task": "Admin panel for schedules and instructors", "hours": 36, "cost_eur": 2250},
+      {"task": "Push notification service", "hours": 18, "cost_eur": 1125},
+      {"task": "Analytics and retention dashboards", "hours": 16, "cost_eur": 1000},
+      {"task": "QA, app store preparation, and release", "hours": 26, "cost_eur": 1625}
+    ],
+    "total_hours": 290,
+    "total_cost_eur": 18125,
+    "team": ["2 Mobile Developers", "1 Backend Developer (part-time)", "1 UX Designer (part-time)"],
+    "duration_weeks": 12,
+    "estimation_markdown": "## Estimate: Fitness Studio Booking App\n\n### Phase 1 — Discovery & Design (weeks 1–2)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Product discovery and user flows | Tech Lead | 20 | 1,250 |\n| Mobile app UI/UX and design system | Designer | 40 | 2,500 |\n\n**Phase subtotal: 60h / 3,750 EUR**\n\n### Phase 2 — Development (weeks 3–10)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| iOS and Android app development | Mobile Dev x2 | 110 | 6,875 |\n| Payments and package management | Backend Dev | 24 | 1,500 |\n| Admin panel for schedules and instructors | Full-Stack | 36 | 2,250 |\n| Push notification service | Backend Dev | 18 | 1,125 |\n| Analytics and retention dashboards | Full-Stack | 16 | 1,000 |\n\n**Phase subtotal: 204h / 12,750 EUR**\n\n### Phase 3 — QA & Release (weeks 11–12)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| QA, app store preparation, and release | QA | 26 | 1,625 |\n\n**Phase subtotal: 26h / 1,625 EUR**\n\n### Totals\n\n- **Total hours:** 290\n- **Total cost:** 18,125 EUR\n- **Team:** 2 Mobile Devs, 1 Backend Dev (PT), 1 Designer (PT)\n- **Duration:** 12 weeks\n\n### Technical Risks\n- App store review timelines can delay go-live by 1–2 weeks.\n- Payment gateway sandbox environment may differ from production behaviour.\n\n### Assumptions\n- Target platforms are iOS 16+ and Android 12+.\n- Payment provider is Stripe (SDK-based integration)."
+  },
+  {
+    "title": "Client Onboarding Compliance Tool",
+    "meeting_summary": "A financial advisory firm needs an internal web tool to capture client onboarding data, track document status, and generate compliance-ready summaries. The tool must integrate with their CRM and enforce access controls by role.",
+    "breakdown": [
+      {"task": "Requirements and compliance review", "hours": 22, "cost_eur": 1375},
+      {"task": "UI/UX design for onboarding flows", "hours": 28, "cost_eur": 1750},
+      {"task": "Core onboarding workflows and validation", "hours": 70, "cost_eur": 4375},
+      {"task": "Document tracking and status automation", "hours": 36, "cost_eur": 2250},
+      {"task": "CRM integration and data sync", "hours": 30, "cost_eur": 1875},
+      {"task": "Role-based permissions and audit logs", "hours": 20, "cost_eur": 1250},
+      {"task": "Reporting and compliance summaries", "hours": 24, "cost_eur": 1500},
+      {"task": "QA, security review, and hardening", "hours": 28, "cost_eur": 1750},
+      {"task": "Deployment and training materials", "hours": 12, "cost_eur": 750}
+    ],
+    "total_hours": 270,
+    "total_cost_eur": 16875,
+    "team": ["2 Full-Stack Developers", "1 QA Engineer (part-time)"],
+    "duration_weeks": 11,
+    "estimation_markdown": "## Estimate: Client Onboarding Compliance Tool\n\n### Phase 1 — Discovery & Design (weeks 1–2)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Requirements and compliance review | Tech Lead | 22 | 1,375 |\n| UI/UX design for onboarding flows | Designer | 28 | 1,750 |\n\n**Phase subtotal: 50h / 3,125 EUR**\n\n### Phase 2 — Development (weeks 3–9)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Core onboarding workflows and validation | Backend Dev | 70 | 4,375 |\n| Document tracking and status automation | Full-Stack | 36 | 2,250 |\n| CRM integration and data sync | Backend Dev | 30 | 1,875 |\n| Role-based permissions and audit logs | Backend Dev | 20 | 1,250 |\n| Reporting and compliance summaries | Full-Stack | 24 | 1,500 |\n\n**Phase subtotal: 180h / 11,250 EUR**\n\n### Phase 3 — QA & Deployment (weeks 10–11)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| QA, security review, and hardening | QA | 28 | 1,750 |\n| Deployment and training materials | DevOps | 12 | 750 |\n\n**Phase subtotal: 40h / 2,500 EUR**\n\n### Totals\n\n- **Total hours:** 270\n- **Total cost:** 16,875 EUR\n- **Team:** 2 Full-Stack Devs, 1 QA (PT)\n- **Duration:** 11 weeks\n\n### Technical Risks\n- CRM API may require a custom adapter if no standard connector exists.\n- Compliance requirements may evolve during development, requiring rework.\n\n### Assumptions\n- CRM exposes a REST API with documented auth.\n- Compliance rules are finalised before development starts."
+  }
+]

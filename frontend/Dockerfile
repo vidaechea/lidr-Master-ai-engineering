@@ -1,4 +1,4 @@
-# ── Stage 1: build ────────────────────────────────────────────────────────────
+# -- Stage 1: build -----------------------------------------------------------
 FROM node:20-alpine AS build
 WORKDIR /app
 
@@ -8,7 +8,7 @@ RUN npm ci --legacy-peer-deps
 COPY . .
 RUN npm run build -- --configuration=production
 
-# ── Stage 2: serve with nginx ─────────────────────────────────────────────────
+# -- Stage 2: serve with nginx ------------------------------------------------
 FROM nginx:1.27-alpine AS serve
 
 # Remove default config and copy ours

@@ -57,9 +57,9 @@ async def create_and_run_sync(
     data: EstimationCreate,
 ) -> Estimation:
     """Create an Estimation record, call the AI Engine synchronously, persist result."""
-    # Build the ai-engine payload (exclude backend-only fields)
+    # Build the ai-engine payload; exclude backend-only fields not understood by the AI Engine.
     ai_payload = data.model_dump(
-        exclude={"project_id", "prompt_version"},
+        exclude={"project_id", "prompt_version", "estimation_mode", "acb_max_iterations"},
     )
     ai_payload["prompt_version"] = data.prompt_version
 
@@ -77,7 +77,11 @@ async def create_and_run_sync(
     await db.refresh(estimation)
 
     try:
-        ai_response = await ai_client.estimate_sync(ai_payload)
+        if data.estimation_mode == "acb":
+            acb_payload = {**ai_payload, "max_iterations": data.acb_max_iterations}
+            ai_response = await ai_client.estimate_acb(acb_payload)
+        else:
+            ai_response = await ai_client.estimate_sync(ai_payload)
         _apply_ai_response(estimation, ai_response)
         estimation.status = "completed"
         estimation.completed_at = datetime.now(timezone.utc)
