@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from collections.abc import AsyncIterator
 from typing import TypeVar
 
@@ -10,7 +11,9 @@ from litellm import Router
 from pydantic import BaseModel as PydanticBaseModel
 
 from app.config import LOGICAL_MODEL, _FALLBACK_MODEL, build_model_list, settings
+from app.schemas.llm import LLMObservableResponse
 from app.services.helpers.error_mapper import LLMServiceError
+from app.services.helpers.llm_observable_builder import LLMObservableResponseBuilder
 
 log = structlog.get_logger(__name__)
 
@@ -58,6 +61,7 @@ class LiteLLMRouterService:
         )
         self._primary_model = _model_list[0]["litellm_params"]["model"]
         self._fallback_model = _model_list[1]["litellm_params"]["model"]
+        self._observable_builder = LLMObservableResponseBuilder()
         log.info(
             "litellm_router_service_created",
             logical_model=LOGICAL_MODEL,
@@ -65,7 +69,20 @@ class LiteLLMRouterService:
             fallback_model=self._fallback_model,
         )
 
-    async def complete(self, messages: list[dict], **kwargs):
+    async def complete(self, messages: list[dict], **kwargs) -> LLMObservableResponse:
+        """Execute a non-streaming completion and return observable response.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'.
+            **kwargs: Additional arguments passed to the router.
+
+        Returns:
+            LLMObservableResponse with model, usage, latency_ms, and cost_usd.
+
+        Raises:
+            LLMServiceError: On provider errors or other failures.
+        """
+        start_time = time.perf_counter()
         try:
             response = await self._router.acompletion(
                 model=LOGICAL_MODEL,
@@ -91,7 +108,18 @@ class LiteLLMRouterService:
                 actual_model=actual_model,
             )
 
-        return response
+        content = response.choices[0].message.content if response.choices else None
+        response_id = getattr(response, "id", None)
+        usage = getattr(response, "usage", None)
+
+        return self._observable_builder.build_from_timer(
+            model=actual_model or LOGICAL_MODEL,
+            usage=usage,
+            start_time=start_time,
+            content=content,
+            response_id=response_id,
+            raw_response=response,
+        )
 
     async def stream(
         self,
@@ -101,12 +129,12 @@ class LiteLLMRouterService:
     ) -> AsyncIterator[str]:
         """Yield text deltas from a streaming LLM call.
 
-        When *usage_out* is provided the final chunk's usage statistics and
-        response ID are appended to the list after the last delta is yielded,
-        enabling callers to build cost/token metadata without a second call.
+        When *usage_out* is provided, an LLMObservableResponse is appended to the list
+        after the last delta is yielded, containing complete usage and cost metrics.
         """
         if usage_out is not None:
             kwargs.setdefault("stream_options", {"include_usage": True})
+        start_time = time.perf_counter()
         try:
             response = await self._router.acompletion(
                 model=LOGICAL_MODEL,
@@ -116,17 +144,26 @@ class LiteLLMRouterService:
             )
             response_id: str | None = None
             last_usage = None
+            actual_model = None
             async for chunk in response:
                 if response_id is None:
                     response_id = getattr(chunk, "id", None)
+                if actual_model is None:
+                    actual_model = getattr(chunk, "model", None) or LOGICAL_MODEL
                 chunk_usage = getattr(chunk, "usage", None)
                 if chunk_usage is not None:
                     last_usage = chunk_usage
                 delta = chunk.choices[0].delta.content or ""
                 if delta:
                     yield delta
-            if usage_out is not None:
-                usage_out.append({"usage": last_usage, "response_id": response_id})
+            if usage_out is not None and last_usage is not None:
+                observable_resp = self._observable_builder.build_from_timer(
+                    model=actual_model or LOGICAL_MODEL,
+                    usage=last_usage,
+                    start_time=start_time,
+                    response_id=response_id,
+                )
+                usage_out.append(observable_resp)
         except tuple(_LITELLM_ERROR_MAP) as exc:
             error_type, status_code = _LITELLM_ERROR_MAP[type(exc)]
             log.error(
@@ -143,12 +180,25 @@ class LiteLLMRouterService:
         response_model: type[T],
         max_retries: int = 3,
         **kwargs,
-    ) -> tuple[T, object]:
+    ) -> tuple[T, LLMObservableResponse]:
         """Call the router with instructor to get a structured Pydantic response.
 
-        Returns a ``(instance, raw_completion)`` tuple so callers can access
-        token usage and other metadata from the underlying litellm response.
+        Returns a ``(instance, observable_response)`` tuple so callers can access
+        the structured output and observability metrics in one call.
+
+        Args:
+            messages: List of message dicts.
+            response_model: Pydantic model class for structured output.
+            max_retries: Maximum number of retries by instructor.
+            **kwargs: Additional arguments passed to the router.
+
+        Returns:
+            Tuple of (parsed_instance, LLMObservableResponse).
+
+        Raises:
+            LLMServiceError: On provider errors or structural validation failures.
         """
+        start_time = time.perf_counter()
         client = instructor.from_litellm(self._router.acompletion)
         try:
             result, completion = await client.chat.completions.create_with_completion(
@@ -187,7 +237,18 @@ class LiteLLMRouterService:
                 actual_model=actual_model,
             )
 
-        return result, completion
+        usage = getattr(completion, "usage", None)
+        response_id = getattr(completion, "id", None)
+
+        observable_response = self._observable_builder.build_from_timer(
+            model=actual_model or LOGICAL_MODEL,
+            usage=usage,
+            start_time=start_time,
+            response_id=response_id,
+            raw_response=completion,
+        )
+
+        return result, observable_response
 
 
 # Module-level singleton — one Router instance shared across all requests.

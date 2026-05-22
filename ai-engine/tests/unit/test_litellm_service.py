@@ -34,6 +34,8 @@ def _make_response(model: str = "gpt-4o-mini", content: str = "ok") -> MagicMock
     resp.usage = MagicMock()
     resp.usage.prompt_tokens = 100
     resp.usage.completion_tokens = 50
+    resp.usage.total_tokens = 150
+    resp._cost = 0.005  # litellm cost attribute
     return resp
 
 
@@ -65,7 +67,7 @@ class TestPrimarySucceeds:
     async def test_returns_response(self, svc: LiteLLMRouterService):
         svc._router.acompletion = AsyncMock(return_value=_make_response("gpt-4o-mini"))
         result = await svc.complete(_MESSAGES)
-        assert result.choices[0].message.content == "ok"
+        assert result.content == "ok"
 
     async def test_uses_logical_model_name(self, svc: LiteLLMRouterService):
         svc._router.acompletion = AsyncMock(return_value=_make_response("gpt-4o-mini"))
@@ -107,7 +109,7 @@ class TestFallbackUsed:
         )
         result = await svc.complete(_MESSAGES)
         assert result is not None
-        assert result.choices[0].message.content == "ok"
+        assert result.content == "ok"
 
     async def test_detects_claude_in_model_name(self, svc: LiteLLMRouterService):
         """Any response whose model contains 'claude' triggers fallback detection."""

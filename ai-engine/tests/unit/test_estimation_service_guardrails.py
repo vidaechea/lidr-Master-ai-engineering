@@ -9,12 +9,14 @@ These tests verify that:
 
 LiteLLM and the OpenAI moderation client are both mocked so no network call is made.
 """
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.guardrails.input import InputGuardrailViolation
 from app.schemas.estimation import EstimationRequest
+from app.schemas.llm import LLMObservableResponse, LLMUsage
 from app.services.estimation_service import EstimationService
 
 # Minimum-valid transcription (>= 50 chars)
@@ -157,10 +159,18 @@ class TestEstimateStructuredGuardrails:
         fake_result.total_cost_eur = 0
         fake_result.confidence_pct = 80
 
-        fake_completion = MagicMock()
-        fake_completion.usage.prompt_tokens = 300
-        fake_completion.usage.completion_tokens = 100
-        fake_completion.id = "resp-structured-001"
+        fake_completion = LLMObservableResponse(
+            model="gpt-4o-mini",
+            content="Estimate text",
+            usage=LLMUsage(
+                prompt_tokens=300,
+                completion_tokens=100,
+                total_tokens=400,
+            ),
+            latency_ms=300.0,
+            cost_usd=Decimal("0.005"),
+            response_id="resp-structured-001",
+        )
 
         with (
             patch("app.services.estimation_service.check_input", mock_check),
