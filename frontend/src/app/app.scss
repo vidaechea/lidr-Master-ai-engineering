@@ -1,0 +1,17 @@
+.spacer { flex: 1 1 auto; }
+
+.main-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.active-link {
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.menu-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}

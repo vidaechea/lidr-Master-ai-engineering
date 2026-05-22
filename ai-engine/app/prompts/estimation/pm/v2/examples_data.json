@@ -1,0 +1,34 @@
+[
+  {
+    "title": "Dispatch Operations Dashboard",
+    "meeting_summary": "A regional logistics company needs a dispatch dashboard to assign drivers, track deliveries in real time, and generate daily performance reports. The system must integrate with their existing fleet API and support dispatcher and manager roles.",
+    "breakdown": [
+      {"task": "Discovery phase", "hours": 50, "cost_eur": 3125},
+      {"task": "Design and prototyping", "hours": 32, "cost_eur": 2000},
+      {"task": "Build phase", "hours": 134, "cost_eur": 8375},
+      {"task": "QA and testing", "hours": 36, "cost_eur": 2250},
+      {"task": "Launch and handover", "hours": 20, "cost_eur": 1250}
+    ],
+    "total_hours": 272,
+    "total_cost_eur": 17000,
+    "team": ["2 Full-Stack Developers", "1 UX Designer (part-time)", "1 QA Engineer (part-time)", "1 Project Manager (part-time)"],
+    "duration_weeks": 12,
+    "estimation_markdown": "## Delivery Plan: Dispatch Operations Dashboard (PM View — v2)\n\n### Phases & Budget\n\n| Phase | Weeks | Hours | Cost (EUR) |\n|-------|-------|------:|-----------:|\n| Discovery | 1–2 | 50 | 3,125 |\n| Design & Prototype | 3–4 | 32 | 2,000 |\n| Build | 5–10 | 134 | 8,375 |\n| QA | 11 | 36 | 2,250 |\n| Launch & Handover | 12 | 20 | 1,250 |\n\n**Total: 272h / 17,000 EUR / 12 weeks**\n\n### Key Milestones\n\n| Milestone | Target Week | Deliverables |\n|-----------|-------------|-------------|\n| Kick-off complete | W1 | Signed scope, access granted |\n| Prototype approved | W4 | Interactive wireframes signed off |\n| Alpha release | W8 | Core dashboard functional in staging |\n| UAT complete | W11 | Client sign-off on all user stories |\n| Go-live | W12 | Production deployment + handover docs |\n\n### Team by Phase\n\n| Phase | Roles Active |\n|-------|--------------|\n| Discovery | PM, Tech Lead |\n| Design | Designer, PM |\n| Build | 2 Full-Stack Devs, Backend Dev, PM |\n| QA | QA Engineer, PM |\n| Launch | DevOps, PM |\n\n### Dependencies\n\n| Dependency | Required By | Owner |\n|------------|-------------|-------|\n| Fleet API credentials | W2 | Client IT |\n| Wireframe sign-off | W4 | Client Product Owner |\n| Staging environment | W4 | DevOps |\n| UAT resource availability | W11 | Client Operations |\n\n### Assumptions\n- Client will assign a Product Owner for weekly reviews.\n- Change requests after W4 will follow a formal change control process.\n- Fleet API SLA guarantees ≥99% uptime during build phase.\n\n### Management Risks\n- **Scope creep (HIGH):** Client requested additional reports in discovery — change request process must be enforced from W1.\n- **Fleet API dependency (MEDIUM):** Third-party responsiveness could delay integration by up to 2 weeks (+17% timeline).\n- **Staffing (LOW):** Key backend developer unavailability would shift timeline by 2 weeks.\n\n### Confidence Level\n\n**Medium** — Scope is defined but Fleet API contract is unconfirmed. Timeline is contingent on client delivering credentials by W2."
+  },
+  {
+    "title": "HR Employee Onboarding Portal",
+    "meeting_summary": "An HR department needs an internal web portal to automate the onboarding of new hires. The portal should manage document collection, task assignments, and integrate with their Active Directory for SSO and Slack for notifications.",
+    "breakdown": [
+      {"task": "Discovery phase", "hours": 40, "cost_eur": 2500},
+      {"task": "Design phase", "hours": 24, "cost_eur": 1500},
+      {"task": "Build phase", "hours": 134, "cost_eur": 8375},
+      {"task": "QA phase", "hours": 16, "cost_eur": 1000},
+      {"task": "Launch and handover", "hours": 14, "cost_eur": 875}
+    ],
+    "total_hours": 228,
+    "total_cost_eur": 14250,
+    "team": ["1 Full-Stack Developer", "1 Backend Developer (part-time)", "1 QA Engineer (part-time)", "1 Project Manager (part-time)"],
+    "duration_weeks": 9,
+    "estimation_markdown": "## Delivery Plan: HR Employee Onboarding Portal (PM View — v2)\n\n### Phases & Budget\n\n| Phase | Weeks | Hours | Cost (EUR) |\n|-------|-------|------:|-----------:|\n| Discovery | 1 | 40 | 2,500 |\n| Design | 2 | 24 | 1,500 |\n| Build | 3–7 | 134 | 8,375 |\n| QA | 8 | 16 | 1,000 |\n| Launch & Handover | 9 | 14 | 875 |\n\n**Total: 228h / 14,250 EUR / 9 weeks**\n\n### Key Milestones\n\n| Milestone | Target Week | Deliverables |\n|-----------|-------------|-------------|\n| Kick-off complete | W1 | Process maps, stakeholder sign-off |\n| UX approved | W2 | Onboarding flows signed off |\n| SSO integrated | W5 | Active Directory login working in staging |\n| UAT complete | W8 | All onboarding scenarios validated |\n| Go-live | W9 | Production deploy + HR team trained |\n\n### Team by Phase\n\n| Phase | Roles Active |\n|-------|--------------|\n| Discovery | PM, Full-Stack Dev |\n| Design | PM, Designer |\n| Build | Full-Stack Dev, Backend Dev, PM |\n| QA | QA Engineer, PM |\n| Launch | Full-Stack Dev, PM |\n\n### Dependencies\n\n| Dependency | Required By | Owner |\n|------------|-------------|-------|\n| Active Directory credentials + SSO docs | W2 | IT Security |\n| Slack API token | W3 | IT |\n| HR team for UAT | W8 | HR Manager |\n\n### Assumptions\n- IT Security review of AD integration will take ≤1 week.\n- E-signature is out of scope (to be confirmed by W1).\n- HR team will be available for UAT sessions (minimum 4 hours in W8).\n\n### Management Risks\n- **IT Security review (MEDIUM):** Could add 1 week if review process is slow (+11% timeline).\n- **Scope expansion (MEDIUM):** E-signature was mentioned informally; if added, it adds ~30h and 1 week.\n- **HR availability (LOW):** Part-time UAT reviewers may delay sign-off.\n\n### Confidence Level\n\n**High** — Requirements are clear and integrations are well-documented. Main risk is IT review timing, which is manageable."
+  }
+]

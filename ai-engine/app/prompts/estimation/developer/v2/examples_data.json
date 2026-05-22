@@ -1,0 +1,24 @@
+[
+  {
+    "title": "Dispatch Operations Dashboard",
+    "meeting_summary": "A regional logistics company needs a dispatch dashboard to assign drivers, track deliveries in real time, and generate daily performance reports. The system must integrate with their existing fleet API and support dispatcher and manager roles.",
+    "breakdown": [
+      {"task": "Requirements workshops and architecture decision record", "hours": 18, "cost_eur": 1125},
+      {"task": "UI/UX wireframes and component library setup", "hours": 32, "cost_eur": 2000},
+      {"task": "REST API: orders, routes, driver status endpoints", "hours": 40, "cost_eur": 2500},
+      {"task": "WebSocket layer for real-time position updates", "hours": 28, "cost_eur": 1750},
+      {"task": "Fleet API adapter and data mapping layer", "hours": 30, "cost_eur": 1875},
+      {"task": "RBAC middleware and audit log persistence", "hours": 16, "cost_eur": 1000},
+      {"task": "Reporting service: aggregation queries, CSV export", "hours": 20, "cost_eur": 1250},
+      {"task": "Backend integration tests (pytest, testcontainers)", "hours": 20, "cost_eur": 1250},
+      {"task": "Frontend E2E tests (Playwright)", "hours": 16, "cost_eur": 1000},
+      {"task": "Docker Compose + CI pipeline + staging deploy", "hours": 12, "cost_eur": 750},
+      {"task": "Performance profiling and query optimisation", "hours": 8, "cost_eur": 500}
+    ],
+    "total_hours": 240,
+    "total_cost_eur": 15000,
+    "team": ["2 Full-Stack Developers", "1 UX Designer (part-time)", "1 QA Engineer (part-time)"],
+    "duration_weeks": 10,
+    "estimation_markdown": "## Estimate: Dispatch Operations Dashboard (Developer View — v2)\n\n### Phase 1 — Discovery & Design (weeks 1–2)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Requirements workshops and ADR | Tech Lead | 18 | 1,125 |\n| UI/UX wireframes and component library | Designer | 32 | 2,000 |\n\n**Phase subtotal: 50h / 3,125 EUR**\n\n### Phase 2 — Development (weeks 3–8)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| REST API: orders, routes, driver status | Backend Dev | 40 | 2,500 |\n| WebSocket layer for real-time updates | Backend Dev | 28 | 1,750 |\n| Fleet API adapter and data mapping | Backend Dev | 30 | 1,875 |\n| RBAC middleware and audit logs | Backend Dev | 16 | 1,000 |\n| Reporting service: aggregation + CSV | Full-Stack | 20 | 1,250 |\n\n**Phase subtotal: 134h / 8,375 EUR**\n\n### Phase 3 — QA (weeks 9–10)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Backend integration tests (pytest) | QA / Dev | 20 | 1,250 |\n| Frontend E2E tests (Playwright) | QA | 16 | 1,000 |\n\n**Phase subtotal: 36h / 2,250 EUR**\n\n### Phase 4 — DevOps & Deploy (week 10)\n\n| Task | Role | Hours | Cost (EUR) |\n|------|------|------:|-----------:|\n| Docker Compose + CI + staging | DevOps | 12 | 750 |\n| Performance profiling + query optimisation | Backend Dev | 8 | 500 |\n\n**Phase subtotal: 20h / 1,250 EUR**\n\n### Totals\n\n- **Total hours:** 240\n- **Total cost:** 15,000 EUR\n- **Team:** 2 Full-Stack Devs, 1 Designer (PT), 1 QA (PT)\n- **Duration:** 10 weeks\n\n### Technical Risks\n- Fleet API may have undocumented rate limits or inconsistent schema — could add 15–20h if a custom adapter is needed.\n- WebSocket connection management under high concurrent load requires dedicated load testing; risk of +20h if concurrency targets are high.\n\n### Assumptions\n- Fleet API exposes a stable REST or GraphQL interface with documented auth.\n- Client provides test credentials for the Fleet API by week 2.\n- Concurrency target is ≤200 simultaneous dispatchers.\n\n### Confidence Level\n\n**Medium** — Core requirements are well defined. Risk remains around the Fleet API contract and WebSocket performance targets, which have not been validated."
+  }
+]
