@@ -8,7 +8,16 @@ from app.config import settings
 from app.dependencies import TierDep
 from app.guardrails.input import InputGuardrailViolation, check_input
 from app.prompts.loader import get_examples
-from app.schemas.estimation import EstimationRequest, EstimationResponse, EstimationResult, ExampleItem, ExampleFormat
+from app.schemas.estimation import (
+    ActorCriticBossRequest,
+    ActorCriticBossResponse,
+    EstimationRequest,
+    EstimationResponse,
+    EstimationResult,
+    ExampleItem,
+    ExampleFormat,
+)
+from app.services.acb_service import ActorCriticBossService
 from app.services.cache_service import CachedEstimationService
 from app.services.estimation_service import EstimationService, _get_moderation_client
 from app.services.helpers.error_mapper import LLMServiceError
@@ -44,6 +53,39 @@ _LLM_ERROR_RESPONSES = {
     503: {"description": "Provider unavailable or connection error"},
     504: {"description": "Provider request timed out"},
 }
+
+
+def get_acb_service() -> ActorCriticBossService:
+    return ActorCriticBossService()
+
+
+@router.post("/estimate/acb", responses=_LLM_ERROR_RESPONSES)
+async def create_acb_estimation(
+    request: ActorCriticBossRequest,
+    tier: TierDep,
+    prompt_version: Annotated[
+        str, Query(description="Prompt template version (e.g. v1, v2)")
+    ] = settings.prompt_version,
+) -> ActorCriticBossResponse:
+    """Actor-Critic-Boss estimation pipeline.
+
+    Runs the candidate estimate through a critic that produces structured
+    feedback and a boss that decides to accept, iterate, or synthesize.
+    Maximum iterations are capped by *request.max_iterations* (0–3).
+    """
+    try:
+        service = get_acb_service()
+        return await service.estimate(request, prompt_version=prompt_version, tier=tier)
+    except InputGuardrailViolation as exc:
+        raise HTTPException(
+            status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+            detail={"message": exc.message, "reason": exc.reason},
+        )
+    except LLMServiceError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    except Exception as exc:
+        log.error("acb_estimation_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.get("/examples", response_model=list[ExampleItem])

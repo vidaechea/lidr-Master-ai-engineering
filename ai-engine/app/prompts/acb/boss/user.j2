@@ -1,0 +1,24 @@
+Current iteration: {{ iteration }}
+Maximum iterations: {{ max_iterations }}
+Remaining budget: {{ max_iterations - iteration }} re-iteration(s).
+{% if iteration >= max_iterations %}
+⚠️  Budget exhausted — you MUST choose `synthesize`.
+{% endif %}
+
+Critic result:
+- Approved: {{ critic_feedback.approved }}
+- Issues found: {{ critic_feedback.issues | length }}
+
+{% for issue in critic_feedback.issues %}
+  - [{{ issue.severity | upper }}] {{ issue.category }} → `{{ issue.affected_field }}`: {{ issue.description }}
+{% else %}
+  None.
+{% endfor %}
+
+Critic overall assessment: {{ critic_feedback.overall_assessment }}
+
+---
+
+Candidate estimate:
+
+{{ candidate_estimate }}

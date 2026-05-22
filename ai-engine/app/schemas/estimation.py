@@ -322,3 +322,85 @@ class EstimationResponse(BaseModel):
     structured_result: Optional[EstimationResult] = None
     extracted_requirements: Optional[ExtractedRequirements] = None
     tier_result: Optional[Union[DeveloperEstimate, PmEstimate, ExecutiveEstimate]] = None
+
+
+# ── Actor-Critic-Boss ─────────────────────────────────────────────────────────
+
+
+class IssueSeverity(str, Enum):
+    CRITICAL = "critical"
+    MAJOR = "major"
+    MINOR = "minor"
+
+
+class IssueCategory(str, Enum):
+    ARITHMETIC_ERROR = "arithmetic_error"
+    MISSING_COMPONENT = "missing_component"
+    INCONSISTENCY_WITH_METADATA = "inconsistency_with_metadata"
+    INTERNAL_CONTRADICTION = "internal_contradiction"
+    INCOMPLETE_COVERAGE = "incomplete_coverage"
+    RISK_GAP = "risk_gap"
+
+
+class CriticIssue(BaseModel):
+    category: IssueCategory
+    severity: IssueSeverity
+    affected_field: str = Field(
+        description="Name of the field or section in the estimate that has the problem"
+    )
+    description: str = Field(description="Precise description of the problem found")
+
+
+class CriticFeedback(BaseModel):
+    issues: list[CriticIssue] = Field(default_factory=list)
+    overall_assessment: str = Field(
+        description="1–2 sentence summary of the overall quality of the estimate"
+    )
+    approved: bool = Field(
+        description="True only when no critical or major issues were found"
+    )
+
+
+class BossAction(str, Enum):
+    ACCEPT = "accept"
+    ITERATE = "iterate"
+    SYNTHESIZE = "synthesize"
+
+
+class BossDecision(BaseModel):
+    action: BossAction
+    reasoning: str = Field(description="Explanation of why this action was chosen")
+    iteration_instructions: str | None = Field(
+        default=None,
+        description="Specific correction instructions for the actor (iterate action only)",
+    )
+    synthesized_estimate: str | None = Field(
+        default=None,
+        description="Full corrected estimate text (synthesize action only)",
+    )
+
+
+class IterationTrace(BaseModel):
+    iteration: int
+    candidate_estimate: str
+    critic_feedback: CriticFeedback
+    boss_decision: BossDecision
+
+
+class ActorCriticBossRequest(EstimationRequest):
+    max_iterations: int = Field(
+        default=2,
+        ge=0,
+        le=3,
+        description=(
+            "Maximum number of actor re-iteration cycles. "
+            "0 = single pass through all three roles with no re-generation."
+        ),
+    )
+
+
+class ActorCriticBossResponse(EstimationResponse):
+    iterations: list[IterationTrace] = Field(default_factory=list)
+    final_decision: BossDecision | None = None
+    acb_total_input_tokens: int = 0
+    acb_total_output_tokens: int = 0

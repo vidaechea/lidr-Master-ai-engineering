@@ -1,5 +1,5 @@
 ﻿import { Component, OnInit, computed, signal } from '@angular/core';
-import { JsonPipe } from '@angular/common';
+import { DecimalPipe, JsonPipe } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -12,6 +12,7 @@ import { EstimationResultComponent } from '../estimation-result/estimation-resul
 import {
   CacheMetrics,
   EstimationCreate,
+  EstimationOut,
   EstimationService,
   GuardrailError,
   GuardrailReason,
@@ -30,6 +31,7 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
   selector: 'app-estimation-form',
   standalone: true,
   imports: [
+    DecimalPipe,
     FormsModule,
     JsonPipe,
     MatButtonModule,
@@ -260,6 +262,33 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
 
                         <div class="selects-row">
                           <div class="select-group">
+                            <label class="select-label"><mat-icon class="select-icon">account_tree</mat-icon> Estimation pipeline</label>
+                            <div class="select-wrap">
+                              <select class="select" name="estimationMode" [(ngModel)]="form.estimation_mode">
+                                <option value="standard">Standard (Estimator)</option>
+                                <option value="acb">Actor-Critic-Boss</option>
+                              </select>
+                              <mat-icon class="chevron">expand_more</mat-icon>
+                            </div>
+                          </div>
+                          @if (form.estimation_mode === 'acb') {
+                            <div class="select-group">
+                              <label class="select-label"><mat-icon class="select-icon">repeat</mat-icon> Max iterations (0–3)</label>
+                              <div class="select-wrap">
+                                <select class="select" name="acbMaxIterations" [(ngModel)]="form.acb_max_iterations">
+                                  <option [ngValue]="0">0 — single pass</option>
+                                  <option [ngValue]="1">1</option>
+                                  <option [ngValue]="2">2 (default)</option>
+                                  <option [ngValue]="3">3</option>
+                                </select>
+                                <mat-icon class="chevron">expand_more</mat-icon>
+                              </div>
+                            </div>
+                          }
+                        </div>
+
+                        <div class="selects-row">
+                          <div class="select-group">
                             <label class="select-label"><mat-icon class="select-icon">category</mat-icon> Project type</label>
                             <div class="select-wrap">
                               <select class="select" name="projectType" [(ngModel)]="form.project_type">
@@ -456,12 +485,18 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
               <!-- Response Tab -->
               @if (activeTab() === 'response') {
                 <div class="tab-pane tab-response">
-                  @if (!isStreaming() && !streamingResult() && !error() && !guardrailError()) {
+                  @if (!isStreaming() && !streamingResult() && !acbResult() && !error() && !guardrailError()) {
                     <div class="empty-state">
                       <mat-icon>inbox</mat-icon>
                       <p>No hay respuestas aún. Completa el formulario y presiona "Estimate" para generar una.</p>
                     </div>
                   } @else {
+                    @if (acbResult()) {
+                      <div class="acb-info-banner">
+                        <mat-icon>smart_toy</mat-icon>
+                        <span>Actor-Critic-Boss pipeline — Cost: {{ acbResult()!.total_cost_usd != null ? ('$' + (acbResult()!.total_cost_usd! * 100 | number:'1.4-4') + 'c') : '—' }}</span>
+                      </div>
+                    }
                     <app-estimation-result
                       [inlineMarkdown]="responseMarkdown()"
                       [inlineResponse]="responsePayload()"
@@ -1282,6 +1317,25 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
       width: 16px;
       height: 16px;
     }
+
+    .acb-info-banner {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      background: #e8f0fe;
+      border-left: 3px solid #1a73e8;
+      border-radius: 4px;
+      font-size: 13px;
+      color: #1a73e8;
+    }
+
+    .acb-info-banner mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
   `],
 })
 export class EstimationFormComponent implements OnInit {
@@ -1292,9 +1346,15 @@ export class EstimationFormComponent implements OnInit {
   guardrailError = signal<GuardrailError | null>(null);
   attachments = signal<File[]>([]);
   inlineResult = signal<SessionEstimationResponse | null>(null);
+  acbResult = signal<EstimationOut | null>(null);
   streamingResult = signal<string>('');
   responsePayload = computed(() => this.extractSessionResponse(this.streamingResult()));
-  responseMarkdown = computed(() => this.responsePayload()?.estimation ?? this.streamingResult());
+  responseMarkdown = computed(() => {
+    if (this.acbResult()) {
+      return this.acbResult()!.estimation_markdown ?? '';
+    }
+    return this.responsePayload()?.estimation ?? this.streamingResult();
+  });
   isStreaming = signal(false);
   dragOver = signal(false);
   sessionId = signal<string | null>(null);
@@ -1414,6 +1474,8 @@ export class EstimationFormComponent implements OnInit {
       max_output_tokens: 2048,
       reasoning_effort: 'medium',
       project_id: projectId,
+      estimation_mode: 'standard',
+      acb_max_iterations: 2,
     };
   }
 
@@ -1424,6 +1486,7 @@ export class EstimationFormComponent implements OnInit {
     this.refProjects = [];
     this.attachments.set([]);
     this.streamingResult.set('');
+    this.acbResult.set(null);
     this.isStreaming.set(false);
     this.activeTab.set('form');
     this.projectMetadata.set(null);
@@ -1453,11 +1516,6 @@ export class EstimationFormComponent implements OnInit {
   }
 
   submit() {
-    if (!this.sessionId()) {
-      this.error.set('No active session. Please create a new conversation.');
-      return;
-    }
-
     if (!this.form.output_format) {
       this.error.set('Output format is required.');
       return;
@@ -1484,8 +1542,63 @@ export class EstimationFormComponent implements OnInit {
     this.error.set(null);
     this.guardrailError.set(null);
     this.inlineResult.set(null);
+    this.acbResult.set(null);
+
+    if (this.form.estimation_mode === 'acb') {
+      this._submitAcb();
+      return;
+    }
+
+    if (!this.sessionId()) {
+      this.loading.set(false);
+      this.error.set('No active session. Please create a new conversation.');
+      return;
+    }
 
     this._submitWithSession();
+  }
+
+  private _submitAcb(): void {
+    const validRefs = this.refProjects
+      .filter(r => r.name.trim() && r.description.trim())
+      .map(r => ({
+        name: r.name.trim(),
+        description: r.description.trim(),
+        total_hours: r.total_hours,
+        total_cost: r.total_cost,
+      }));
+
+    const payload: EstimationCreate = {
+      transcription: this.form.transcription,
+      output_format: this.form.output_format ?? 'phases_table',
+      example_format: this.form.example_format,
+      num_examples: this.form.num_examples,
+      max_output_tokens: this.form.max_output_tokens,
+      reasoning_effort: this.form.reasoning_effort,
+      prompt_version: this.form.prompt_version,
+      pre_call: this.form.pre_call,
+      estimation_mode: 'acb',
+      acb_max_iterations: this.form.acb_max_iterations ?? 2,
+      ...(this.form.model ? { model: this.form.model } : {}),
+      ...(this.form.temperature === null || this.form.temperature === undefined
+        ? {}
+        : { temperature: this.form.temperature }),
+      ...(this.form.detail_level ? { detail_level: this.form.detail_level } : {}),
+      ...(this.form.project_type ? { project_type: this.form.project_type } : {}),
+      ...(validRefs.length > 0 ? { reference_projects: validRefs } : {}),
+    };
+
+    this.estimationService.create(payload).subscribe({
+      next: (result: EstimationOut) => {
+        this.acbResult.set(result);
+        this.loading.set(false);
+        this.activeTab.set('response');
+      },
+      error: (err: unknown) => {
+        this.loading.set(false);
+        this._handleError(err);
+      },
+    });
   }
 
   startNewConversation() {

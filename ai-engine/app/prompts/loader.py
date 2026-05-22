@@ -6,7 +6,7 @@ from pathlib import Path
 import structlog
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
-from app.schemas.estimation import EstimationExample, EstimationRequest, ExampleFormat, UserTier
+from app.schemas.estimation import CriticFeedback, EstimationExample, EstimationRequest, ExampleFormat, UserTier
 from app.services.sessions import ProjectMetadata
 
 log = structlog.get_logger(__name__)
@@ -210,3 +210,70 @@ def render_requirements_extraction_prompt(transcription: str, version: str = "v1
 
 # Deprecated alias for backward compatibility
 render_pre_call_prompt = render_requirements_extraction_prompt
+
+
+def render_critic_prompt(
+    candidate_estimate: str,
+    request: EstimationRequest,
+    project_metadata: ProjectMetadata | None = None,
+) -> tuple[str, str]:
+    """Render the system and user prompts for the Critic role.
+
+    The critic receives the candidate estimate and the original project
+    description and returns structured fault-detection feedback.
+
+    Args:
+        candidate_estimate: Full text of the estimate produced by the Actor.
+        request: The original EstimationRequest (transcription used as project_description).
+        project_metadata: Optional session-level project metadata.
+
+    Returns:
+        Tuple of (system_prompt, user_prompt).
+    """
+    system_template = _ENV.get_template("acb/critic/system.j2")
+    user_template = _ENV.get_template("acb/critic/user.j2")
+
+    context = {
+        "candidate_estimate": candidate_estimate,
+        "project_description": request.transcription,
+        "project_metadata": project_metadata or ProjectMetadata(),
+    }
+
+    return system_template.render(**context).strip(), user_template.render(**context).strip()
+
+
+def render_boss_prompt(
+    candidate_estimate: str,
+    critic_feedback: CriticFeedback,
+    iteration: int,
+    max_iterations: int,
+    project_metadata: ProjectMetadata | None = None,
+) -> tuple[str, str]:
+    """Render the system and user prompts for the Boss role.
+
+    The boss receives the candidate estimate, the critic's structured
+    feedback, and the current iteration budget to decide: accept, iterate,
+    or synthesize.
+
+    Args:
+        candidate_estimate: Full text of the estimate produced by the Actor.
+        critic_feedback: Structured feedback produced by the Critic.
+        iteration: Current iteration index (0-based).
+        max_iterations: Maximum allowed iterations from the request.
+        project_metadata: Optional session-level project metadata.
+
+    Returns:
+        Tuple of (system_prompt, user_prompt).
+    """
+    system_template = _ENV.get_template("acb/boss/system.j2")
+    user_template = _ENV.get_template("acb/boss/user.j2")
+
+    context = {
+        "candidate_estimate": candidate_estimate,
+        "critic_feedback": critic_feedback,
+        "iteration": iteration,
+        "max_iterations": max_iterations,
+        "project_metadata": project_metadata or ProjectMetadata(),
+    }
+
+    return system_template.render(**context).strip(), user_template.render(**context).strip()

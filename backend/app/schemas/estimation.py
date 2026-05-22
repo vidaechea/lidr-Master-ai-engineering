@@ -42,6 +42,15 @@ class EstimationCreate(BaseModel):
     prompt_version: str = "v1"
     reference_projects: list[ReferenceProject] | None = None
 
+    # ACB pipeline params — only used when estimation_mode="acb"
+    estimation_mode: Literal["standard", "acb"] = "standard"
+    acb_max_iterations: int = Field(
+        default=2,
+        ge=0,
+        le=3,
+        description="Maximum ACB re-iteration cycles (0–3). Ignored in standard mode.",
+    )
+
 
 # ── Response ──────────────────────────────────────────────────────────────────
 

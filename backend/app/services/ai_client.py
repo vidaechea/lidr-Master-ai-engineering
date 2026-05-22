@@ -68,6 +68,32 @@ async def estimate_structured(request_payload: dict) -> dict:
             raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
 
 
+async def estimate_acb(request_payload: dict) -> dict:
+    """Call ``POST /api/v1/estimate/acb`` on the AI Engine and return the JSON response."""
+    async with AsyncClient(
+        base_url=settings.ai_engine_url,
+        headers=_HEADERS,
+        timeout=300.0,  # ACB pipeline can take longer: actor + critic + boss × N iterations
+    ) as client:
+        try:
+            response = await client.post("/api/v1/estimate/acb", json=request_payload)
+            response.raise_for_status()
+            return response.json()
+        except HTTPStatusError as exc:
+            log.error(
+                "ai_engine_acb_http_error",
+                status_code=exc.response.status_code,
+                detail=exc.response.text[:200],
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"AI Engine returned {exc.response.status_code}",
+            ) from exc
+        except RequestError as exc:
+            log.error("ai_engine_acb_connection_error", error=str(exc))
+            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+
+
 async def enqueue_async(request_payload: dict, callback_url: str) -> str:
     """Call ``POST /api/v1/internal/estimate/async`` — returns job_id."""
     async with AsyncClient(

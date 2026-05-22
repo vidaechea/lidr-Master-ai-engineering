@@ -140,6 +140,44 @@ export interface CacheMetrics {
   stale_rate_pct: number;
 }
 
+export type IssueSeverity = 'critical' | 'major' | 'minor';
+export type IssueCategory =
+  | 'arithmetic_error'
+  | 'missing_component'
+  | 'inconsistency_with_metadata'
+  | 'internal_contradiction'
+  | 'incomplete_coverage'
+  | 'risk_gap';
+
+export interface CriticIssue {
+  category: IssueCategory;
+  severity: IssueSeverity;
+  affected_field: string;
+  description: string;
+}
+
+export interface CriticFeedback {
+  issues: CriticIssue[];
+  overall_assessment: string;
+  approved: boolean;
+}
+
+export type BossAction = 'accept' | 'iterate' | 'synthesize';
+
+export interface BossDecision {
+  action: BossAction;
+  reasoning: string;
+  iteration_instructions: string | null;
+  synthesized_estimate: string | null;
+}
+
+export interface IterationTrace {
+  iteration: number;
+  candidate_estimate: string;
+  critic_feedback: CriticFeedback;
+  boss_decision: BossDecision;
+}
+
 export interface EstimationCreate {
   transcription: string;
   project_id?: string;
@@ -156,6 +194,8 @@ export interface EstimationCreate {
   project_type?: 'mobile_app' | 'web_saas' | 'internal_tool' | 'data_pipeline';
   detail_level?: 'summary' | 'medium' | 'detailed';
   reference_projects?: ReferenceProject[];
+  estimation_mode?: 'standard' | 'acb';
+  acb_max_iterations?: number;
 }
 
 @Injectable({ providedIn: 'root' })

@@ -248,6 +248,46 @@ describe('EstimationService', () => {
       expect(detail.reason).toBe('moderation');
     });
   });
+
+  // ── create() with ACB mode ─────────────────────────────────────────────────
+
+  describe('create() with ACB mode', () => {
+    it('includes estimation_mode=acb in request body', () => {
+      const acbPayload: EstimationCreate = { ...VALID_PAYLOAD, estimation_mode: 'acb' };
+      service.create(acbPayload).subscribe();
+
+      const req = httpMock.expectOne(BASE);
+      expect(req.request.body.estimation_mode).toBe('acb');
+      req.flush(MOCK_ESTIMATION);
+    });
+
+    it('includes acb_max_iterations in request body when provided', () => {
+      const acbPayload: EstimationCreate = {
+        ...VALID_PAYLOAD,
+        estimation_mode: 'acb',
+        acb_max_iterations: 1,
+      };
+      service.create(acbPayload).subscribe();
+
+      const req = httpMock.expectOne(BASE);
+      expect(req.request.body.acb_max_iterations).toBe(1);
+      req.flush(MOCK_ESTIMATION);
+    });
+
+    it('routes to the same /v1/estimations endpoint as standard mode', () => {
+      const acbPayload: EstimationCreate = {
+        ...VALID_PAYLOAD,
+        estimation_mode: 'acb',
+        acb_max_iterations: 2,
+      };
+      service.create(acbPayload).subscribe();
+
+      // Same base URL — the backend dispatches based on estimation_mode
+      const req = httpMock.expectOne(BASE);
+      expect(req.request.method).toBe('POST');
+      req.flush(MOCK_ESTIMATION);
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
