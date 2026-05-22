@@ -125,6 +125,184 @@ GOLDEN_CASES: list[GoldenCase] = [
         expected_components=["backend", "frontend", "mobile", "auth", "billing", "api"],
         key_risks=["scope vs timeline mismatch", "technical debt", "feature prioritization"],
     ),
+    GoldenCase(
+        id="small_todo_app",
+        category="small_project",
+        transcript=(
+            "Create a simple to-do list web application. Users can add, edit, mark as complete, "
+            "and delete tasks. Store data in browser localStorage. Mobile responsive design. "
+            "No backend needed. Deploy to GitHub Pages."
+        ),
+        expected_hours_min=8,
+        expected_hours_max=40,
+        expected_components=["frontend", "storage"],
+        key_risks=["localStorage limitations", "offline sync"],
+    ),
+    GoldenCase(
+        id="small_calculator_widget",
+        category="small_project",
+        transcript=(
+            "Build a scientific calculator web widget. Support basic math operations, "
+            "trigonometric functions, and unit conversions. Responsive design. "
+            "Can be embedded as an iframe or standalone."
+        ),
+        expected_hours_min=16,
+        expected_hours_max=60,
+        expected_components=["frontend", "ui"],
+        key_risks=["calculation accuracy", "floating point precision"],
+    ),
+    GoldenCase(
+        id="small_blog_system",
+        category="small_project",
+        transcript=(
+            "Simple blog platform for a single author. Features: markdown post editor, "
+            "post listing with pagination, search by title/tags, RSS feed generation. "
+            "Static site generation with Next.js. Comments disabled initially. "
+            "Hosting on Vercel."
+        ),
+        expected_hours_min=20,
+        expected_hours_max=80,
+        expected_components=["frontend", "ssg", "content"],
+        key_risks=["SEO optimization", "performance tuning"],
+    ),
+    GoldenCase(
+        id="small_expense_tracker",
+        category="small_project",
+        transcript=(
+            "Personal expense tracker app. Add expenses with category, date, and amount. "
+            "Monthly reports with pie charts. Export to CSV. Data persisted in local database. "
+            "Single user, no authentication needed."
+        ),
+        expected_hours_min=24,
+        expected_hours_max=100,
+        expected_components=["frontend", "charts", "export"],
+        key_risks=["data integrity", "export accuracy"],
+    ),
+    GoldenCase(
+        id="medium_ecommerce_platform",
+        category="medium_project",
+        transcript=(
+            "E-commerce platform for a small boutique. Features: product catalog with images, "
+            "shopping cart, checkout with Stripe integration, order tracking, email notifications, "
+            "inventory management, admin dashboard for products and orders. Single warehouse. "
+            "No multi-vendor. Social login with Google and Facebook."
+        ),
+        expected_hours_min=200,
+        expected_hours_max=500,
+        expected_components=["backend", "frontend", "payment", "auth", "inventory"],
+        key_risks=["payment gateway reliability", "inventory sync", "scalability"],
+    ),
+    GoldenCase(
+        id="medium_crm_system",
+        category="medium_project",
+        transcript=(
+            "Customer Relationship Management system for a sales team of 20 people. "
+            "Track leads, opportunities, and customer interactions. Pipeline visualization. "
+            "Email integration with Gmail. Task assignment and reminders. "
+            "Reports on conversion rates and pipeline value. Role-based access control. "
+            "Cloud-based deployment."
+        ),
+        expected_hours_min=180,
+        expected_hours_max=450,
+        expected_components=["backend", "frontend", "email_integration", "auth", "reporting"],
+        key_risks=["email sync reliability", "data migration", "concurrent access"],
+    ),
+    GoldenCase(
+        id="medium_learning_management_system",
+        category="medium_project",
+        transcript=(
+            "Learning management system for an online education company. Features: course creation, "
+            "video hosting and streaming, student enrollment, progress tracking, quiz and assessment system, "
+            "certificates upon completion, student discussion forums, instructor dashboard with analytics. "
+            "Supports up to 1000 concurrent users. Payment integration for course sales."
+        ),
+        expected_hours_min=220,
+        expected_hours_max=550,
+        expected_components=["backend", "frontend", "video_streaming", "payment", "analytics"],
+        key_risks=["video infrastructure costs", "concurrent streaming", "forum moderation"],
+    ),
+    GoldenCase(
+        id="medium_social_feed",
+        category="medium_project",
+        transcript=(
+            "Social media feed platform. Users can post text and images, like, comment, and share. "
+            "Real-time notifications for likes and comments. User profiles with follower/following. "
+            "Full-text search on posts. Image optimization and CDN delivery. "
+            "Moderation tools for admins. 10K daily active users expected."
+        ),
+        expected_hours_min=200,
+        expected_hours_max=480,
+        expected_components=["backend", "frontend", "real-time", "cdn", "search"],
+        key_risks=["real-time message queue", "image storage", "database scalability"],
+    ),
+    GoldenCase(
+        id="large_marketplace_platform",
+        category="large_project",
+        transcript=(
+            "Multi-vendor marketplace platform similar to eBay. Vendors can list products with images, pricing, "
+            "inventory. Buyers search, filter, and purchase. Payment processing with split between platform and vendors. "
+            "Dispute resolution system. Vendor analytics dashboard. Customer reviews and ratings. "
+            "Fraud detection for suspicious transactions. Mobile app for iOS and Android. "
+            "Support for multiple currencies and countries. Partner integration APIs for vendors."
+        ),
+        expected_hours_min=800,
+        expected_hours_max=2400,
+        expected_components=[
+            "backend",
+            "frontend",
+            "mobile",
+            "payment",
+            "fraud_detection",
+            "analytics",
+            "api",
+        ],
+        key_risks=[
+            "payment processor reliability",
+            "fraud patterns",
+            "vendor management",
+            "data security",
+        ],
+    ),
+    GoldenCase(
+        id="large_healthcare_system",
+        category="large_project",
+        transcript=(
+            "Healthcare management system for a hospital network with 5 locations. "
+            "Patient records system with HIPAA compliance. Appointment scheduling with doctor availability. "
+            "Electronic prescriptions integrated with pharmacy systems. Lab results management. "
+            "Billing and insurance claim processing. Staff portal with role-based access. "
+            "Telemedicine capability for video consultations. Audit logging for compliance. "
+            "Integration with existing EHR systems via HL7. Real-time bed management."
+        ),
+        expected_hours_min=1000,
+        expected_hours_max=3000,
+        expected_components=[
+            "backend",
+            "frontend",
+            "telemedicine",
+            "ehr_integration",
+            "billing",
+            "compliance",
+        ],
+        key_risks=[
+            "HIPAA compliance",
+            "data security",
+            "legacy system integration",
+            "concurrent load",
+        ],
+    ),
+    GoldenCase(
+        id="ambiguous_data_system",
+        category="ambiguous",
+        transcript=(
+            "We need a system to handle our data. Something that can analyze and visualize it. "
+            "Maybe real-time dashboards. Should work with what we have now and be ready for future growth."
+        ),
+        expected_hours_min=80,
+        expected_hours_max=1200,
+        expected_components=[],
+        key_risks=["data source undefined", "analysis requirements unclear", "infrastructure unknowns"],
+    ),
 ]
 
 
