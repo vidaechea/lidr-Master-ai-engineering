@@ -276,3 +276,111 @@ class TestGetSessionState:
         resp = client.get("/api/v1/sessions/nonexistent-id")
         assert resp.status_code == 404
 
+    # -----------------------------------------------------------------------
+    # New tests for explicitly exposed fields
+    # -----------------------------------------------------------------------
+
+    def test_response_includes_message_count(self, client: TestClient):
+        """Verify message_count is exposed and counts all messages."""
+        sid = self._create_session(client)
+        with _patch_litellm():
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        assert "message_count" in body
+        assert isinstance(body["message_count"], int)
+        # After one estimate call, we should have at least user and assistant messages
+        assert body["message_count"] >= 2
+
+    def test_message_count_greater_or_equal_to_turn_count(self, client: TestClient):
+        """message_count should always be >= turn_count * 2 (user + assistant per turn)."""
+        sid = self._create_session(client)
+        with _patch_litellm():
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        # At minimum: turn_count user messages, turn_count assistant responses
+        assert body["message_count"] >= body["turn_count"] * 2
+
+    def test_response_includes_anchors_count(self, client: TestClient):
+        """Verify anchors_count is exposed."""
+        sid = self._create_session(client)
+        with _patch_litellm():
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        assert "anchors_count" in body
+        assert isinstance(body["anchors_count"], int)
+        assert body["anchors_count"] >= 0
+
+    def test_response_includes_summary_chars(self, client: TestClient):
+        """Verify summary_chars is exposed."""
+        sid = self._create_session(client)
+        with _patch_litellm():
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        assert "summary_chars" in body
+        assert isinstance(body["summary_chars"], int)
+        assert body["summary_chars"] >= 0
+
+    def test_response_includes_last_resolved_tier(self, client: TestClient):
+        """Verify last_resolved_tier is exposed (can be null initially)."""
+        sid = self._create_session(client)
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        assert "last_resolved_tier" in body
+        # Initially null, but field must be present
+        assert body["last_resolved_tier"] is None
+
+    def test_response_includes_last_tier_rule(self, client: TestClient):
+        """Verify last_tier_rule is exposed (can be null initially)."""
+        sid = self._create_session(client)
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        assert "last_tier_rule" in body
+        # Initially null, but field must be present
+        assert body["last_tier_rule"] is None
+
+    def test_all_required_fields_present_in_response(self, client: TestClient):
+        """Verify all new fields are present in the response body."""
+        sid = self._create_session(client)
+        with _patch_litellm():
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        resp = client.get(f"/api/v1/sessions/{sid}")
+        body = resp.json()
+        required_fields = [
+            "session_id",
+            "project_metadata",
+            "history",
+            "turn_count",
+            "message_count",
+            "anchors_count",
+            "summary_chars",
+            "last_resolved_tier",
+            "last_tier_rule",
+            "anchors",
+        ]
+        for field in required_fields:
+            assert field in body, f"Missing required field: {field}"
+

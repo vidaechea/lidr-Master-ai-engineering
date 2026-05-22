@@ -38,6 +38,9 @@ class SessionStateResponse(BaseModel):
     turn_count: int = Field(
         description="Number of user turns currently stored in the session history window."
     )
+    message_count: int = Field(
+        description="Total number of messages (user + assistant + system) in the session history."
+    )
     anchors_count: int = Field(
         default=0,
         description="Total number of critical information anchors generated so far.",
@@ -45,6 +48,14 @@ class SessionStateResponse(BaseModel):
     summary_chars: int = Field(
         default=0,
         description="Character count of the accumulative summary of critical information.",
+    )
+    last_resolved_tier: str | None = Field(
+        default=None,
+        description="The last user tier that was resolved during this session.",
+    )
+    last_tier_rule: str | None = Field(
+        default=None,
+        description="The last tier rule or constraint that was applied to this session.",
     )
     anchors: list[AnchorResponse] = Field(
         default_factory=list,

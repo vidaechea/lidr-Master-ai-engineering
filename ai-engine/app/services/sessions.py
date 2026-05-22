@@ -209,6 +209,8 @@ class Session:
     session_id: str
     history: ConversationHistory = field(default_factory=ConversationHistory)
     metadata: ProjectMetadata = field(default_factory=ProjectMetadata)
+    last_resolved_tier: str | None = field(default=None)
+    last_tier_rule: str | None = field(default=None)
     _summarizer: SummarizerService | None = field(default=None, init=False, repr=False)
 
     def get_summarizer(self) -> SummarizerService:

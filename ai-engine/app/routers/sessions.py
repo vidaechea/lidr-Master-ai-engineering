@@ -101,6 +101,7 @@ async def get_session_state(session_id: str) -> SessionStateResponse:
 
     summarizer = session.get_summarizer()
     anchors = summarizer.get_anchors()
+    messages = session.history.messages()
 
     from app.schemas.session import AnchorResponse
 
@@ -109,11 +110,14 @@ async def get_session_state(session_id: str) -> SessionStateResponse:
         project_metadata=session.metadata,
         history=[
             SessionMessageResponse(role=message.role, content=message.content)
-            for message in session.history.messages()
+            for message in messages
         ],
         turn_count=session.history.turn_count,
+        message_count=len(messages),
         anchors_count=summarizer.anchor_count(),
         summary_chars=summarizer.summary_char_count(),
+        last_resolved_tier=session.last_resolved_tier,
+        last_tier_rule=session.last_tier_rule,
         anchors=[
             AnchorResponse(
                 turn_number=anchor.turn_number,
