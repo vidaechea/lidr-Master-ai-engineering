@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 
 import openai
@@ -18,6 +19,7 @@ from app.schemas.estimation import (
     UserTier,
 )
 from app.schemas.llm import LLMObservableResponse
+from app.schemas.observation import CacheHitKind, TurnObservedEvent
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.helpers.output_validator import evaluate_estimation_structure
 from app.services.helpers.prompt_builder import PromptBuilder
@@ -79,7 +81,7 @@ class EstimationService:
                 user_prompt=req_user,
                 max_output_tokens=request.max_output_tokens,
             )
-            requirements, pre_in_tok, pre_out_tok, _finish_reason, _response_id, pre_call_cost_usd = pre_resp
+            requirements, _, _, _finish_reason, _response_id, pre_call_cost_usd = pre_resp
 
         main_resp = await self._call_provider(
             system_prompt=builder.system_prompt,
@@ -246,12 +248,23 @@ class EstimationService:
         history: ConversationHistory,
         prompt_version: str = "v1",
         project_metadata: ProjectMetadata | None = None,
+        session_id: str | None = None,
+        enriched_transcript_chars: int | None = None,
+        attachments_total_chars: int = 0,
+        messages_in_window: int | None = None,
+        anchors_count: int = 0,
+        summary_chars: int = 0,
+        cache_hit_kind: CacheHitKind = CacheHitKind.NONE,
+        last_resolved_tier: str | None = None,
     ) -> EstimationResponse:
         """Run one estimation turn using the full conversation history.
 
         Adds the user prompt to *history* before calling the provider and
         appends the assistant response afterwards, so the caller does not need
         to manage history entries manually.
+
+        Optionally collects context metadata and emits a unified ``turn_observed``
+        event at the end of the turn with all relevant metrics.
 
         Args:
             request: The current estimation request (transcript + options).
@@ -260,11 +273,21 @@ class EstimationService:
             prompt_version: Prompt template version (e.g. ``"v1"``).
             project_metadata: Current session metadata used to refresh the
                 system prompt for this turn.
+            session_id: Optional session identifier for event observation.
+            enriched_transcript_chars: Character count of transcript + attachments.
+            attachments_total_chars: Character count from uploaded files.
+            messages_in_window: Number of messages in history after compression.
+            anchors_count: Number of key information anchors extracted.
+            summary_chars: Character count of the conversation summary.
+            cache_hit_kind: Type of cache hit achieved (none, exact, semantic).
+            last_resolved_tier: User tier resolved by the estimation logic.
 
         Returns:
             :class:`~app.schemas.estimation.EstimationResponse` with full cost
             and token metadata.
         """
+        start_time = time.time()
+        
         await asyncio.to_thread(
             check_input,
             request.transcription,
@@ -290,14 +313,33 @@ class EstimationService:
 
         validation = evaluate_estimation_structure(estimation_text, finish_reason)
 
-        log.info(
-            "multi_turn_estimation_completed",
-            model=model_name,
-            turn=history.turn_count,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            turn_cost_usd=turn_cost_usd,
-        )
+        # Emit unified turn observation event if session_id is provided
+        if session_id is not None:
+            elapsed_ms = (time.time() - start_time) * 1000
+            turn_index = history.turn_count
+            
+            # Use provided values or compute from defaults
+            transcript_chars = enriched_transcript_chars or len(request.transcription)
+            msg_count = messages_in_window or len(history.messages())
+            
+            turn_event = TurnObservedEvent(
+                turn_index=turn_index,
+                session_id=session_id,
+                enriched_transcript_chars=transcript_chars,
+                attachments_total_chars=attachments_total_chars,
+                messages_in_window=msg_count,
+                anchors_count=anchors_count,
+                summary_chars=summary_chars,
+                tokens_in=input_tokens,
+                tokens_out=output_tokens,
+                cost_usd=turn_cost_usd,
+                latency_ms=elapsed_ms,
+                cache_hit_kind=cache_hit_kind,
+                last_resolved_tier=last_resolved_tier,
+                model=model_name,
+                response_id=response_id,
+            )
+            log.info("turn_observed", **turn_event.model_dump())
 
         return EstimationResponse(
             estimation=estimation_text,
@@ -307,8 +349,8 @@ class EstimationService:
             output_tokens=output_tokens,
             turn_cost_usd=turn_cost_usd,
             total_cost_usd=turn_cost_usd,
-            estimated_input_tokens=estimated_input_tokens,
-            estimated_precall_cost_usd=estimated_precall_cost_usd,
+            estimated_input_tokens=builder.estimated_input_tokens,
+            estimated_precall_cost_usd=None,
             requirements=None,
             pre_call_cost_usd=None,
             validation=validation,
