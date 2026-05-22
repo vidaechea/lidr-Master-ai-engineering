@@ -94,10 +94,15 @@ async def list_sessions() -> list[SessionListItem]:
 
 @router.get("/{session_id}")
 async def get_session_state(session_id: str) -> SessionStateResponse:
-    """Return persisted conversation history and extracted project metadata."""
+    """Return persisted conversation history, metadata, and critical information anchors."""
     session = store.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
+
+    summarizer = session.get_summarizer()
+    anchors = summarizer.get_anchors()
+
+    from app.schemas.session import AnchorResponse
 
     return SessionStateResponse(
         session_id=session.session_id,
@@ -107,6 +112,17 @@ async def get_session_state(session_id: str) -> SessionStateResponse:
             for message in session.history.messages()
         ],
         turn_count=session.history.turn_count,
+        anchors_count=summarizer.anchor_count(),
+        summary_chars=summarizer.summary_char_count(),
+        anchors=[
+            AnchorResponse(
+                turn_number=anchor.turn_number,
+                anchor_type=anchor.anchor_type,
+                key_information=anchor.key_information,
+                summary=anchor.summary,
+            )
+            for anchor in anchors
+        ],
     )
 
 
@@ -238,5 +254,24 @@ async def create_session_estimation(
         technologies=session.metadata.mentioned_technologies,
         team_size=session.metadata.assumed_team_size,
     )
+
+    # ------------------------------------------------------------------ #
+    # Process turn through summarizer to generate anchors                 #
+    # ------------------------------------------------------------------ #
+    summarizer = session.get_summarizer()
+    turn_number = session.history.turn_count + 1  # Next turn after add
+    anchors = summarizer.process_turn(
+        turn_number=turn_number,
+        user_message=combined_transcript,
+        assistant_response=response.estimation,
+    )
+    if anchors:
+        log.info(
+            "anchors_generated_in_session",
+            session_id=session_id,
+            turn_number=turn_number,
+            anchor_count=len(anchors),
+            anchor_types=[a.anchor_type for a in anchors],
+        )
 
     return response

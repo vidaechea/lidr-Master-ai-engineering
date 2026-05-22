@@ -18,6 +18,17 @@ class SessionMessageResponse(BaseModel):
     content: str
 
 
+class AnchorResponse(BaseModel):
+    """A heuristic anchor marking a turn with critical information."""
+
+    turn_number: int = Field(description="Which user turn contained this critical information.")
+    anchor_type: str = Field(
+        description="Category: metadata_extraction, scope_change, decision_point, risk_identified, etc."
+    )
+    key_information: str = Field(description="The extracted or flagged content.")
+    summary: str = Field(description="Brief explanation of why this turn is critical.")
+
+
 class SessionStateResponse(BaseModel):
     """Current persisted state for a conversation session."""
 
@@ -26,6 +37,18 @@ class SessionStateResponse(BaseModel):
     history: list[SessionMessageResponse]
     turn_count: int = Field(
         description="Number of user turns currently stored in the session history window."
+    )
+    anchors_count: int = Field(
+        default=0,
+        description="Total number of critical information anchors generated so far.",
+    )
+    summary_chars: int = Field(
+        default=0,
+        description="Character count of the accumulative summary of critical information.",
+    )
+    anchors: list[AnchorResponse] = Field(
+        default_factory=list,
+        description="List of all anchors detected in this session.",
     )
 
 
