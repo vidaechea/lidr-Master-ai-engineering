@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class CacheHitKind(str, Enum):
@@ -77,8 +77,8 @@ class TurnObservedEvent(BaseModel):
         description="Unique identifier for the LLM response"
     )
 
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "turn_index": 1,
                 "session_id": "sess_abc123",
@@ -97,3 +97,4 @@ class TurnObservedEvent(BaseModel):
                 "response_id": "resp_xyz789",
             }
         }
+    )

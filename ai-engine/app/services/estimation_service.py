@@ -411,11 +411,7 @@ class EstimationService:
         # 1. Scope filter: rewrite low-confidence results before rendering.
         structured_result = enforce_scope_response(structured_result)
         estimation_markdown = _render_estimation_markdown(structured_result)
-        finish_reason = (
-            completion.choices[0].finish_reason
-            if completion.choices
-            else "stop"
-        )
+        finish_reason = "stop"  # Observable response doesn't track finish_reason
         # 2. Structure check: same validator used in the markdown path.
         validation = evaluate_estimation_structure(estimation_markdown, finish_reason)
         # -------------------------------------------------------------------
@@ -442,7 +438,7 @@ class EstimationService:
             output_tokens=completion.usage.completion_tokens,
             turn_cost_usd=turn_cost_usd,
             total_cost_usd=total_cost_usd,
-            estimated_input_tokens=None,
+            estimated_input_tokens=builder.estimated_input_tokens,
             estimated_precall_cost_usd=None,
             requirements=requirements,
             pre_call_cost_usd=pre_call_cost_usd,

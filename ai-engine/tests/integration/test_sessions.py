@@ -6,10 +6,13 @@ The SessionStore singleton is reset before each test to guarantee isolation.
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+from app.schemas.llm import LLMObservableResponse, LLMUsage
 
 UUID_V4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -98,23 +101,20 @@ FAKE_ESTIMATION = (
 )
 
 
-def _make_litellm_mock(text: str = FAKE_ESTIMATION) -> MagicMock:
-    usage = MagicMock()
-    usage.prompt_tokens = 400
-    usage.completion_tokens = 200
-
-    message = MagicMock()
-    message.content = text
-
-    choice = MagicMock()
-    choice.message = message
-    choice.finish_reason = "stop"
-
-    response = MagicMock()
-    response.choices = [choice]
-    response.usage = usage
-    response.id = "resp_test_session"
-    return response
+def _make_litellm_mock(text: str = FAKE_ESTIMATION) -> LLMObservableResponse:
+    """Build a mock LLMObservableResponse object."""
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content=text,
+        usage=LLMUsage(
+            prompt_tokens=400,
+            completion_tokens=200,
+            total_tokens=600,
+        ),
+        latency_ms=500.0,
+        cost_usd=Decimal("0.001"),
+        response_id="resp_test_session",
+    )
 
 
 def _patch_litellm(mock_response: MagicMock | None = None):

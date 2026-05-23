@@ -25,20 +25,19 @@ VALID_TRANSCRIPTION = "Build a web SaaS platform with user authentication and a 
 _ESTIMATION_REQUEST = EstimationRequest(transcription=VALID_TRANSCRIPTION)
 
 
-def _make_litellm_response(content: str = "## Estimate\nTotal: 100h") -> MagicMock:
-    usage = MagicMock()
-    usage.prompt_tokens = 400
-    usage.completion_tokens = 150
-
-    choice = MagicMock()
-    choice.message.content = content
-    choice.finish_reason = "stop"
-
-    resp = MagicMock()
-    resp.choices = [choice]
-    resp.usage = usage
-    resp.id = "resp-unit-guardrail-001"
-    return resp
+def _make_litellm_response(content: str = "## Estimate\nTotal: 100h") -> LLMObservableResponse:
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content=content,
+        usage=LLMUsage(
+            prompt_tokens=400,
+            completion_tokens=150,
+            total_tokens=550,
+        ),
+        latency_ms=120.0,
+        cost_usd=Decimal("0.0008"),
+        response_id="resp-unit-guardrail-001",
+    )
 
 
 # ---------------------------------------------------------------------------

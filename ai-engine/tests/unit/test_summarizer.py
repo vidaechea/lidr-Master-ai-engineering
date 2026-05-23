@@ -137,7 +137,7 @@ class TestSummarizerService:
 
         assert summarizer.summary_char_count() == 0
 
-        summarizer.process_turn(1, "This is a test turn with some information.", None)
+        summarizer.process_turn(1, "Project: TestApp, 5 engineers, using React and risk: timeline.", None)
         char_count = summarizer.summary_char_count()
         assert char_count > 0
 
