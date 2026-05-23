@@ -17,16 +17,37 @@ uv run -m evals.stress.runner --scenario growth
 | [STRUCTURE.md](STRUCTURE.md) | **Organización del código** - Dónde está cada cosa | Developers |
 | [IMPLEMENTATION.md](IMPLEMENTATION.md) | **Detalles técnicos** - Cómo funciona internamente | Architects |
 | [SCENARIOS.md](SCENARIOS.md) | **Narrativas de tests** - Qué prueba cada escenario | QA/PMs |
+| [LARGE_ATTACHMENTS.md](LARGE_ATTACHMENTS.md) | **Escenario de adjuntos grandes** - Stress test con archivos PDF | Developers/QA |
+
+## 📋 Escenarios Disponibles
+
+### Escenarios Base
+- **Growth** (`growth_01`) - Crecimiento del proyecto a través de cambios planificados
+- **Pivot** (`pivot_01`) - Cambio pivote de dirección del proyecto
+- **Contradiction** (`contradiction_01`) - Manejo de información contradictoria
+
+### Escenarios de Stress
+- **Large Attachments** (`large_attachment_01`) - Archivos PDF de 0-100 KB
+  - 5 turnos con tamaños crecientes
+  - Medición de latencia, costo y recall
+  - [Ver documentación completa](LARGE_ATTACHMENTS.md)
 
 ## 🗂️ Ubicación de Archivos
 
 ### Código
 ```
 evals/stress/
-├── scenarios.py              ← Definiciones de escenarios
+├── scenarios.py              ← Definiciones de todos los escenarios
+│                              (incluyendo ProjectLargeAttachmentScenario)
 ├── runner.py                 ← CLI para ejecutar
-├── metrics/stress_metrics.py ← Métricas personalizadas
-└── tests/test_scenarios.py   ← Suite pytest
+├── generators/
+│   └── pdf.py               ← Generador de PDFs de prueba
+├── tools/
+│   ├── analyze.py           ← Análisis de resultados
+│   └── interpret.py         ← Ejemplos de interpretación
+└── scripts/
+    ├── test_large_attachments.sh  ← Prueba completa
+    └── quickstart.sh              ← Guía de opciones
 ```
 
 ### Resultados
@@ -35,16 +56,19 @@ evals/stress/results/
 ├── growth.json               ← Resultado scenario growth
 ├── pivot.json                ← Resultado scenario pivot
 ├── contradiction.json        ← Resultado scenario contradiction
+├── large_attachment.json     ← Resultado scenario adjuntos grandes
 └── aggregated.json           ← Resultados combinados
 ```
 
 ### Documentación
 ```
 evals/stress/docs/
-├── GUIDE.md                  ← Este documento
+├── README.md                 ← Este archivo
+├── GUIDE.md                  ← Quick start
 ├── STRUCTURE.md              ← Estructura del proyecto
 ├── IMPLEMENTATION.md         ← Detalles técnicos
-└── SCENARIOS.md              ← Narrativas de tests
+├── SCENARIOS.md              ← Narrativas de tests
+└── LARGE_ATTACHMENTS.md      ← Escenario de adjuntos grandes
 ```
 
 ## 🚀 Comandos Comunes

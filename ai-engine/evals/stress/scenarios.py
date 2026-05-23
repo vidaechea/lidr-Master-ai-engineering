@@ -17,6 +17,7 @@ should remember. Mismatches feed into MemoryDriftMetric for evaluation.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 from dataclasses import dataclass, field
@@ -243,6 +244,18 @@ class ScenarioProfile:
             profile=self.profile_type,
         )
 
+    def get_transcript_for_turn(self, turn_number: int) -> str | None:
+        """Get the transcript for a specific turn. Override in subclasses if needed."""
+        return None
+
+    def get_attachments_for_turn(self, turn_number: int) -> dict[str, bytes] | None:
+        """Get attachments for a specific turn as {filename: bytes}.
+
+        Returns:
+            Dict of filename -> file bytes, or None if no attachments.
+        """
+        return None
+
 
 class ProjectGrowthScenario(ScenarioProfile):
     """Scenario: Coherent feature accumulation.
@@ -454,6 +467,108 @@ class ProjectContradictionScenario(ScenarioProfile):
         return self.turns.get(turn_number)
 
 
+@dataclass
+class ProjectLargeAttachmentScenario(ScenarioProfile):
+    """Scenario: Large file attachment stress test.
+
+    Measures system behavior with attachments of increasing size.
+    Same transcript across all turns ensures stress is attachment-only.
+    
+    Tests system with file attachments of increasing size:
+    - Turn 1: No attachment (0 KB baseline)
+    - Turn 2: Small attachment (5 KB)
+    - Turn 3: Medium attachment (20 KB)
+    - Turn 4: Large attachment (50 KB)
+    - Turn 5: Very large attachment (100 KB, near MAX_ATTACHMENT_CHARS limit)
+    
+    Same transcript reused for all turns; stress is on attachment handling only.
+    """
+
+    id: str = "large_attachment_01"
+    profile_type: ScenarioType = ScenarioType.GROWTH
+    description: str = "Large file attachment stress test (0-100 KB)"
+
+    def __init__(self):
+        # Fixed transcript (same for all turns; stress is the attachment)
+        base_transcript = (
+            "We're building a mobile app called PhotoShare. "
+            "It's a photo sharing and collaboration platform. "
+            "Users can upload photos, add comments, and collaborate with teams. "
+            "Stack: React Native, Node.js backend, MongoDB. "
+            "We need to estimate the initial MVP."
+        )
+
+        # Define turns with the same transcript for all
+        self.turns = {
+            1: base_transcript,
+            2: base_transcript,
+            3: base_transcript,
+            4: base_transcript,
+            5: base_transcript,
+        }
+
+        # Attachment sizes in KB
+        self._attachment_sizes = {
+            1: 0,    # No attachment (baseline)
+            2: 5,    # Small
+            3: 20,   # Medium
+            4: 50,   # Large
+            5: 100,  # Very large
+        }
+
+        # Initialize fact_tracker
+        self.fact_tracker = FactTracker(
+            scenario_id=self.id,
+            profile=self.profile_type,
+        )
+
+        # Define facts (mostly about project name and tech stack)
+        self.fact_tracker.add_fact(
+            "project_name", "PhotoShare", 1, "Project name should be PhotoShare"
+        )
+        self.fact_tracker.add_fact(
+            "mentioned_technologies", ["React Native", "Node.js", "MongoDB"], 1,
+            "Tech stack should include React Native, Node.js, MongoDB"
+        )
+        # Same facts should hold through all turns since transcript is identical
+        for turn in [2, 3, 4, 5]:
+            self.fact_tracker.add_fact(
+                "project_name", "PhotoShare", turn,
+                f"Project name should still be PhotoShare at turn {turn}"
+            )
+
+    def get_transcript_for_turn(self, turn_number: int) -> str | None:
+        return self.turns.get(turn_number)
+
+    def get_attachment_size_kb(self, turn_number: int) -> int:
+        """Get the attachment size in KB for a given turn.
+
+        Returns:
+            Attachment size in KB, or 0 if no attachment.
+        """
+        return self._attachment_sizes.get(turn_number, 0)
+
+    def get_attachments_for_turn(self, turn_number: int) -> dict[str, bytes] | None:
+        """Generate and return PDF attachment for this turn.
+
+        Returns:
+            Dict with single key 'attachment_{size}kb.pdf': bytes, or None if no attachment (turn 1).
+        """
+        size_kb = self.get_attachment_size_kb(turn_number)
+        if size_kb == 0:
+            return None
+
+        # Generate PDF using the pdf_generator module
+        try:
+            from evals.stress.generators.pdf import generate_pdf
+            pdf_bytes = generate_pdf(size_kb)
+            filename = f"attachment_{size_kb}kb.pdf"
+            return {filename: pdf_bytes}
+        except Exception as e:
+            log.warning(f"Failed to generate PDF for turn {turn_number}: {e}")
+            return None
+
+
 # ---------------------------------------------------------------------------
 # Scenario Configuration
 # ---------------------------------------------------------------------------
@@ -550,16 +665,27 @@ class MultiTurnScenarioEvaluator:
                     log.debug(f"No transcript defined for turn {turn_number}, skipping")
                     continue
 
+                # Get attachments for this turn (if the scenario supports them)
+                attachments = scenario.get_attachments_for_turn(turn_number)
+
                 turn_result = await self._run_turn(
                     session_id=session_id,
                     turn_number=turn_number,
                     transcript=transcript,
                     fact_tracker=scenario.fact_tracker,
+                    attachments=attachments,
                 )
                 result.add_turn(turn_result)
+                
+                attachment_info = ""
+                if attachments:
+                    total_kb = sum(len(b) for b in attachments.values()) / 1024
+                    attachment_info = f", attachments={total_kb:.1f}KB"
+                
                 log.info(
                     f"Turn {turn_number}: cost=${float(turn_result.cost_usd):.4f}, "
-                    f"drift={turn_result.memory_drift:.2%}"
+                    f"latency={turn_result.latency_ms:.0f}ms, "
+                    f"drift={turn_result.memory_drift:.2%}{attachment_info}"
                 )
 
         except Exception as e:
@@ -584,6 +710,7 @@ class MultiTurnScenarioEvaluator:
         turn_number: int,
         transcript: str,
         fact_tracker: FactTracker,
+        attachments: dict[str, bytes] | None = None,
     ) -> TurnResult:
         """Run a single estimation turn and collect metrics.
 
@@ -592,6 +719,7 @@ class MultiTurnScenarioEvaluator:
             turn_number: Which turn this is (1-indexed).
             transcript: User message for this turn.
             fact_tracker: For verifying remembered facts.
+            attachments: Optional dict of filename -> bytes to upload.
 
         Returns:
             TurnResult with full metrics and metadata.
@@ -599,9 +727,21 @@ class MultiTurnScenarioEvaluator:
         start_time = asyncio.get_event_loop().time()
 
         if self.use_http_client:
+            # Build form data with transcript
+            data = {"transcript": transcript}
+            files = None
+
+            # Add attachments if provided
+            if attachments:
+                files = {}
+                for filename, file_bytes in attachments.items():
+                    # Create file tuple: (filename, file_content, content_type)
+                    files["attachments"] = (filename, io.BytesIO(file_bytes), "application/pdf")
+
             response = self._client.post(
                 f"/api/v1/sessions/{session_id}/estimate",
-                data={"transcript": transcript},
+                data=data,
+                files=files,
             )
             response.raise_for_status()
             data = response.json()

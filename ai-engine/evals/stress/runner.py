@@ -5,14 +5,16 @@ Executes multi-turn conversation scenarios to measure:
   - Metadata consistency (ProjectMetadata mutations)
   - Cost curves and resource usage
   - Contradiction handling
+  - Attachment handling (file size impact on latency, cost, recall)
 
 Scenarios:
   - growth: Coherent feature accumulation (MVP → auth → multi-tenant → audit → export)
   - pivot: Technology stack change (React → Flutter at turn 5)
   - contradiction: Budget conflict (€30k → €80k at turn 8)
+  - large_attachment: File size stress test (0-100 KB attachments)
 
-Each scenario runs with N ∈ {1, 3, 6, 10, 20} turns to test behavior across
-conversation depth.
+Each scenario runs with N ∈ {1, 3, 6, 10, 20} turns (or scenario-specific counts) to test
+behavior across conversation depth.
 
 Cost Estimation
 ---------------
@@ -20,8 +22,9 @@ Each turn makes 1 LLM call (estimation). Scenarios:
   - growth: 5 turns = ~$0.005-0.01
   - pivot: 5 turns = ~$0.005-0.01
   - contradiction: 4 turns = ~$0.004-0.008
+  - large_attachment: 5 turns = ~$0.01-0.02 (higher due to larger token counts)
 
-Total for all 3 scenarios: ~$0.02-0.03 (much cheaper than LLM-judge tests).
+Total for all 4 scenarios: ~$0.03-0.05 (much cheaper than LLM-judge tests).
 
 Environment
 -----------
@@ -29,16 +32,17 @@ Requires ANTHROPIC_API_KEY and OPENAI_API_KEY (for LiteLLM).
 
 Usage
 -----
-  uv run -m evals.stress.runner all           # Run all scenarios
-  uv run -m evals.stress.runner growth        # Run growth scenario only
-  uv run -m evals.stress.runner pivot         # Run pivot scenario only
-  uv run -m evals.stress.runner contradiction # Run contradiction scenario only
-  uv run -m evals.stress.runner --verbose     # Show detailed output
-  uv run -m evals.stress.runner --json out.json  # Save JSON report
+  uv run -m evals.stress.runner all                   # Run all scenarios
+  uv run -m evals.stress.runner growth                # Run growth scenario only
+  uv run -m evals.stress.runner pivot                 # Run pivot scenario only
+  uv run -m evals.stress.runner contradiction         # Run contradiction scenario only
+  uv run -m evals.stress.runner large_attachment      # Run attachment stress test
+  uv run -m evals.stress.runner --verbose             # Show detailed output
+  uv run -m evals.stress.runner --json out.json       # Save JSON report
 
 Or use the wrapper:
   bash evals/stress/run.sh all
-  bash evals/stress/run.sh growth --verbose
+  bash evals/stress/run.sh large_attachment --verbose
 """
 from __future__ import annotations
 
@@ -54,6 +58,7 @@ from evals.stress.scenarios import (
     MultiTurnScenarioEvaluator,
     ProjectContradictionScenario,
     ProjectGrowthScenario,
+    ProjectLargeAttachmentScenario,
     ProjectPivotScenario,
     ScenarioConfig,
 )
@@ -90,6 +95,7 @@ class StressScenarioRunner:
             "growth": ProjectGrowthScenario,
             "pivot": ProjectPivotScenario,
             "contradiction": ProjectContradictionScenario,
+            "large_attachment": ProjectLargeAttachmentScenario,
         }
 
         if scenario == "all":
@@ -153,7 +159,7 @@ class StressScenarioRunner:
 @click.command()
 @click.option(
     "--scenario",
-    type=click.Choice(["all", "growth", "pivot", "contradiction"]),
+    type=click.Choice(["all", "growth", "pivot", "contradiction", "large_attachment"]),
     default="all",
     help="Which scenario(s) to run.",
 )
