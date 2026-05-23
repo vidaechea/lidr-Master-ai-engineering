@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import AsyncIterator
+from decimal import Decimal
 from typing import TypeVar
 
 import instructor
@@ -10,7 +11,7 @@ import structlog
 from litellm import Router
 from pydantic import BaseModel as PydanticBaseModel
 
-from app.config import LOGICAL_MODEL, _FALLBACK_MODEL, build_model_list, settings
+from app.config import LOGICAL_MODEL, _FALLBACK_MODEL, MODEL_REGISTRY, build_model_list, settings
 from app.schemas.llm import LLMObservableResponse
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.helpers.llm_observable_builder import LLMObservableResponseBuilder
@@ -69,6 +70,64 @@ class LiteLLMRouterService:
             fallback_model=self._fallback_model,
         )
 
+    def _calculate_cost_usd(self, model: str, input_tokens: int, output_tokens: int) -> Decimal:
+        """Calculate cost in USD from token counts and MODEL_REGISTRY pricing.
+        
+        Formula: (input_tokens × input_price + output_tokens × output_price) / 1,000,000
+        
+        Handles model name normalization:
+          - Strips provider prefix (e.g., "anthropic/claude-haiku" → "claude-haiku")
+          - Strips version suffix (e.g., "gpt-4o-mini-2024-07-18" → "gpt-4o-mini")
+        
+        Args:
+            model: Model name (e.g., 'gpt-4o-mini', 'gpt-4o-mini-2024-07-18', 'anthropic/claude-haiku-...')
+            input_tokens: Number of input tokens consumed.
+            output_tokens: Number of output tokens generated.
+        
+        Returns:
+            Cost in USD as Decimal. Returns Decimal('0') if model not in registry.
+        """
+        import re
+        
+        # Normalize model name (strip provider prefix if present)
+        normalized_model = model.split('/', 1)[1] if '/' in model else model
+        
+        # Try exact match first
+        if normalized_model in MODEL_REGISTRY:
+            config = MODEL_REGISTRY[normalized_model]
+            cost = (
+                input_tokens * config.input_price +
+                output_tokens * config.output_price
+            ) / 1_000_000
+            return Decimal(str(cost))
+        
+        # Try to find base model by stripping version suffix (e.g., gpt-4o-mini-2024-07-18 → gpt-4o-mini)
+        # Look for pattern like "-YYYY-MM-DD" or "-YYYYMMDD" at the end
+        match = re.match(r'^(.+?)-(?:\d{4}-\d{2}-\d{2}|\d{8})$', normalized_model)
+        if match:
+            base_model = match.group(1)
+            if base_model in MODEL_REGISTRY:
+                config = MODEL_REGISTRY[base_model]
+                cost = (
+                    input_tokens * config.input_price +
+                    output_tokens * config.output_price
+                ) / 1_000_000
+                log.info(
+                    "cost_calculated_with_base_model",
+                    model=model,
+                    base_model=base_model,
+                    cost=cost,
+                )
+                return Decimal(str(cost))
+        
+        # Model not found in registry
+        log.warning(
+            "model_not_in_registry_cost_zero",
+            model=model,
+            normalized=normalized_model,
+        )
+        return Decimal('0')
+
     async def complete(self, messages: list[dict], **kwargs) -> LLMObservableResponse:
         """Execute a non-streaming completion and return observable response.
 
@@ -112,6 +171,11 @@ class LiteLLMRouterService:
         response_id = getattr(response, "id", None)
         usage = getattr(response, "usage", None)
 
+        # Calculate cost from token counts and MODEL_REGISTRY pricing
+        input_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
+        output_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+        cost_usd = self._calculate_cost_usd(actual_model or LOGICAL_MODEL, input_tokens, output_tokens)
+
         return self._observable_builder.build_from_timer(
             model=actual_model or LOGICAL_MODEL,
             usage=usage,
@@ -119,6 +183,7 @@ class LiteLLMRouterService:
             content=content,
             response_id=response_id,
             raw_response=response,
+            cost_usd=cost_usd,
         )
 
     async def stream(
@@ -157,11 +222,17 @@ class LiteLLMRouterService:
                 if delta:
                     yield delta
             if usage_out is not None and last_usage is not None:
+                # Calculate cost from token counts
+                input_tokens = getattr(last_usage, "prompt_tokens", 0)
+                output_tokens = getattr(last_usage, "completion_tokens", 0)
+                cost_usd = self._calculate_cost_usd(actual_model or LOGICAL_MODEL, input_tokens, output_tokens)
+                
                 observable_resp = self._observable_builder.build_from_timer(
                     model=actual_model or LOGICAL_MODEL,
                     usage=last_usage,
                     start_time=start_time,
                     response_id=response_id,
+                    cost_usd=cost_usd,
                 )
                 usage_out.append(observable_resp)
         except tuple(_LITELLM_ERROR_MAP) as exc:
@@ -240,12 +311,18 @@ class LiteLLMRouterService:
         usage = getattr(completion, "usage", None)
         response_id = getattr(completion, "id", None)
 
+        # Calculate cost from token counts and MODEL_REGISTRY pricing
+        input_tokens = getattr(usage, "prompt_tokens", 0) if usage else 0
+        output_tokens = getattr(usage, "completion_tokens", 0) if usage else 0
+        cost_usd = self._calculate_cost_usd(actual_model or LOGICAL_MODEL, input_tokens, output_tokens)
+
         observable_response = self._observable_builder.build_from_timer(
             model=actual_model or LOGICAL_MODEL,
             usage=usage,
             start_time=start_time,
             response_id=response_id,
             raw_response=completion,
+            cost_usd=cost_usd,
         )
 
         return result, observable_response

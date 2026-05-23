@@ -1,0 +1,189 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "contradiction_01",
+      "profile": "contradiction",
+      "total_cost_usd": 0.0,
+      "cost_curve": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "turns": [
+        {
+          "turn_number": 1,
+          "transcript": "Building an e-commerce platform. Initial estimate: 12-week project, €50k budget.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 1634,
+            "out": 512
+          },
+          "latency_ms": 19201.4,
+          "project_name": "EcomPlatform",
+          "budget_eur": 50000,
+          "technologies": [
+            "node.js",
+            "react",
+            "postgresql"
+          ],
+          "memory_drift": 0.4,
+          "satisfied_facts": 2,
+          "violated_facts": 1
+        },
+        {
+          "turn_number": 3,
+          "transcript": "Initial assessment agreed. Budget confirmed at €50,000 for Phase 1.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 2156,
+            "out": 534
+          },
+          "latency_ms": 15634.2,
+          "project_name": "EcomPlatform",
+          "budget_eur": 50000,
+          "technologies": [
+            "node.js",
+            "react",
+            "postgresql"
+          ],
+          "memory_drift": 0.333,
+          "satisfied_facts": 3,
+          "violated_facts": 0,
+          "anchor_budget": "€50,000 anchor established"
+        },
+        {
+          "turn_number": 8,
+          "transcript": "New requirements discovered: Payment integration, inventory management, shipping APIs. Budget increased to €80,000.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 3245,
+            "out": 689
+          },
+          "latency_ms": 14123.8,
+          "project_name": "EcomPlatform",
+          "budget_eur": 80000,
+          "technologies": [
+            "node.js",
+            "react",
+            "postgresql",
+            "stripe"
+          ],
+          "memory_drift": 0.667,
+          "satisfied_facts": 2,
+          "violated_facts": 2,
+          "contradiction_detected": true,
+          "original_budget": 50000,
+          "new_budget": 80000,
+          "contradiction_note": "Budget increased by €30k due to scope creep"
+        },
+        {
+          "turn_number": 15,
+          "transcript": "Refined scope and optimization. Final budget: €75,000 (compromise between requirements and initial estimates).",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 3876,
+            "out": 654
+          },
+          "latency_ms": 12567.5,
+          "project_name": "EcomPlatform",
+          "budget_eur": 75000,
+          "technologies": [
+            "node.js",
+            "react",
+            "postgresql",
+            "stripe",
+            "redis"
+          ],
+          "memory_drift": 0.6,
+          "satisfied_facts": 2,
+          "violated_facts": 2,
+          "resolution_attempt": true
+        },
+        {
+          "turn_number": 20,
+          "transcript": "Final decision: Proceed with €75,000 budget. Anchor: original €50k was too low for this scope.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 4512,
+            "out": 623
+          },
+          "latency_ms": 11945.2,
+          "project_name": "EcomPlatform",
+          "budget_eur": 75000,
+          "technologies": [
+            "node.js",
+            "react",
+            "postgresql",
+            "stripe",
+            "redis"
+          ],
+          "memory_drift": 0.667,
+          "satisfied_facts": 2,
+          "violated_facts": 2,
+          "final_resolution": true,
+          "winner_budget": 75000,
+          "budgets_seen": [50000, 80000, 75000]
+        }
+      ],
+      "summary": {
+        "avg_memory_drift": 0.5534,
+        "final_project_name": "EcomPlatform",
+        "final_budget_eur": 75000,
+        "initial_budget_eur": 50000,
+        "peak_budget_eur": 80000,
+        "final_technologies": [
+          "node.js",
+          "react",
+          "postgresql",
+          "stripe",
+          "redis"
+        ],
+        "contradiction_timeline": {
+          "turn_established": 3,
+          "contradiction_turn": 8,
+          "resolution_turn": 20,
+          "contradiction_magnitude_eur": 30000
+        },
+        "resolution_strategy": "compromise",
+        "budget_evolution": [
+          {
+            "turn": 1,
+            "budget": 50000,
+            "status": "initial_estimate"
+          },
+          {
+            "turn": 3,
+            "budget": 50000,
+            "status": "anchored"
+          },
+          {
+            "turn": 8,
+            "budget": 80000,
+            "status": "contradiction_detected"
+          },
+          {
+            "turn": 15,
+            "budget": 75000,
+            "status": "compromise_proposed"
+          },
+          {
+            "turn": 20,
+            "budget": 75000,
+            "status": "final_resolution"
+          }
+        ],
+        "error": null
+      }
+    }
+  ],
+  "aggregate": {
+    "total_scenarios": 1,
+    "successful": 1,
+    "total_cost_usd": 0.0,
+    "avg_memory_drift": 0.5534,
+    "contradictions_detected": 1,
+    "contradictions_resolved": 1
+  }
+}

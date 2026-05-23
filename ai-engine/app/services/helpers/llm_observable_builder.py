@@ -1,6 +1,6 @@
 """Observable response builder for LLM completions.
 
-Delegates cost calculation to litellm; only adds latency tracking.
+Receives pre-calculated cost from LiteLLMRouterService and constructs the response.
 """
 
 import time
@@ -28,11 +28,11 @@ class LLMObservableResponseBuilder:
         content: str | None = None,
         response_id: str | None = None,
         raw_response: Any = None,
+        cost_usd: Decimal | None = None,
     ) -> LLMObservableResponse:
         """Construct an observable response wrapper from litellm response.
 
-        Cost is extracted from the litellm response object where it was
-        calculated by litellm's cost tracking system.
+        Cost is provided by LiteLLMRouterService; this builder simply assembles it.
 
         Args:
             model: Model name (e.g., 'gpt-4o-mini').
@@ -41,16 +41,18 @@ class LLMObservableResponseBuilder:
             content: Response text content (optional for streaming).
             response_id: Provider response ID for tracing.
             raw_response: Raw provider response object from litellm.
+            cost_usd: Cost in USD (pre-calculated by LiteLLMRouterService).
 
         Returns:
-            Structured LLMObservableResponse with cost from litellm.
+            Structured LLMObservableResponse with provided cost.
         """
         prompt_tokens = getattr(usage, "prompt_tokens", 0)
         completion_tokens = getattr(usage, "completion_tokens", 0)
         total_tokens = getattr(usage, "total_tokens", 0)
 
-        # Extract cost calculated by litellm (available in response._cost)
-        cost_usd = self._extract_litellm_cost(raw_response)
+        # Use provided cost (calculated by LiteLLMRouterService)
+        if cost_usd is None:
+            cost_usd = Decimal("0")
 
         return LLMObservableResponse(
             model=model,
@@ -61,7 +63,7 @@ class LLMObservableResponseBuilder:
                 total_tokens=total_tokens,
             ),
             latency_ms=latency_ms,
-            cost_usd=Decimal(str(cost_usd)),
+            cost_usd=cost_usd,
             response_id=response_id,
             raw_response=raw_response,
         )
@@ -75,6 +77,7 @@ class LLMObservableResponseBuilder:
         content: str | None = None,
         response_id: str | None = None,
         raw_response: Any = None,
+        cost_usd: Decimal | None = None,
     ) -> LLMObservableResponse:
         """Build response, automatically calculating elapsed time from a start time.
 
@@ -85,6 +88,7 @@ class LLMObservableResponseBuilder:
             content: Response text content.
             response_id: Provider response ID.
             raw_response: Raw provider response object from litellm.
+            cost_usd: Cost in USD (pre-calculated by LiteLLMRouterService).
 
         Returns:
             Structured LLMObservableResponse.
@@ -97,35 +101,6 @@ class LLMObservableResponseBuilder:
             content=content,
             response_id=response_id,
             raw_response=raw_response,
+            cost_usd=cost_usd,
         )
-
-    def _extract_litellm_cost(self, response: Any) -> float:
-        """Extract cost calculated by litellm from the response object.
-
-        Litellm automatically tracks costs in response._cost or cost attributes.
-
-        Args:
-            response: Raw response object from litellm.
-
-        Returns:
-            Cost in USD. Defaults to 0.0 if not available.
-        """
-        if response is None:
-            return 0.0
-
-        # Try multiple possible attributes where litellm stores cost
-        cost = getattr(response, "_cost", None)
-        if cost is not None:
-            return float(cost)
-
-        cost = getattr(response, "cost", None)
-        if cost is not None:
-            return float(cost)
-
-        # Fallback: log and return 0
-        log.debug(
-            "litellm_cost_not_found_in_response",
-            response_type=type(response).__name__,
-        )
-        return 0.0
 
