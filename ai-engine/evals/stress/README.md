@@ -2,6 +2,66 @@
 
 Stress tests that measure system behavior across multi-turn conversational workflows designed to expose edge cases and verify memory retention.
 
+## Quick Start
+
+### Run Full Suite (Tests + Report) - ONE COMMAND
+
+```bash
+# Complete pipeline: test → analyze → report
+bash evals/stress/run_full.sh
+```
+
+Output files:
+- `evals/stress/results.csv` - All turn-level metrics
+- `evals/stress/REPORT.md` - Executive summary with tables & analysis
+
+### Run Tests Only
+
+```bash
+# With default scenarios (growth, pivot, contradiction), attachment sizes (0-100KB), repeats=2
+uv run -m evals.stress.run
+
+# With custom options
+uv run -m evals.stress.run \
+  --scenarios growth,pivot,contradiction \
+  --attachment-sizes 0,5,20,50,100 \
+  --repeats 3 \
+  --output evals/stress/results.csv \
+  -v  # Verbose
+
+# Quick test (single repeat, no attachments)
+uv run -m evals.stress.run \
+  --scenarios growth \
+  --attachment-sizes 0 \
+  --repeats 1 \
+  --output /tmp/quick_test.csv
+```
+
+**Options:**
+- `--scenarios`: comma-separated (growth, pivot, contradiction). Default: all.
+- `--attachment-sizes`: comma-separated KB (0, 5, 20, 50, 100). Default: 0-100.
+- `--repeats`: iterations per scenario+size combo. Default: 2.
+- `--output`: CSV path. Default: `evals/stress/results.csv`.
+- `--http URL`: Remote API mode (not yet implemented; parsed only).
+- `-v`: Verbose output.
+
+### Generate Report from CSV
+
+```bash
+# Generate report from existing CSV
+uv run -m evals.stress.gen_report \
+  --csv evals/stress/results.csv \
+  --output evals/stress/REPORT.md
+```
+
+**Report Contents:**
+- **Summary Table**: P50/P95 latency, total cost, cache hit %, fact recall % per scenario
+- **Metric Curves** (ASCII tables):
+  - Latency vs input tokens
+  - Cumulative cost vs turn number
+  - Fact recall vs attachment size
+- **Analysis** (2 paragraphs): "Where CAG breaks down and why" + performance impact
+
 ## Overview
 
 Three scenario profiles test different aspects of the estimation system:

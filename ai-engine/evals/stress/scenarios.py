@@ -248,13 +248,31 @@ class ScenarioProfile:
         """Get the transcript for a specific turn. Override in subclasses if needed."""
         return None
 
-    def get_attachments_for_turn(self, turn_number: int) -> dict[str, bytes] | None:
+    def get_attachments_for_turn(
+        self, turn_number: int, attachment_size_kb: int = 0
+    ) -> dict[str, bytes] | None:
         """Get attachments for a specific turn as {filename: bytes}.
+
+        Args:
+            turn_number: Which turn this is.
+            attachment_size_kb: If > 0, generate dummy attachment of this size.
 
         Returns:
             Dict of filename -> file bytes, or None if no attachments.
         """
-        return None
+        # Default: no attachments unless subclass overrides
+        if attachment_size_kb <= 0:
+            return None
+
+        # Generate a dummy attachment of the specified size
+        try:
+            from evals.stress.generators.pdf import generate_pdf
+            pdf_bytes = generate_pdf(attachment_size_kb)
+            filename = f"attachment_turn{turn_number}_{attachment_size_kb}kb.pdf"
+            return {filename: pdf_bytes}
+        except Exception as e:
+            log.warning(f"Failed to generate dummy attachment for turn {turn_number}: {e}")
+            return None
 
 
 class ProjectGrowthScenario(ScenarioProfile):
@@ -580,6 +598,7 @@ class ScenarioConfig:
     scenario: ScenarioProfile
     turn_counts: list[int] = field(default_factory=lambda: [1, 3, 6, 10, 20])
     use_mock: bool = False  # If True, use mock responses instead of real API
+    attachment_size_kb: int = 0  # If > 0, inject dummy attachments of this size to each turn
 
 
 # ---------------------------------------------------------------------------
@@ -666,7 +685,10 @@ class MultiTurnScenarioEvaluator:
                     continue
 
                 # Get attachments for this turn (if the scenario supports them)
-                attachments = scenario.get_attachments_for_turn(turn_number)
+                # Pass attachment_size_kb from config to allow injecting dummy attachments
+                attachments = scenario.get_attachments_for_turn(
+                    turn_number, attachment_size_kb=config.attachment_size_kb
+                )
 
                 turn_result = await self._run_turn(
                     session_id=session_id,
