@@ -4,7 +4,7 @@ import pytest
 from dataclasses import dataclass
 from typing import Any, Optional
 
-from evals.metrics import (
+from tests.evals.deterministic_metrics import (
     LatencyBudgetMetric,
     CostBudgetMetric,
     MemoryDriftMetric,

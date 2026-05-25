@@ -394,10 +394,10 @@ uv run pytest tests/unit/ tests/integration/ -v
 uv run pytest tests/ -m "not slow" -v
 
 # Family 2 — Soft determinism (requires API keys, ~9 LLM calls)
-uv run pytest tests/eval/test_soft_determinism.py -m "slow and llm_live" -v
+uv run pytest tests/evals/test_soft_determinism.py -m "slow and llm_live" -v
 
 # Family 3 — LLM-as-judge via DeepEval (~12 LLM calls)
-uv run pytest tests/eval/test_llm_judge.py -m "slow and llm_live" -v
+uv run pytest tests/evals/test_llm_judge.py -m "slow and llm_live" -v
 
 # Full eval suite (pre-merge)
 uv run pytest tests/ -m "slow and llm_live" -v

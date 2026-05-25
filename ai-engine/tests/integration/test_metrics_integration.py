@@ -3,7 +3,7 @@
 import pytest
 from app.schemas.observation import TurnObservedEvent, CacheHitKind
 from app.services.sessions import ProjectMetadata
-from evals.metrics import (
+from tests.evals.deterministic_metrics import (
     LatencyBudgetMetric,
     CostBudgetMetric,
     MemoryDriftMetric,
