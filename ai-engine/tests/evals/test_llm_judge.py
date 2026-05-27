@@ -30,7 +30,7 @@ from deepeval.models.base_model import DeepEvalBaseLLM  # noqa: E402
 from deepeval.metrics import GEval  # noqa: E402
 from deepeval.test_case import LLMTestCase, SingleTurnParams  # noqa: E402
 
-from tests.eval.golden_dataset import GOLDEN_CASES, run_estimate_sync
+from tests.evals.golden_dataset import GOLDEN_CASES, run_estimate_sync
 
 pytestmark = [pytest.mark.slow, pytest.mark.llm_live]
 

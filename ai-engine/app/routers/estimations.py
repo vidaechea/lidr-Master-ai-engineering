@@ -23,6 +23,8 @@ from app.services.helpers.error_mapper import LLMServiceError
 
 log = structlog.get_logger(__name__)
 
+_INTERNAL_PROCESSING_ERROR_DETAIL = "Internal processing error"
+
 _GUARDRAIL_STATUS: dict[str, int] = {
     "moderation": 400,
     "prompt_injection": 422,
@@ -84,7 +86,7 @@ async def create_acb_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("acb_estimation_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 
 @router.get("/examples", response_model=list[ExampleItem])
@@ -121,7 +123,7 @@ async def create_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("estimation_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 
 @router.post("/estimate/stream", responses=_LLM_ERROR_RESPONSES)
@@ -177,6 +179,6 @@ async def create_structured_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("structured_estimation_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 

@@ -23,6 +23,8 @@ log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
+_INTERNAL_PROCESSING_ERROR_DETAIL = "Internal processing error"
+
 _LLM_ERROR_RESPONSES = {
     400: {"description": "Invalid request parameters"},
     401: {"description": "Invalid or missing API key"},
@@ -195,9 +197,23 @@ async def create_session_estimation(
             )
             extracted_texts.append(extracted)
         except UnsupportedAttachmentType as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            log.warning(
+                "unsupported_attachment_type",
+                session_id=session_id,
+                filename=filename,
+                content_type=content_type,
+                error=str(exc),
+            )
+            raise HTTPException(status_code=422, detail="Unsupported attachment type")
         except AttachmentExtractionError as exc:
-            raise HTTPException(status_code=422, detail=str(exc))
+            log.error(
+                "attachment_extraction_failed",
+                session_id=session_id,
+                filename=filename,
+                content_type=content_type,
+                error=str(exc),
+            )
+            raise HTTPException(status_code=422, detail="Attachment extraction failed")
 
     combined_transcript = attachment_svc.build_combined_transcript(transcript, extracted_texts)
 
@@ -248,7 +264,7 @@ async def create_session_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("session_estimation_failed", session_id=session_id, error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
     # ------------------------------------------------------------------ #
     # Update session metadata from this turn (heuristic, in-place)        #

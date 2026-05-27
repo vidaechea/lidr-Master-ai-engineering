@@ -655,6 +655,17 @@ class MultiTurnScenarioEvaluator:
         self.base_url = base_url
         self._client = None
         self._session_store = None
+        self._request_headers: dict[str, str] = {}
+
+        # Mirror production-like internal auth when configured.
+        try:
+            from app.config import settings
+
+            if settings.internal_api_key:
+                self._request_headers["X-Internal-API-Key"] = settings.internal_api_key
+        except Exception:
+            # Keep evaluator usable even if settings import fails in isolated contexts.
+            self._request_headers = {}
 
         if real_http:
             import httpx
@@ -741,7 +752,10 @@ class MultiTurnScenarioEvaluator:
             last_exc: Exception | None = None
             for attempt in range(1, 4):
                 try:
-                    resp = self._client.post("/api/v1/sessions")
+                    resp = self._client.post(
+                        "/api/v1/sessions",
+                        headers=self._request_headers or None,
+                    )
                     resp.raise_for_status()
                     return resp.json()["session_id"]
                 except Exception as exc:
@@ -771,6 +785,7 @@ class MultiTurnScenarioEvaluator:
                     f"/api/v1/sessions/{session_id}/estimate",
                     data=data,
                     files=files,
+                    headers=self._request_headers or None,
                 )
                 response.raise_for_status()
                 return response.json()
@@ -789,7 +804,10 @@ class MultiTurnScenarioEvaluator:
         last_exc: Exception | None = None
         for attempt in range(1, 4):
             try:
-                state_resp = self._client.get(f"/api/v1/sessions/{session_id}")
+                state_resp = self._client.get(
+                    f"/api/v1/sessions/{session_id}",
+                    headers=self._request_headers or None,
+                )
                 state_resp.raise_for_status()
                 return state_resp.json()
             except Exception as exc:

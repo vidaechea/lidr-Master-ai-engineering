@@ -54,7 +54,7 @@ from typing import Literal
 
 import click
 
-from tests.evals.stress.scenarios import (
+from tests.stress.scenarios import (
     MultiTurnScenarioEvaluator,
     ProjectContradictionScenario,
     ProjectGrowthScenario,

@@ -35,7 +35,7 @@ def reset_session_store():
 @pytest.fixture
 def scenario_evaluator(reset_session_store):
     """Create a fresh evaluator for each test."""
-    from tests.evals.stress.scenarios import MultiTurnScenarioEvaluator
+    from tests.stress.scenarios import MultiTurnScenarioEvaluator
     return MultiTurnScenarioEvaluator(use_http_client=True)
 
 
@@ -53,7 +53,7 @@ async def test_project_growth_scenario(scenario_evaluator):
       - project_name 'TaskMaster' survives all 5 turns
       - mentioned_technologies accumulate (never remove)
     """
-    from tests.evals.stress.scenarios import ProjectGrowthScenario, ScenarioConfig
+    from tests.stress.scenarios import ProjectGrowthScenario, ScenarioConfig
 
     config = ScenarioConfig(scenario=ProjectGrowthScenario(), turn_counts=[1, 3, 6, 10, 20])
     result = await scenario_evaluator.run_scenario(config)
@@ -103,7 +103,7 @@ async def test_project_pivot_scenario(scenario_evaluator):
       - Flutter becomes primary technology by turn 20
       - Cleanest behavior: React is superseded (not accumulated)
     """
-    from tests.evals.stress.scenarios import ProjectPivotScenario, ScenarioConfig
+    from tests.stress.scenarios import ProjectPivotScenario, ScenarioConfig
 
     config = ScenarioConfig(scenario=ProjectPivotScenario(), turn_counts=[1, 3, 5, 10, 20])
     result = await scenario_evaluator.run_scenario(config)
@@ -143,7 +143,7 @@ async def test_project_contradiction_scenario(scenario_evaluator):
       - Final budget should be €80k (later value wins, or explicitly anchored)
       - Contradiction is documented (memory drift spike at turn 8)
     """
-    from tests.evals.stress.scenarios import ProjectContradictionScenario, ScenarioConfig
+    from tests.stress.scenarios import ProjectContradictionScenario, ScenarioConfig
 
     config = ScenarioConfig(scenario=ProjectContradictionScenario(), turn_counts=[1, 3, 8, 20])
     result = await scenario_evaluator.run_scenario(config)
@@ -159,7 +159,6 @@ async def test_project_contradiction_scenario(scenario_evaluator):
 
     # Check individual turn memory drift — expect a spike at turn 8 (contradiction)
     if len(result.turns) >= 3:
-        turn_3_drift = result.turns[1].memory_drift  # Turn 3 is index 1
         turn_8_drift = result.turns[2].memory_drift if len(result.turns) > 2 else None
         if turn_8_drift is not None:
             # Contradiction turn should have higher drift (facts conflict)
@@ -181,7 +180,7 @@ async def test_scenario_costs_reasonable(scenario_evaluator):
     Each turn costs roughly $0.0001-0.001 depending on model.
     5 turns × 3 scenarios = 15 turns ≈ $0.005-0.015 total.
     """
-    from tests.evals.stress.scenarios import (
+    from tests.stress.scenarios import (
         ProjectGrowthScenario,
         ProjectPivotScenario,
         ProjectContradictionScenario,
@@ -220,7 +219,7 @@ async def test_fact_tracker_memory_drift_metric(scenario_evaluator):
     - Run turns
     - Check that memory_drift_ratio matches (violated / total)
     """
-    from tests.evals.stress.scenarios import ProjectGrowthScenario, ScenarioConfig
+    from tests.stress.scenarios import ProjectGrowthScenario, ScenarioConfig
 
     config = ScenarioConfig(scenario=ProjectGrowthScenario(), turn_counts=[1, 3, 6])
     result = await scenario_evaluator.run_scenario(config)
@@ -232,12 +231,12 @@ async def test_fact_tracker_memory_drift_metric(scenario_evaluator):
         total_facts = len(turn.satisfied_facts) + len(turn.violated_facts)
         if total_facts > 0:
             expected_drift = len(turn.violated_facts) / total_facts
-            assert turn.memory_drift == expected_drift, (
+            assert turn.memory_drift == pytest.approx(expected_drift), (
                 f"Memory drift mismatch at turn {turn.turn_number}: "
                 f"expected {expected_drift}, got {turn.memory_drift}"
             )
         else:
-            assert turn.memory_drift == 0.0
+            assert turn.memory_drift == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -247,7 +246,7 @@ async def test_fact_tracker_memory_drift_metric(scenario_evaluator):
 
 def test_fact_tracker_match_string():
     """Test FactTracker._match for string containment."""
-    from tests.evals.stress.scenarios import FactTracker
+    from tests.stress.scenarios import FactTracker
 
     assert FactTracker._match("react frontend", "react") is True
     assert FactTracker._match("React Frontend", "react") is True
@@ -256,7 +255,7 @@ def test_fact_tracker_match_string():
 
 def test_fact_tracker_match_list():
     """Test FactTracker._match for list containment."""
-    from tests.evals.stress.scenarios import FactTracker
+    from tests.stress.scenarios import FactTracker
 
     assert FactTracker._match(["React", "Node.js"], ["React"]) is True
     assert FactTracker._match(["React", "Node.js"], ["React", "Node.js"]) is True
@@ -268,7 +267,7 @@ def test_scenario_result_cost_curve():
     """Test ScenarioResult cost curve calculation."""
     from decimal import Decimal
 
-    from tests.evals.stress.scenarios import ScenarioResult, TurnResult, ScenarioType
+    from tests.stress.scenarios import ScenarioResult, TurnResult, ScenarioType
 
     result = ScenarioResult(scenario_id="test", profile=ScenarioType.GROWTH)
 

@@ -24,7 +24,7 @@ AI_ENGINE = PROJECT_ROOT / "ai-engine"
 if str(AI_ENGINE) not in sys.path:
     sys.path.insert(0, str(AI_ENGINE))
 
-from tests.evals.stress.scenarios import (
+from tests.stress.scenarios import (
     MultiTurnScenarioEvaluator,
     ProjectContradictionScenario,
     ProjectGrowthScenario,
@@ -47,19 +47,13 @@ async def generate_expanded_csv(output_path: str = "results_expanded.csv") -> No
         ("contradiction", ProjectContradictionScenario),
     ]
     
-    # attachment_sizes = [0, 5, 20, 50, 100]  # KB
-    # repeats = 3  # ≥3 as per spec
-    
     # But for speed, use reduced set (will still exceed 50 rows)
-    attachment_sizes = [0]  # Just 0KB to test basic functionality
     repeats = 5  # Will generate: 3 scenarios × 1 size × 5 repeats × 4-5 turns ≈ 75-100 rows
     
     rows = []
     total_cost = 0.0
     
     for scenario_name, scenario_class in scenarios:
-        scenario = scenario_class()
-        
         for repeat_num in range(1, repeats + 1):
             print(f"\n▶ Running {scenario_name} (repeat {repeat_num}/{repeats})...")
             

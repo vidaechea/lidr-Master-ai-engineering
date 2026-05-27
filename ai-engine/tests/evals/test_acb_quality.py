@@ -30,7 +30,7 @@ from deepeval.models.base_model import DeepEvalBaseLLM  # noqa: E402
 from deepeval.metrics import GEval  # noqa: E402
 from deepeval.test_case import LLMTestCase, SingleTurnParams  # noqa: E402
 
-from tests.eval.golden_dataset import GOLDEN_CASES
+from tests.evals.golden_dataset import GOLDEN_CASES
 
 pytestmark = [pytest.mark.slow, pytest.mark.llm_live]
 
@@ -54,7 +54,7 @@ def _run_acb_sync(transcript: str, max_iterations: int = 1) -> dict:
         )
         return await ActorCriticBossService().estimate(req)
 
-    result = asyncio.get_event_loop().run_until_complete(_run())
+    result = asyncio.run(_run())
     return {
         "estimation": result.estimation,
         "iterations": [

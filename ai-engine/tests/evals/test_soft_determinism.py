@@ -28,7 +28,7 @@ import statistics
 
 import pytest
 
-from tests.eval.golden_dataset import GOLDEN_CASES, extract_total_hours, run_estimate
+from tests.evals.golden_dataset import GOLDEN_CASES, extract_total_hours, run_estimate
 
 pytestmark = [pytest.mark.slow, pytest.mark.llm_live]
 
