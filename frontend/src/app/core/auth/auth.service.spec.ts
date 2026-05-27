@@ -1,8 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
-import { Router } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 
 import { AuthService, TokenResponse } from './auth.service';
 import { environment } from '../../../environments/environment';
@@ -19,7 +18,6 @@ const MOCK_USER = {
   id: 'user-001',
   email: 'alice@example.com',
   full_name: 'Alice',
-  oauth_provider: null,
   is_active: true,
   created_at: '2026-05-15T10:00:00Z',
 };

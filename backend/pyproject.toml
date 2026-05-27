@@ -20,10 +20,8 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "bcrypt>=3.2.0,<4.0.0",
     "python-multipart>=0.0.9",
-    # HTTP client (AI Engine calls + OAuth2 code exchange)
+    # HTTP client (AI Engine calls)
     "httpx>=0.27.0",
-    # OAuth2
-    "authlib>=1.3.0",
     # Task queue
     "arq>=0.25.0",
     # Logging

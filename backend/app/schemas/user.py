@@ -11,7 +11,6 @@ class UserOut(BaseModel):
     id: uuid.UUID
     email: EmailStr
     full_name: str | None
-    oauth_provider: str | None
     is_active: bool
     tier: Literal["developer", "pm", "executive"]
     created_at: datetime
