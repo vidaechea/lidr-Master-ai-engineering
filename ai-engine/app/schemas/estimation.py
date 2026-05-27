@@ -186,7 +186,7 @@ class Phase(BaseModel):
     cost_eur: int
     confidence_pct: int
     summary: str | None = None
-    assumptions: list[str] = []
+    assumptions: list[str] = Field(default_factory=list)
 
 class EstimationResult(BaseModel):
     summary: str
@@ -272,7 +272,7 @@ class Milestone(BaseModel):
     name: str
     week: int
     deliverables: list[str]
-    dependencies: list[str] = []
+    dependencies: list[str] = Field(default_factory=list)
 
 
 class PmEstimate(BaseModel):
