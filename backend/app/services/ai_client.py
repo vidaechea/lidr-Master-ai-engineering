@@ -16,6 +16,8 @@ _HEADERS: dict[str, str] = {}
 if settings.internal_api_key:
     _HEADERS["X-Internal-API-Key"] = settings.internal_api_key
 
+_AI_ENGINE_UNREACHABLE = "AI Engine unreachable"
+
 
 async def estimate_sync(request_payload: dict, prompt_version: str) -> dict:
     """Call ``POST /api/v1/estimate`` on the AI Engine and return the JSON response."""
@@ -44,7 +46,7 @@ async def estimate_sync(request_payload: dict, prompt_version: str) -> dict:
             ) from exc
         except RequestError as exc:
             log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            raise HTTPException(status_code=503, detail=_AI_ENGINE_UNREACHABLE) from exc
 
 
 async def estimate_structured(request_payload: dict) -> dict:
@@ -69,7 +71,7 @@ async def estimate_structured(request_payload: dict) -> dict:
             ) from exc
         except RequestError as exc:
             log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            raise HTTPException(status_code=503, detail=_AI_ENGINE_UNREACHABLE) from exc
 
 
 async def estimate_acb(request_payload: dict, prompt_version: str) -> dict:
@@ -99,10 +101,10 @@ async def estimate_acb(request_payload: dict, prompt_version: str) -> dict:
             ) from exc
         except RequestError as exc:
             log.error("ai_engine_acb_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            raise HTTPException(status_code=503, detail=_AI_ENGINE_UNREACHABLE) from exc
 
 
-async def enqueue_async(request_payload: dict, callback_url: str) -> str:
+async def enqueue_async(request_payload: dict, callback_url: str, prompt_version: str) -> str:
     """Call ``POST /api/v1/internal/estimate/async`` — returns job_id."""
     async with AsyncClient(
         base_url=settings.ai_engine_url,
@@ -113,7 +115,7 @@ async def enqueue_async(request_payload: dict, callback_url: str) -> str:
             response = await client.post(
                 "/api/v1/internal/estimate/async",
                 json=request_payload,
-                params={"callback_url": callback_url},
+                params={"callback_url": callback_url, "prompt_version": prompt_version},
             )
             response.raise_for_status()
             return response.json()["job_id"]
@@ -145,7 +147,7 @@ async def create_session() -> dict[str, Any]:
             ) from exc
         except RequestError as exc:
             log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            raise HTTPException(status_code=503, detail=_AI_ENGINE_UNREACHABLE) from exc
 
 
 async def get_session_state(session_id: str) -> dict[str, Any]:
@@ -173,7 +175,7 @@ async def get_session_state(session_id: str) -> dict[str, Any]:
             ) from exc
         except RequestError as exc:
             log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            raise HTTPException(status_code=503, detail=_AI_ENGINE_UNREACHABLE) from exc
 
 
 async def estimate_session_multipart(
@@ -216,7 +218,7 @@ async def estimate_session_multipart(
             raise HTTPException(status_code=502, detail=f"AI Engine returned {status_code}") from exc
         except RequestError as exc:
             log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            raise HTTPException(status_code=503, detail=_AI_ENGINE_UNREACHABLE) from exc
 
 
 async def get_cache_metrics() -> dict[str, Any]:
@@ -249,4 +251,4 @@ async def get_cache_metrics() -> dict[str, Any]:
             raise HTTPException(status_code=502, detail=f"AI Engine returned {status_code}") from exc
         except RequestError as exc:
             log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            raise HTTPException(status_code=503, detail=_AI_ENGINE_UNREACHABLE) from exc

@@ -345,7 +345,7 @@ class TestListEstimationsFilter:
 
 class TestAsyncEstimation:
     async def test_async_endpoint_returns_202_with_pending_status(self, client, auth_headers):
-        with _patch_ai_enqueue("job-async-001"):
+        with _patch_ai_enqueue("job-async-001") as mock_enqueue:
             resp = await client.post(
                 "/v1/estimations/async",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -356,6 +356,8 @@ class TestAsyncEstimation:
         assert body["status"] == "pending"
         assert "estimation_id" in body
         assert body["job_id"] == "job-async-001"
+        assert mock_enqueue.await_count == 1
+        assert mock_enqueue.await_args.kwargs["prompt_version"] == "v1"
 
     async def test_async_requires_authentication(self, client):
         resp = await client.post(
@@ -399,7 +401,7 @@ class TestEstimationCallback:
 
         async def _fake_get_by_job(db, jid):
             if jid == job_id:
-                result = await est_svc.get_estimation(
+                await est_svc.get_estimation(
                     db, uuid.UUID(estimation_id), None  # type: ignore[arg-type]
                 )
                 # get_estimation filters by user_id; bypass with raw query
@@ -415,12 +417,13 @@ class TestEstimationCallback:
             "app.routers.internal.estimation_service.get_estimation_by_job",
             side_effect=_fake_get_by_job,
         ):
+            callback_result = {**AI_RESPONSE_PAYLOAD, "prompt_version": "v2"}
             resp = await client.post(
                 "/v1/internal/estimation-callback",
                 json={
                     "job_id": job_id,
                     "status": "completed",
-                    "result": AI_RESPONSE_PAYLOAD,
+                    "result": callback_result,
                     "error": None,
                 },
             )
@@ -433,6 +436,7 @@ class TestEstimationCallback:
         )
         assert get_resp.json()["status"] == "completed"
         assert get_resp.json()["estimation_markdown"] == AI_RESPONSE_PAYLOAD["estimation"]
+        assert get_resp.json()["prompt_version"] == "v2"
 
 
 class TestConversationSessionMultipleTurns:
@@ -645,18 +649,9 @@ class TestSessionEstimationWithPDFAttachment:
         
         # Verify that the output changed due to PDF content
         # Check multiple fields to confirm the PDF influenced the estimation
-        assert (
-            baseline_data["estimation"] != with_pdf_data["estimation"],
-            "Estimation should differ with PDF content"
-        )
-        assert (
-            baseline_data["input_tokens"] < with_pdf_data["input_tokens"],
-            "Input tokens should increase due to PDF content"
-        )
-        assert (
-            baseline_data.get("requirements") != with_pdf_data.get("requirements"),
-            "Requirements should be more detailed with PDF"
-        )
+        assert baseline_data["estimation"] != with_pdf_data["estimation"], "Estimation should differ with PDF content"
+        assert baseline_data["input_tokens"] < with_pdf_data["input_tokens"], "Input tokens should increase due to PDF content"
+        assert baseline_data.get("requirements") != with_pdf_data.get("requirements"), "Requirements should be more detailed with PDF"
 
 
 class TestSessionHistoryRespectMaxTurns:
@@ -666,9 +661,6 @@ class TestSessionHistoryRespectMaxTurns:
         """
         Verify that sending 8 turns to a session respects MAX_TURNS configuration.
         
-        MAX_TURNS (typically 6) = max number of user+assistant pairs to keep in history.
-        When we send 8 turns, the effective history sent to the LLM should be limited.
-        
         This test:
         1. Creates a session
         2. Mocks estimate_session_multipart to capture the form_fields
@@ -676,7 +668,6 @@ class TestSessionHistoryRespectMaxTurns:
         4. Verifies that the history captured on each call respects MAX_TURNS
         """
         session_id = "sid-max-turns-test"
-        max_turns_limit = 6
         
         # Create session
         with _patch_ai_create_session(session_id):
@@ -687,7 +678,7 @@ class TestSessionHistoryRespectMaxTurns:
         # Each response will simulate one more turn being added
         turn_histories = []
         
-        async def mock_estimate_capture_history(*args, **kwargs):
+        def mock_estimate_capture_history(*args, **kwargs):
             """Mock that captures the request and returns appropriately numbered response."""
             call_num = len(turn_histories) + 1
             
@@ -740,11 +731,6 @@ class TestSessionHistoryRespectMaxTurns:
         # Note: This test verifies the mock behavior simulates growing history
         # In reality, the backend would clip history in ai_client or the AI engine would
         assert len(turn_histories) == 8, "Should have made 8 requests"
-        
-        # The AI engine backend should ensure history respects MAX_TURNS
-        # We verify that at least the response for turn 8 should indicate
-        # that history management is happening
-        last_turn_history = turn_histories[-1]["history"]
         
         # While we mocked it to grow unbounded, the real implementation would limit it
         # This test documents the expected behavior: after turn 6, older turns should be dropped

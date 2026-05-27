@@ -17,10 +17,11 @@ log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/internal", tags=["internal"])
 
 
-@router.post("/estimate/async", status_code=202)
+@router.post("/estimate/async", status_code=202, responses={503: {"description": "Queue unavailable"}})
 async def enqueue_estimation(
     request: EstimationRequest,
     callback_url: str,
+    prompt_version: str = settings.prompt_version,
 ) -> dict:
     """Enqueue an estimation task in Redis.
 
@@ -36,6 +37,7 @@ async def enqueue_estimation(
             request.model_dump(),
             callback_url,
             job_id,
+            prompt_version,
             _job_id=job_id,
         )
     except Exception as exc:
