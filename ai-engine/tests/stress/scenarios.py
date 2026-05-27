@@ -566,13 +566,17 @@ class ProjectLargeAttachmentScenario(ScenarioProfile):
         """
         return self._attachment_sizes.get(turn_number, 0)
 
-    def get_attachments_for_turn(self, turn_number: int) -> dict[str, bytes] | None:
+    def get_attachments_for_turn(self, turn_number: int, attachment_size_kb: int = 0) -> dict[str, bytes] | None:
         """Generate and return PDF attachment for this turn.
+
+        Args:
+            turn_number: The turn number.
+            attachment_size_kb: Override attachment size in KB. If 0, use default from scenario.
 
         Returns:
             Dict with single key 'attachment_{size}kb.pdf': bytes, or None if no attachment (turn 1).
         """
-        size_kb = self.get_attachment_size_kb(turn_number)
+        size_kb = attachment_size_kb if attachment_size_kb > 0 else self.get_attachment_size_kb(turn_number)
         if size_kb == 0:
             return None
 
@@ -606,9 +610,7 @@ class ScenarioConfig:
 # ---------------------------------------------------------------------------
 
 
-def extract_metadata_from_response(
-    response_text: str,
-) -> dict[str, Any]:
+def extract_metadata_from_response() -> dict[str, Any]:
     """Extract structured metadata from estimation response.
 
     This is a heuristic parser that looks for common patterns in the
@@ -742,7 +744,7 @@ class MultiTurnScenarioEvaluator:
 
         except Exception as e:
             result.error = str(e)
-            log.error(f"Scenario {scenario.id} failed: {e}", exc_info=True)
+            log.exception(f"Scenario {scenario.id} failed: {e}")
 
         return result
 
@@ -828,18 +830,7 @@ class MultiTurnScenarioEvaluator:
         fact_tracker: FactTracker,
         attachments: dict[str, bytes] | None = None,
     ) -> TurnResult:
-        """Run a single estimation turn and collect metrics.
-
-        Args:
-            session_id: Session identifier.
-            turn_number: Which turn this is (1-indexed).
-            transcript: User message for this turn.
-            fact_tracker: For verifying remembered facts.
-            attachments: Optional dict of filename -> bytes to upload.
-
-        Returns:
-            TurnResult with full metrics and metadata.
-        """
+        """Run a single estimation turn and collect metrics."""
         start_time = asyncio.get_event_loop().time()
 
         if self.use_http_client:
