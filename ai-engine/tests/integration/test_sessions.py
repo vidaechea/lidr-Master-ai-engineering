@@ -11,8 +11,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from structlog.testing import capture_logs
 
 from app.schemas.llm import LLMObservableResponse, LLMUsage
+from app.schemas.observation import TurnObservedEvent
 
 UUID_V4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -383,4 +385,163 @@ class TestGetSessionState:
         ]
         for field in required_fields:
             assert field in body, f"Missing required field: {field}"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/v1/sessions/{session_id}/estimate → turn_observed event
+# ---------------------------------------------------------------------------
+
+# Turn context fields: the 13 core observation fields in TurnObservedEvent that
+# capture session state, transcript size, memory metrics, and token/cost data.
+# Excludes LLM-identity fields (model, response_id) which travel in the same event.
+_TURN_CONTEXT_FIELDS = {
+    "turn_index",
+    "session_id",
+    "enriched_transcript_chars",
+    "attachments_total_chars",
+    "messages_in_window",
+    "anchors_count",
+    "summary_chars",
+    "tokens_in",
+    "tokens_out",
+    "cost_usd",
+    "latency_ms",
+    "cache_hit_kind",
+    "last_resolved_tier",
+}
+# Full set of fields – the schema also carries model + response_id.
+_ALL_TURN_OBSERVED_FIELDS = set(TurnObservedEvent.model_fields.keys())
+
+
+class TestSessionEstimateTurnObservedEvent:
+    """Verify that POST /sessions/{id}/estimate emits a turn_observed log event
+    containing the 13 turn-context fields on every call."""
+
+    def _create_session(self, client: TestClient) -> str:
+        return client.post("/api/v1/sessions").json()["session_id"]
+
+    def test_turn_observed_event_is_emitted(self, client: TestClient):
+        """At least one turn_observed entry must appear in the logs."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            resp = client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+        assert resp.status_code == 200
+        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
+        assert len(turn_logs) >= 1, "Expected at least one turn_observed log entry"
+
+    def test_turn_observed_contains_all_block1_fields(self, client: TestClient):
+        """The emitted event must contain every one of the 13 turn-context fields."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
+        assert turn_logs, "No turn_observed event emitted"
+        event = turn_logs[0]
+        missing = _TURN_CONTEXT_FIELDS - set(event.keys())
+        assert not missing, f"turn_observed is missing turn-context fields: {missing}"
+
+    def test_turn_observed_contains_all_schema_fields(self, client: TestClient):
+        """The emitted event must contain all 15 fields defined in TurnObservedEvent."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
+        assert turn_logs, "No turn_observed event emitted"
+        event = turn_logs[0]
+        missing = _ALL_TURN_OBSERVED_FIELDS - set(event.keys())
+        assert not missing, f"turn_observed is missing fields: {missing}"
+
+    def test_turn_observed_session_id_matches_request(self, client: TestClient):
+        """session_id in the event must match the session used for the call."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
+        assert turn_logs[0]["session_id"] == sid
+
+    def test_turn_observed_turn_index_is_1_for_first_turn(self, client: TestClient):
+        """turn_index must be 1 for the very first estimation in a new session."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
+        assert turn_logs[0]["turn_index"] == 1
+
+    def test_turn_observed_turn_index_increments_on_second_call(self, client: TestClient):
+        """turn_index must increase by 1 on each successive estimation call."""
+        sid = self._create_session(client)
+        with _patch_litellm():
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
+        assert turn_logs[0]["turn_index"] == 2
+
+    def test_turn_observed_tokens_are_positive(self, client: TestClient):
+        """tokens_in and tokens_out must be positive integers."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        event = next(e for e in logs if e.get("event") == "turn_observed")
+        assert event["tokens_in"] > 0
+        assert event["tokens_out"] > 0
+
+    def test_turn_observed_enriched_transcript_chars_matches_transcript(
+        self, client: TestClient
+    ):
+        """enriched_transcript_chars must equal the length of the submitted transcript
+        when no attachments are provided."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        event = next(e for e in logs if e.get("event") == "turn_observed")
+        assert event["enriched_transcript_chars"] == len(VALID_TRANSCRIPT)
+
+    def test_turn_observed_attachments_total_chars_is_zero_without_files(
+        self, client: TestClient
+    ):
+        """attachments_total_chars must be 0 when no files are uploaded."""
+        sid = self._create_session(client)
+        with _patch_litellm(), capture_logs() as logs:
+            client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+
+        event = next(e for e in logs if e.get("event") == "turn_observed")
+        assert event["attachments_total_chars"] == 0
 

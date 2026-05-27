@@ -222,7 +222,7 @@ async def create_session_estimation(
     )
 
     # Calculate total attachment size
-    attachments_total_chars = sum(len(text) for text in extracted_texts)
+    attachments_total_chars = sum(len(ea.text) for ea in extracted_texts)
 
     try:
         response = await estimation_service.estimate_multi_turn(

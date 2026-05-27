@@ -1,5 +1,15 @@
 # Stress Test Report
 
+## Live Update (2026-05-27)
+
+- Current status: running
+- Active runner processes: 2
+- CSV progress: 61 total lines (60 data rows + header)
+- Minimum threshold: reached (>= 50 data rows)
+- Latest completed block observed: growth @ 100KB (repeat 1/3)
+- Latest turn latencies (ms): turn 1 = 45410.73, turn 3 = 29080.5, turn 6 = 35316.47, turn 10 = 24908.77, turn 20 = 26728.08
+- Latest turn costs (USD): turn 1 = 0.00359325, turn 3 = 0.0067017, turn 6 = 0.00979365, turn 10 = 0.0129582, turn 20 = 0.016047
+
 ## Summary
 
 | Scenario | Turns | Latency P50 (ms) | Latency P95 (ms) | Total Cost | Cache Hit % | Fact Recall %|

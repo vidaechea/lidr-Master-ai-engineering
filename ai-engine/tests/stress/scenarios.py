@@ -266,7 +266,7 @@ class ScenarioProfile:
 
         # Generate a dummy attachment of the specified size
         try:
-            from tests.evals.stress.generators.pdf import generate_pdf
+            from tests.stress.generators.pdf import generate_pdf
             pdf_bytes = generate_pdf(attachment_size_kb)
             filename = f"attachment_turn{turn_number}_{attachment_size_kb}kb.pdf"
             return {filename: pdf_bytes}
@@ -578,7 +578,7 @@ class ProjectLargeAttachmentScenario(ScenarioProfile):
 
         # Generate PDF using the pdf_generator module
         try:
-            from tests.evals.stress.generators.pdf import generate_pdf
+            from tests.stress.generators.pdf import generate_pdf
             pdf_bytes = generate_pdf(size_kb)
             filename = f"attachment_{size_kb}kb.pdf"
             return {filename: pdf_bytes}
@@ -635,19 +635,38 @@ def extract_metadata_from_response(
 class MultiTurnScenarioEvaluator:
     """Execute scenario profiles and collect metrics."""
 
-    def __init__(self, use_http_client: bool = True, base_url: str = "http://localhost:8000"):
+    def __init__(
+        self,
+        use_http_client: bool = True,
+        base_url: str = "http://localhost:8000",
+        real_http: bool = False,
+        http_timeout_s: float = 900.0,
+    ):
         """Initialize evaluator.
 
         Args:
             use_http_client: If True, use FastAPI TestClient; otherwise use services directly.
             base_url: Base URL for HTTP requests.
+            real_http: If True, use a real httpx.Client against base_url (remote server mode).
+                       Overrides use_http_client.
+            http_timeout_s: Total timeout (seconds) for HTTP calls in real HTTP mode.
         """
         self.use_http_client = use_http_client
         self.base_url = base_url
         self._client = None
         self._session_store = None
 
-        if use_http_client:
+        if real_http:
+            import httpx
+            timeout = httpx.Timeout(
+                connect=30.0,
+                read=http_timeout_s,
+                write=120.0,
+                pool=120.0,
+            )
+            self._client = httpx.Client(base_url=base_url, timeout=timeout)
+            self.use_http_client = True
+        elif use_http_client:
             try:
                 from fastapi.testclient import TestClient
                 from app.main import app
@@ -719,12 +738,69 @@ class MultiTurnScenarioEvaluator:
     async def _create_session(self) -> str:
         """Create a new session and return its ID."""
         if self.use_http_client:
-            resp = self._client.post("/api/v1/sessions")
-            resp.raise_for_status()
-            return resp.json()["session_id"]
+            last_exc: Exception | None = None
+            for attempt in range(1, 4):
+                try:
+                    resp = self._client.post("/api/v1/sessions")
+                    resp.raise_for_status()
+                    return resp.json()["session_id"]
+                except Exception as exc:
+                    last_exc = exc
+                    if attempt < 3:
+                        log.warning(
+                            f"Session creation attempt {attempt}/3 failed: {exc}. Retrying..."
+                        )
+                        await asyncio.sleep(1.5 * attempt)
+            assert last_exc is not None
+            raise last_exc
         else:
             session = self._session_store.create()
             return session.session_id
+
+    async def _post_estimate_with_retries(
+        self,
+        session_id: str,
+        data: dict[str, str],
+        files: dict[str, tuple[str, io.BytesIO, str]] | None,
+    ) -> dict[str, Any]:
+        """Post estimate request with retries for transient timeout/network failures."""
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                response = self._client.post(
+                    f"/api/v1/sessions/{session_id}/estimate",
+                    data=data,
+                    files=files,
+                )
+                response.raise_for_status()
+                return response.json()
+            except Exception as exc:
+                last_exc = exc
+                if attempt < 3:
+                    log.warning(
+                        f"Estimate attempt {attempt}/3 failed for session {session_id}: {exc}. Retrying..."
+                    )
+                    await asyncio.sleep(2.0 * attempt)
+        assert last_exc is not None
+        raise last_exc
+
+    async def _get_session_state_with_retries(self, session_id: str) -> dict[str, Any]:
+        """Fetch session state with retries for transient timeout/network failures."""
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            try:
+                state_resp = self._client.get(f"/api/v1/sessions/{session_id}")
+                state_resp.raise_for_status()
+                return state_resp.json()
+            except Exception as exc:
+                last_exc = exc
+                if attempt < 3:
+                    log.warning(
+                        f"Session state attempt {attempt}/3 failed for session {session_id}: {exc}. Retrying..."
+                    )
+                    await asyncio.sleep(1.5 * attempt)
+        assert last_exc is not None
+        raise last_exc
 
     async def _run_turn(
         self,
@@ -757,16 +833,20 @@ class MultiTurnScenarioEvaluator:
             if attachments:
                 files = {}
                 for filename, file_bytes in attachments.items():
-                    # Create file tuple: (filename, file_content, content_type)
-                    files["attachments"] = (filename, io.BytesIO(file_bytes), "application/pdf")
+                    # Detect real PDF vs text fallback (reportlab unavailable)
+                    if file_bytes[:4] == b"%PDF":
+                        content_type = "application/pdf"
+                        send_name = filename
+                    else:
+                        content_type = "text/plain"
+                        send_name = filename.replace(".pdf", ".txt")
+                    files["attachments"] = (send_name, io.BytesIO(file_bytes), content_type)
 
-            response = self._client.post(
-                f"/api/v1/sessions/{session_id}/estimate",
+            data = await self._post_estimate_with_retries(
+                session_id=session_id,
                 data=data,
                 files=files,
             )
-            response.raise_for_status()
-            data = response.json()
 
             cost_usd = Decimal(str(data.get("turn_cost_usd", 0)))
             input_tokens = data.get("input_tokens", 0)
@@ -774,9 +854,7 @@ class MultiTurnScenarioEvaluator:
             response_text = data.get("estimation", "")
 
             # Get session state to extract metadata
-            state_resp = self._client.get(f"/api/v1/sessions/{session_id}")
-            state_resp.raise_for_status()
-            state_data = state_resp.json()
+            state_data = await self._get_session_state_with_retries(session_id)
             metadata = state_data.get("project_metadata", {})
 
         else:
