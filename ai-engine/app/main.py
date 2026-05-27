@@ -36,13 +36,15 @@ class InternalKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+API_PREFIX = "/api/v1"
+
 app = FastAPI(title="Estimator CAG — AI Engine", version="0.1.0")
 app.add_middleware(InternalKeyMiddleware)
 
-app.include_router(estimations.router, prefix="/api/v1")
-app.include_router(cache_metrics.router, prefix="/api/v1")
-app.include_router(internal.router, prefix="/api/v1")
-app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(estimations.router, prefix=API_PREFIX)
+app.include_router(cache_metrics.router, prefix=API_PREFIX)
+app.include_router(internal.router, prefix=API_PREFIX)
+app.include_router(sessions.router, prefix=API_PREFIX)
 
 
 @app.get("/health")

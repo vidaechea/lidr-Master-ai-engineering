@@ -420,8 +420,16 @@ class TestSessionEstimateTurnObservedEvent:
     def _create_session(self, client: TestClient) -> str:
         return client.post("/api/v1/sessions").json()["session_id"]
 
+    def _single_turn_observed_event(self, logs: list[dict]) -> dict:
+        turn_logs = [entry for entry in logs if entry.get("event") == "turn_observed"]
+        assert len(turn_logs) == 1, (
+            "Expected exactly one turn_observed log entry per request, "
+            f"found {len(turn_logs)}"
+        )
+        return turn_logs[0]
+
     def test_turn_observed_event_is_emitted(self, client: TestClient):
-        """At least one turn_observed entry must appear in the logs."""
+        """Exactly one turn_observed entry must be emitted per request."""
         sid = self._create_session(client)
         with _patch_litellm(), capture_logs() as logs:
             resp = client.post(
@@ -429,8 +437,27 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
         assert resp.status_code == 200
-        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
-        assert len(turn_logs) >= 1, "Expected at least one turn_observed log entry"
+        self._single_turn_observed_event(logs)
+
+    def test_turn_observed_one_event_per_request_across_two_calls(self, client: TestClient):
+        """Each estimate call must emit one and only one turn_observed event."""
+        sid = self._create_session(client)
+
+        with _patch_litellm(), capture_logs() as first_logs:
+            first_resp = client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+        assert first_resp.status_code == 200
+        self._single_turn_observed_event(first_logs)
+
+        with _patch_litellm(), capture_logs() as second_logs:
+            second_resp = client.post(
+                f"/api/v1/sessions/{sid}/estimate",
+                data={"transcript": VALID_TRANSCRIPT},
+            )
+        assert second_resp.status_code == 200
+        self._single_turn_observed_event(second_logs)
 
     def test_turn_observed_contains_all_block1_fields(self, client: TestClient):
         """The emitted event must contain every one of the 13 turn-context fields."""
@@ -441,9 +468,7 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
-        assert turn_logs, "No turn_observed event emitted"
-        event = turn_logs[0]
+        event = self._single_turn_observed_event(logs)
         missing = _TURN_CONTEXT_FIELDS - set(event.keys())
         assert not missing, f"turn_observed is missing turn-context fields: {missing}"
 
@@ -456,9 +481,7 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
-        assert turn_logs, "No turn_observed event emitted"
-        event = turn_logs[0]
+        event = self._single_turn_observed_event(logs)
         missing = _ALL_TURN_OBSERVED_FIELDS - set(event.keys())
         assert not missing, f"turn_observed is missing fields: {missing}"
 
@@ -471,8 +494,8 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
-        assert turn_logs[0]["session_id"] == sid
+        event = self._single_turn_observed_event(logs)
+        assert event["session_id"] == sid
 
     def test_turn_observed_turn_index_is_1_for_first_turn(self, client: TestClient):
         """turn_index must be 1 for the very first estimation in a new session."""
@@ -483,8 +506,8 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
-        assert turn_logs[0]["turn_index"] == 1
+        event = self._single_turn_observed_event(logs)
+        assert event["turn_index"] == 1
 
     def test_turn_observed_turn_index_increments_on_second_call(self, client: TestClient):
         """turn_index must increase by 1 on each successive estimation call."""
@@ -500,8 +523,8 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        turn_logs = [e for e in logs if e.get("event") == "turn_observed"]
-        assert turn_logs[0]["turn_index"] == 2
+        event = self._single_turn_observed_event(logs)
+        assert event["turn_index"] == 2
 
     def test_turn_observed_tokens_are_positive(self, client: TestClient):
         """tokens_in and tokens_out must be positive integers."""
@@ -512,7 +535,7 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        event = next(e for e in logs if e.get("event") == "turn_observed")
+        event = self._single_turn_observed_event(logs)
         assert event["tokens_in"] > 0
         assert event["tokens_out"] > 0
 
@@ -528,7 +551,7 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        event = next(e for e in logs if e.get("event") == "turn_observed")
+        event = self._single_turn_observed_event(logs)
         assert event["enriched_transcript_chars"] == len(VALID_TRANSCRIPT)
 
     def test_turn_observed_attachments_total_chars_is_zero_without_files(
@@ -542,6 +565,6 @@ class TestSessionEstimateTurnObservedEvent:
                 data={"transcript": VALID_TRANSCRIPT},
             )
 
-        event = next(e for e in logs if e.get("event") == "turn_observed")
+        event = self._single_turn_observed_event(logs)
         assert event["attachments_total_chars"] == 0
 

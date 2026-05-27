@@ -37,7 +37,7 @@ class TestMetricsWithRealStructures:
         result = metric.evaluate(event)
 
         assert result.passed is True
-        assert result.score == 1.0
+        assert result.score == pytest.approx(1.0)
         assert "2500.0ms" in result.details
 
     def test_cost_budget_with_turn_observed_event(self):
@@ -63,7 +63,7 @@ class TestMetricsWithRealStructures:
         result = metric.evaluate(event)
 
         assert result.passed is True
-        assert result.score == 1.0
+        assert result.score == pytest.approx(1.0)
         assert "$0.008000" in result.details
 
     def test_memory_drift_with_project_metadata(self):
@@ -82,7 +82,7 @@ class TestMetricsWithRealStructures:
         )
 
         assert result.passed is True
-        assert result.score == 1.0
+        assert result.score == pytest.approx(1.0)
         assert "react" in result.details.lower()
 
     def test_memory_drift_case_insensitive_with_real_metadata(self):
@@ -125,8 +125,8 @@ class TestMetricsWithRealStructures:
 
         assert latency_result.passed is True
         assert cost_result.passed is True
-        assert latency_result.score == 1.0
-        assert cost_result.score == 1.0
+        assert latency_result.score == pytest.approx(1.0)
+        assert cost_result.score == pytest.approx(1.0)
 
     def test_exceeding_latency_budget(self):
         """Test latency metric when budget is exceeded."""
@@ -151,7 +151,7 @@ class TestMetricsWithRealStructures:
         result = metric.evaluate(event)
 
         assert result.passed is False
-        assert result.score == 0.0
+        assert result.score == pytest.approx(0.0)
         assert "exceeded" in result.details.lower()
 
     def test_exceeding_cost_budget(self):
@@ -177,7 +177,7 @@ class TestMetricsWithRealStructures:
         result = metric.evaluate(event)
 
         assert result.passed is False
-        assert result.score == 0.0
+        assert result.score == pytest.approx(0.0)
         assert "exceeded" in result.details.lower()
 
 

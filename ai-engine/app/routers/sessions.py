@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from app.config import LLMModel, settings
 from app.guardrails.input import InputGuardrailViolation
 from app.schemas.estimation import EstimationRequest, EstimationResponse, OutputFormat
-from app.schemas.observation import CacheHitKind, TurnObservedEvent
 from app.schemas.session import SessionCreateResponse, SessionListItem, SessionMessageResponse, SessionStateResponse
 from app.services.attachment_service import (
     AttachmentService,
@@ -93,7 +92,7 @@ async def list_sessions() -> list[SessionListItem]:
     return result
 
 
-@router.get("/{session_id}")
+@router.get("/{session_id}", responses={404: {"description": "Session not found"}})
 async def get_session_state(session_id: str) -> SessionStateResponse:
     """Return persisted conversation history, metadata, and critical information anchors."""
     session = store.get(session_id)
@@ -272,32 +271,10 @@ async def create_session_estimation(
     # ------------------------------------------------------------------ #
     summarizer = session.get_summarizer()
     turn_number = session.history.turn_count  # Current turn (already incremented by estimate_multi_turn)
-    anchors = summarizer.process_turn(
+    summarizer.process_turn(
         turn_number=turn_number,
         user_message=combined_transcript,
         assistant_response=response.estimation,
     )
-
-    # ------------------------------------------------------------------ #
-    # Emit unified turn_observed event with all context                  #
-    # ------------------------------------------------------------------ #
-    turn_observed = TurnObservedEvent(
-        turn_index=turn_number,
-        session_id=session_id,
-        enriched_transcript_chars=len(combined_transcript),
-        attachments_total_chars=attachments_total_chars,
-        messages_in_window=len(session.history.messages()),
-        anchors_count=len(anchors) if anchors else 0,
-        summary_chars=summarizer.summary_char_count(),
-        tokens_in=response.input_tokens,
-        tokens_out=response.output_tokens,
-        cost_usd=response.turn_cost_usd,
-        latency_ms=0.0,  # Measured in estimate_multi_turn, available in logs
-        cache_hit_kind=CacheHitKind.NONE,  # Set to exact/semantic if cached hit occurred
-        last_resolved_tier=session.last_resolved_tier,
-        model=response.model,
-        response_id=response.response_id,
-    )
-    log.info("turn_observed", **turn_observed.model_dump())
 
     return response

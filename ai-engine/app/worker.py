@@ -51,11 +51,12 @@ async def estimate_task(
             log.error("worker_callback_failed", job_id=job_id, error=str(exc))
 
 
-async def startup(ctx: dict) -> None:
+def startup(ctx: dict) -> None:
     ctx["estimation_service"] = EstimationService()
 
 
 async def shutdown(ctx: dict) -> None:
+    """Clean up resources on worker shutdown."""
     pass
 
 
