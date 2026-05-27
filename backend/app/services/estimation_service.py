@@ -61,7 +61,6 @@ async def create_and_run_sync(
     ai_payload = data.model_dump(
         exclude={"project_id", "prompt_version", "estimation_mode", "acb_max_iterations"},
     )
-    ai_payload["prompt_version"] = data.prompt_version
 
     # Persist in 'processing' state
     estimation = Estimation(
@@ -79,9 +78,15 @@ async def create_and_run_sync(
     try:
         if data.estimation_mode == "acb":
             acb_payload = {**ai_payload, "max_iterations": data.acb_max_iterations}
-            ai_response = await ai_client.estimate_acb(acb_payload)
+            ai_response = await ai_client.estimate_acb(
+                acb_payload,
+                prompt_version=data.prompt_version,
+            )
         else:
-            ai_response = await ai_client.estimate_sync(ai_payload)
+            ai_response = await ai_client.estimate_sync(
+                ai_payload,
+                prompt_version=data.prompt_version,
+            )
         _apply_ai_response(estimation, ai_response)
         estimation.status = "completed"
         estimation.completed_at = datetime.now(timezone.utc)

@@ -169,8 +169,9 @@ class TestCreateEstimationSync:
         ]
         captured: list[dict] = []
 
-        def _capture(payload: dict) -> dict:
+        def _capture(payload: dict, prompt_version: str) -> dict:
             captured.append(payload)
+            assert prompt_version == "v1"
             return AI_RESPONSE_PAYLOAD  # type: ignore[return-value]
 
         with patch("app.services.ai_client.estimate_sync", AsyncMock(side_effect=_capture)):

@@ -17,7 +17,7 @@ if settings.internal_api_key:
     _HEADERS["X-Internal-API-Key"] = settings.internal_api_key
 
 
-async def estimate_sync(request_payload: dict) -> dict:
+async def estimate_sync(request_payload: dict, prompt_version: str) -> dict:
     """Call ``POST /api/v1/estimate`` on the AI Engine and return the JSON response."""
     async with AsyncClient(
         base_url=settings.ai_engine_url,
@@ -25,7 +25,11 @@ async def estimate_sync(request_payload: dict) -> dict:
         timeout=120.0,
     ) as client:
         try:
-            response = await client.post("/api/v1/estimate", json=request_payload)
+            response = await client.post(
+                "/api/v1/estimate",
+                json=request_payload,
+                params={"prompt_version": prompt_version},
+            )
             response.raise_for_status()
             return response.json()
         except HTTPStatusError as exc:
@@ -68,7 +72,7 @@ async def estimate_structured(request_payload: dict) -> dict:
             raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
 
 
-async def estimate_acb(request_payload: dict) -> dict:
+async def estimate_acb(request_payload: dict, prompt_version: str) -> dict:
     """Call ``POST /api/v1/estimate/acb`` on the AI Engine and return the JSON response."""
     async with AsyncClient(
         base_url=settings.ai_engine_url,
@@ -76,7 +80,11 @@ async def estimate_acb(request_payload: dict) -> dict:
         timeout=300.0,  # ACB pipeline can take longer: actor + critic + boss × N iterations
     ) as client:
         try:
-            response = await client.post("/api/v1/estimate/acb", json=request_payload)
+            response = await client.post(
+                "/api/v1/estimate/acb",
+                json=request_payload,
+                params={"prompt_version": prompt_version},
+            )
             response.raise_for_status()
             return response.json()
         except HTTPStatusError as exc:
