@@ -231,6 +231,43 @@ If `preflight_s06.py` fails on missing packages, install from `pyproject.toml` /
 
 ---
 
+## Text Similarity Tool
+
+The `scripts/compare.py` script calculates **cosine similarity** between two text embeddings using the `OpenAIEmbedder` class. Useful for validating semantic relationships between texts without importing numpy or scikit-learn.
+
+### Usage
+
+**Inside Docker container:**
+```bash
+docker compose exec servicio_ia python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+**Outside Docker (with uv and .env loaded):**
+```bash
+cd ai-engine
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+### Output
+
+```
+Text A: OAuth 2.0 authentication backend for fintech
+Text B: JWT-based authorization service for banking app
+Cosine similarity: 0.8421
+```
+
+**Details:**
+- Embeddings generated using `text-embedding-3-small` (OpenAI)
+- Cosine similarity computed manually: `(a·b) / (||a|| × ||b||)`
+- Range: `[0, 1]` for normalized embeddings (0 = orthogonal, 1 = identical)
+- Requires `OPENAI_API_KEY` environment variable
+
+---
+
 ## Dependency Installation Guide
 
 ### Local virtualenv (pip)
