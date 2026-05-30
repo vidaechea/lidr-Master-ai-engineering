@@ -19,7 +19,7 @@ log = structlog.get_logger(__name__)
 router = APIRouter(prefix="/embedding-pipeline", tags=["embedding-pipeline"])
 
 
-@router.post("/chunks", response_model=ChunkResponse)
+@router.post("/chunks", responses={400: {"description": "Invalid chunk parameters"}})
 def build_chunks(payload: ChunkRequest) -> ChunkResponse:
     try:
         chunks = chunk_text(
@@ -33,7 +33,7 @@ def build_chunks(payload: ChunkRequest) -> ChunkResponse:
     return ChunkResponse(chunks=[ChunkItem(index=i, text=chunk) for i, chunk in enumerate(chunks)])
 
 
-@router.post("/embeddings", response_model=EmbedResponse)
+@router.post("/embeddings", responses={400: {"description": "Invalid embedding parameters"}, 500: {"description": "Internal processing error"}})
 def build_embeddings(payload: EmbedRequest) -> EmbedResponse:
     texts = [item.strip() for item in payload.texts if item and item.strip()]
     if not texts:
