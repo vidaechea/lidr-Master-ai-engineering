@@ -144,3 +144,13 @@ class TestApplyCallback:
         db.reset_mock()
         await apply_callback(db, est, status="failed", result=None, error="err")
         db.commit.assert_awaited()
+
+    async def test_completed_status_persists_prompt_version_from_callback_result(self):
+        est = _FakeEstimation()
+        est.prompt_version = "v1"
+        db = AsyncMock()
+        callback_result = {**_FULL_AI_RESPONSE, "prompt_version": "v2"}
+
+        await apply_callback(db, est, status="completed", result=callback_result, error=None)
+
+        assert est.prompt_version == "v2"

@@ -146,14 +146,7 @@ class EstimationSemanticCache:
             return None
 
         if self.log_only:
-            log.info(
-                "semantic_cache_hit_log_only",
-                bucket=bucket,
-                similarity=round(similarity, 4),
-            )
             return None
-
-        log.info("semantic_cache_hit", bucket=bucket, similarity=round(similarity, 4))
         return EstimationResponse.model_validate_json(hit["result_json"])
 
     def store(

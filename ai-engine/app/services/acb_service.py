@@ -34,13 +34,10 @@ from app.schemas.estimation import (
     UserTier,
 )
 from app.services.estimation_service import _get_moderation_client
-from app.services.helpers.cost_calculator import CostCalculator
 from app.services.helpers.output_validator import evaluate_estimation_structure
 from app.services.sessions import ProjectMetadata
 
 log = structlog.get_logger(__name__)
-
-_cost_calculator = CostCalculator()
 
 
 @dataclass
@@ -54,6 +51,7 @@ class _LoopState:
     candidate_text: str = ""
     final_text: str = ""
     final_decision: BossDecision | None = None
+    last_critic_feedback: CriticFeedback | None = None
     iteration_instructions: str | None = None
     first_actor_response_id: str = ""
 
@@ -167,21 +165,20 @@ class ActorCriticBossService:
                 f"{state.iteration_instructions}\n\n"
                 f"**Previous estimate to revise:**\n{state.candidate_text}\n---"
             )
-        resp = await litellm_service.complete(
+        observable_resp = await litellm_service.complete(
             messages=[
                 {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             max_tokens=request.max_output_tokens,
         )
-        state.candidate_text = resp.choices[0].message.content or ""
+        state.candidate_text = observable_resp.content or ""
         if iteration == 0:
-            state.first_actor_response_id = resp.id or ""
-        in_tok = resp.usage.prompt_tokens or 0
-        out_tok = resp.usage.completion_tokens or 0
+            state.first_actor_response_id = observable_resp.response_id or ""
         state.add_tokens(
-            in_tok, out_tok,
-            _cost_calculator.compute_cost(in_tok, out_tok, model_cfg.input_price, model_cfg.output_price),
+            observable_resp.usage.prompt_tokens,
+            observable_resp.usage.completion_tokens,
+            float(observable_resp.cost_usd),
         )
 
     async def _run_critic(
@@ -193,7 +190,7 @@ class ActorCriticBossService:
             request=request,
             project_metadata=project_metadata,
         )
-        critic_feedback, completion = await litellm_service.complete_structured(
+        critic_feedback, observable_resp = await litellm_service.complete_structured(
             messages=[
                 {"role": "system", "content": critic_sys},
                 {"role": "user", "content": critic_user},
@@ -201,21 +198,21 @@ class ActorCriticBossService:
             response_model=CriticFeedback,
             max_tokens=1024,
         )
-        in_tok = getattr(getattr(completion, "usage", None), "prompt_tokens", 0) or 0
-        out_tok = getattr(getattr(completion, "usage", None), "completion_tokens", 0) or 0
         state.add_tokens(
-            in_tok, out_tok,
-            _cost_calculator.compute_cost(in_tok, out_tok, model_cfg.input_price, model_cfg.output_price),
+            observable_resp.usage.prompt_tokens,
+            observable_resp.usage.completion_tokens,
+            float(observable_resp.cost_usd),
         )
-        # Store on state so _run_boss can access it
-        state._last_critic_feedback = critic_feedback  # type: ignore[attr-defined]
+        state.last_critic_feedback = critic_feedback
         return critic_feedback
 
     async def _run_boss(
         self, state: _LoopState, request: ActorCriticBossRequest,
         project_metadata: ProjectMetadata | None, model_cfg, litellm_service, iteration: int,
     ) -> BossDecision:
-        critic_feedback: CriticFeedback = state._last_critic_feedback  # type: ignore[attr-defined]
+        critic_feedback = state.last_critic_feedback
+        if critic_feedback is None:
+            raise RuntimeError("Boss cannot run before critic feedback is available")
         boss_sys, boss_user = render_boss_prompt(
             candidate_estimate=state.candidate_text,
             critic_feedback=critic_feedback,
@@ -223,7 +220,7 @@ class ActorCriticBossService:
             max_iterations=request.max_iterations,
             project_metadata=project_metadata,
         )
-        boss_decision, completion = await litellm_service.complete_structured(
+        boss_decision, observable_resp = await litellm_service.complete_structured(
             messages=[
                 {"role": "system", "content": boss_sys},
                 {"role": "user", "content": boss_user},
@@ -231,11 +228,10 @@ class ActorCriticBossService:
             response_model=BossDecision,
             max_tokens=request.max_output_tokens,
         )
-        in_tok = getattr(getattr(completion, "usage", None), "prompt_tokens", 0) or 0
-        out_tok = getattr(getattr(completion, "usage", None), "completion_tokens", 0) or 0
         state.add_tokens(
-            in_tok, out_tok,
-            _cost_calculator.compute_cost(in_tok, out_tok, model_cfg.input_price, model_cfg.output_price),
+            observable_resp.usage.prompt_tokens,
+            observable_resp.usage.completion_tokens,
+            float(observable_resp.cost_usd),
         )
         state.traces.append(
             IterationTrace(

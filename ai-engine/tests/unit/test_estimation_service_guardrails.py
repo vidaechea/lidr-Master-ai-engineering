@@ -9,12 +9,14 @@ These tests verify that:
 
 LiteLLM and the OpenAI moderation client are both mocked so no network call is made.
 """
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.guardrails.input import InputGuardrailViolation
 from app.schemas.estimation import EstimationRequest
+from app.schemas.llm import LLMObservableResponse, LLMUsage
 from app.services.estimation_service import EstimationService
 
 # Minimum-valid transcription (>= 50 chars)
@@ -23,20 +25,19 @@ VALID_TRANSCRIPTION = "Build a web SaaS platform with user authentication and a 
 _ESTIMATION_REQUEST = EstimationRequest(transcription=VALID_TRANSCRIPTION)
 
 
-def _make_litellm_response(content: str = "## Estimate\nTotal: 100h") -> MagicMock:
-    usage = MagicMock()
-    usage.prompt_tokens = 400
-    usage.completion_tokens = 150
-
-    choice = MagicMock()
-    choice.message.content = content
-    choice.finish_reason = "stop"
-
-    resp = MagicMock()
-    resp.choices = [choice]
-    resp.usage = usage
-    resp.id = "resp-unit-guardrail-001"
-    return resp
+def _make_litellm_response(content: str = "## Estimate\nTotal: 100h") -> LLMObservableResponse:
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content=content,
+        usage=LLMUsage(
+            prompt_tokens=400,
+            completion_tokens=150,
+            total_tokens=550,
+        ),
+        latency_ms=120.0,
+        cost_usd=Decimal("0.0008"),
+        response_id="resp-unit-guardrail-001",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +158,18 @@ class TestEstimateStructuredGuardrails:
         fake_result.total_cost_eur = 0
         fake_result.confidence_pct = 80
 
-        fake_completion = MagicMock()
-        fake_completion.usage.prompt_tokens = 300
-        fake_completion.usage.completion_tokens = 100
-        fake_completion.id = "resp-structured-001"
+        fake_completion = LLMObservableResponse(
+            model="gpt-4o-mini",
+            content="Estimate text",
+            usage=LLMUsage(
+                prompt_tokens=300,
+                completion_tokens=100,
+                total_tokens=400,
+            ),
+            latency_ms=300.0,
+            cost_usd=Decimal("0.005"),
+            response_id="resp-structured-001",
+        )
 
         with (
             patch("app.services.estimation_service.check_input", mock_check),

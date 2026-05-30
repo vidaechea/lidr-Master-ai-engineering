@@ -14,11 +14,14 @@ from __future__ import annotations
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, Field
 
 from app.config import settings
+
+if TYPE_CHECKING:
+    from app.services.summarizer_service import SummarizerService
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -206,6 +209,17 @@ class Session:
     session_id: str
     history: ConversationHistory = field(default_factory=ConversationHistory)
     metadata: ProjectMetadata = field(default_factory=ProjectMetadata)
+    last_resolved_tier: str | None = field(default=None)
+    last_tier_rule: str | None = field(default=None)
+    _summarizer: SummarizerService | None = field(default=None, init=False, repr=False)
+
+    def get_summarizer(self) -> SummarizerService:
+        """Lazy-load the SummarizerService on first access (avoids circular import)."""
+        if self._summarizer is None:
+            from app.services.summarizer_service import SummarizerService
+
+            self._summarizer = SummarizerService()
+        return self._summarizer
 
 
 # ---------------------------------------------------------------------------

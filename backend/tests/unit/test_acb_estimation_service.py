@@ -115,6 +115,7 @@ class TestAcbDispatch:
         call_payload = mock_acb.call_args[0][0]
         assert "estimation_mode" not in call_payload
         assert "acb_max_iterations" not in call_payload
+        assert "prompt_version" not in call_payload
 
     async def test_standard_payload_excludes_backend_only_fields(self):
         """estimation_mode and acb_max_iterations must not be forwarded in standard mode."""
@@ -128,3 +129,26 @@ class TestAcbDispatch:
         call_payload = mock_sync.call_args[0][0]
         assert "estimation_mode" not in call_payload
         assert "acb_max_iterations" not in call_payload
+        assert "prompt_version" not in call_payload
+
+    async def test_acb_mode_passes_prompt_version_as_explicit_argument(self):
+        """ACB mode forwards prompt_version separately from the JSON payload."""
+        db, _ = _make_db_mock()
+        mock_acb = AsyncMock(return_value=_FAKE_AI_RESPONSE)
+
+        with patch("app.services.estimation_service.ai_client.estimate_acb", mock_acb):
+            with patch("app.services.estimation_service.ai_client.estimate_sync", AsyncMock()):
+                await create_and_run_sync(db, _USER_ID, _ACB_PAYLOAD)
+
+        assert mock_acb.call_args.kwargs["prompt_version"] == _ACB_PAYLOAD.prompt_version
+
+    async def test_standard_mode_passes_prompt_version_as_explicit_argument(self):
+        """Standard mode forwards prompt_version separately from the JSON payload."""
+        db, _ = _make_db_mock()
+        mock_sync = AsyncMock(return_value=_FAKE_AI_RESPONSE)
+
+        with patch("app.services.estimation_service.ai_client.estimate_sync", mock_sync):
+            with patch("app.services.estimation_service.ai_client.estimate_acb", AsyncMock()):
+                await create_and_run_sync(db, _USER_ID, _STANDARD_PAYLOAD)
+
+        assert mock_sync.call_args.kwargs["prompt_version"] == _STANDARD_PAYLOAD.prompt_version

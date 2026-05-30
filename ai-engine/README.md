@@ -53,6 +53,9 @@ Every `POST /api/v1/estimate` request flows through three layers:
 - ✅ **Token & Cost Tracking** — Input/output tokens and per-turn USD cost
 - ✅ **Streamlit UI** — Web interface for ad-hoc estimations
 - ✅ **ARQ Worker** — Async processing with callback to backend
+- ✅ **Conversational Sessions** — In-memory sliding window (6 turns) with project metadata extraction
+- ✅ **Critical Information Anchors** — Heuristic detection of metadata, decisions, risks, scope changes per turn
+- ✅ **Accumulative Summarizer** — Grows contextual summary across conversation turns
 
 ---
 
@@ -75,10 +78,14 @@ ai-engine/
 │   │   ├── estimation_service.py       # Main orchestration + cost calc
 │   │   ├── cache_service.py            # Redis caching logic
 │   │   ├── litellm_service.py          # LiteLLM router + fallback
+│   │   ├── sessions.py                 # In-memory session store + ConversationHistory
 │   │   ├── metadata_extractor.py       # Session metadata extraction
+│   │   ├── summarizer_service.py       # Accumulative summary + anchor generation
+│   │   ├── attachment_service.py       # PDF/DOCX text extraction
 │   │   └── helpers/
 │   │       ├── prompt_builder.py       # Jinja2 template rendering
-│   │       └── error_mapper.py         # LLM error normalization
+│   │       ├── error_mapper.py         # LLM error normalization
+│   │       └── cost_calculator.py      # Token & cost utilities
 │   ├── schemas/
 │   │   ├── __init__.py
 │   │   └── estimation.py               # EstimationRequest/Response
@@ -156,6 +163,15 @@ JWT (backend login)
 | `POST` | `/api/v1/estimate/structured` | Generate with structured output |
 | `POST` | `/api/v1/internal/estimate/async` | Queue async estimation |
 | `GET` | `/api/v1/examples` | List CAG reference examples |
+
+### Sessions (Conversational)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/sessions` | Create new conversation session |
+| `GET` | `/sessions` | List all active sessions |
+| `GET` | `/sessions/{session_id}` | Get session state (history, metadata, anchors) |
+| `POST` | `/sessions/{session_id}/estimate` | Run estimation for session (with attachments) |
 
 ### Cache
 
@@ -460,6 +476,80 @@ Reasoning:
 - False positives are low-risk (metadata is advisory, not user-facing)
 - Latency/cost savings are significant
 - Interface is stable — `LLMMetadataExtractor` can be swapped in later
+
+---
+
+### Conversational Workflows & Anchor Generation
+
+Each session maintains a **sliding window of conversation** (default 6 turns) with automatic extraction of critical information markers called "anchors". These anchors enable:
+
+- **Progressive context accumulation** — Relevant project details flow into subsequent prompts
+- **Decision tracking** — Key decisions (approved technologies, scope changes) are recorded
+- **Risk awareness** — Identified risks and contradictions are flagged for review
+
+#### How it works
+
+Every estimation turn triggers the `SummarizerService` (`app/services/summarizer_service.py`), which:
+
+1. **Analyzes** the user message + assistant response for critical patterns (heuristic)
+2. **Detects 7 anchor types**: metadata extraction, technology mentions, decisions, risks, scope changes, contradictions, confidence shifts
+3. **Accumulates** a growing summary of critical information
+4. **Exposes** anchors via `GET /sessions/{id}` response
+
+#### Anchor types and patterns
+
+| Anchor Type | Heuristic Pattern | Example |
+|---|---|---|
+| `metadata_extraction` | "Project name is X", "team of N members", "scope:" | "Our app is called ShopHub, team of 5" |
+| `technology_mentioned` | Tech keywords (React, FastAPI, PostgreSQL, Docker, etc.) | "Using React + FastAPI + PostgreSQL" |
+| `decision_point` | "decided/agreed/approved to use X" | "We agreed on GraphQL for the API" |
+| `scope_change` | "also need", "include", "add", "remove" | "We also need mobile app support" |
+| `risk_identified` | "risk/concern/issue:", "might fail" | "Risk: legacy system integration might fail" |
+| `contradiction_flagged` | "but", "however", "actually", "not quite" | "Actually, timeline is much longer" |
+| `confidence_shift` | Estimation confidence changes (future) | — |
+
+#### Session state response
+
+```json
+{
+  "session_id": "550e8400-e29b-41d4-a716-446655440000",
+  "project_metadata": {
+    "project_name": "ShopHub",
+    "assumed_team_size": 5,
+    "mentioned_technologies": ["React", "FastAPI", "PostgreSQL"],
+    "agreed_scope": "E-commerce platform with payment processing"
+  },
+  "history": [
+    {"role": "user", "content": "We need an e-commerce app..."},
+    {"role": "assistant", "content": "...estimated 10-12 weeks..."}
+  ],
+  "turn_count": 2,
+  "anchors_count": 8,
+  "summary_chars": 453,
+  "anchors": [
+    {
+      "turn_number": 1,
+      "anchor_type": "metadata_extraction",
+      "key_information": "project_name: ShopHub",
+      "summary": "Project name identified: 'ShopHub'"
+    },
+    {
+      "turn_number": 2,
+      "anchor_type": "technology_mentioned",
+      "key_information": "React, FastAPI, PostgreSQL",
+      "summary": "Technologies mentioned: React, FastAPI, PostgreSQL"
+    }
+  ]
+}
+```
+
+#### Why heuristic-only (no LLM calls)
+
+- **Cost**: Zero per-anchor (no extra API calls)
+- **Latency**: < 1 ms per detection
+- **Determinism**: Same inputs always produce same anchors
+- **Observability**: Regex patterns are transparent and debuggable
+- **Fallback**: Can layer LLM validation on top later without changing interface
 
 ---
 

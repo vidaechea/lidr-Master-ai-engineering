@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
+from typing import Annotated, TypeAlias
 
-from app.dependencies import DbDep, CurrentUser
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+
+from app.dependencies import DbDep, CurrentUser, get_db
 from app.schemas.estimation import (
     AsyncEstimationOut,
     CacheMetricsOut,
@@ -49,13 +51,13 @@ async def get_conversation_session_state(session_id: str, current_user: CurrentU
 async def create_conversation_estimation(
     session_id: str,
     current_user: CurrentUser,
-    transcript: str = Form(min_length=20),
-    attachments: list[UploadFile] = File(default=[]),
-    model: str | None = Form(default=None),
-    temperature: float | None = Form(default=None, ge=0.0, le=2.0),
-    pre_call: bool = Form(default=False),
-    output_format: OutputFormat = Form(default="phases_table"),
-    prompt_version: str = Query(default="v1"),
+    transcript: Annotated[str, Form(min_length=20)],
+    attachments: Annotated[list[UploadFile] | None, File()] = None,
+    model: Annotated[str | None, Form()] = None,
+    temperature: Annotated[float | None, Form(ge=0.0, le=2.0)] = None,
+    pre_call: Annotated[bool, Form()] = False,
+    output_format: Annotated[OutputFormat, Form()] = "phases_table",
+    prompt_version: Annotated[str, Query()] = "v1",
 ):
     """Proxy multipart conversational estimation to the AI engine sessions API."""
     _ = current_user
@@ -71,7 +73,7 @@ async def create_conversation_estimation(
         form_fields["temperature"] = str(temperature)
 
     proxy_files: list[tuple[str, tuple[str, bytes, str]]] = []
-    for upload in attachments:
+    for upload in attachments or []:
         content = await upload.read()
         proxy_files.append(
             (
@@ -129,7 +131,7 @@ async def create_estimation_async(
     )
 
 
-@router.get("/{estimation_id}", response_model=EstimationOut)
+@router.get("/{estimation_id}", response_model=EstimationOut, responses={404: {"detail": "Estimation not found"}})
 async def get_estimation(estimation_id: uuid.UUID, current_user: CurrentUser, db: DbDep):
     estimation = await estimation_service.get_estimation(db, estimation_id, current_user.id)
     if not estimation:
@@ -137,8 +139,10 @@ async def get_estimation(estimation_id: uuid.UUID, current_user: CurrentUser, db
     return estimation
 
 
-@router.get("/{estimation_id}/status")
-async def get_estimation_status(estimation_id: uuid.UUID, current_user: CurrentUser, db: DbDep):
+@router.get("/{estimation_id}/status", responses={404: {"detail": "Estimation not found"}})
+async def get_estimation_status(
+    estimation_id: uuid.UUID, current_user: CurrentUser, db: DbDep
+):
     """Lightweight polling endpoint for async estimations."""
     estimation = await estimation_service.get_estimation(db, estimation_id, current_user.id)
     if not estimation:

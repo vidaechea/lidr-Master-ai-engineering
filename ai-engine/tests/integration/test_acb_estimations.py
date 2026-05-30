@@ -3,6 +3,7 @@
 Tests the full HTTP request/response cycle using the FastAPI TestClient,
 patching LiteLLM at the service layer to avoid real API calls.
 """
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -16,6 +17,7 @@ from app.schemas.estimation import (
     IssueCategory,
     IssueSeverity,
 )
+from app.schemas.llm import LLMObservableResponse, LLMUsage
 
 VALID_TRANSCRIPTION = (
     "Build a multi-tenant SaaS billing platform with Stripe integration, "
@@ -35,26 +37,33 @@ FAKE_ACTOR_OUTPUT = (
 )
 
 
-def _make_actor_mock(content: str = FAKE_ACTOR_OUTPUT) -> MagicMock:
-    usage = MagicMock()
-    usage.prompt_tokens = 500
-    usage.completion_tokens = 220
-    choice = MagicMock()
-    choice.message.content = content
-    choice.finish_reason = "stop"
-    resp = MagicMock()
-    resp.choices = [choice]
-    resp.usage = usage
-    resp.id = "actor-integ-001"
-    return resp
+def _make_actor_mock(content: str = FAKE_ACTOR_OUTPUT) -> LLMObservableResponse:
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content=content,
+        usage=LLMUsage(
+            prompt_tokens=500,
+            completion_tokens=220,
+            total_tokens=720,
+        ),
+        latency_ms=500.0,
+        cost_usd=Decimal("0.005"),
+        response_id="actor-integ-001",
+    )
 
 
-def _make_completion_mock(in_tok: int = 120, out_tok: int = 60) -> MagicMock:
-    completion = MagicMock()
-    completion.usage.prompt_tokens = in_tok
-    completion.usage.completion_tokens = out_tok
-    completion.id = "structured-integ-001"
-    return completion
+def _make_completion_mock(in_tok: int = 120, out_tok: int = 60) -> LLMObservableResponse:
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        usage=LLMUsage(
+            prompt_tokens=in_tok,
+            completion_tokens=out_tok,
+            total_tokens=in_tok + out_tok,
+        ),
+        latency_ms=300.0,
+        cost_usd=Decimal("0.003"),
+        response_id="structured-integ-001",
+    )
 
 
 def _approved_critic() -> CriticFeedback:

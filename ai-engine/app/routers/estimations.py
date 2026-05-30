@@ -1,12 +1,11 @@
 from typing import Annotated
-import asyncio
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from app.config import settings
 from app.dependencies import TierDep
-from app.guardrails.input import InputGuardrailViolation, check_input
+from app.guardrails.input import InputGuardrailViolation
 from app.prompts.loader import get_examples
 from app.schemas.estimation import (
     ActorCriticBossRequest,
@@ -19,10 +18,12 @@ from app.schemas.estimation import (
 )
 from app.services.acb_service import ActorCriticBossService
 from app.services.cache_service import CachedEstimationService
-from app.services.estimation_service import EstimationService, _get_moderation_client
+from app.services.estimation_service import EstimationService
 from app.services.helpers.error_mapper import LLMServiceError
 
 log = structlog.get_logger(__name__)
+
+_INTERNAL_PROCESSING_ERROR_DETAIL = "Internal processing error"
 
 _GUARDRAIL_STATUS: dict[str, int] = {
     "moderation": 400,
@@ -85,7 +86,7 @@ async def create_acb_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("acb_estimation_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 
 @router.get("/examples", response_model=list[ExampleItem])
@@ -122,7 +123,7 @@ async def create_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("estimation_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 
 @router.post("/estimate/stream", responses=_LLM_ERROR_RESPONSES)
@@ -134,23 +135,15 @@ async def create_estimation_stream(
 ) -> StreamingResponse:
     log.info("estimation_stream_requested", transcription_chars=len(request.transcription))
 
-    # Validate guardrails BEFORE streaming starts
-    try:
-        await asyncio.to_thread(
-            check_input,
-            request.transcription,
-            openai_client=_get_moderation_client(),
-        )
-    except InputGuardrailViolation as exc:
-        raise HTTPException(
-            status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
-            detail={"message": exc.message, "reason": exc.reason},
-        )
-
     async def generate():
         try:
             async for delta in service.estimate_stream(request, prompt_version=prompt_version, tier=tier):
                 yield delta
+        except InputGuardrailViolation as exc:
+            raise HTTPException(
+                status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+                detail={"message": exc.message, "reason": exc.reason},
+            )
         except LLMServiceError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message)
 
@@ -186,6 +179,6 @@ async def create_structured_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("structured_estimation_failed", error=str(exc))
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 

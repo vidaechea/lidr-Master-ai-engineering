@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -6,6 +7,7 @@ from fastapi.testclient import TestClient
 from jose import jwt
 
 from app.prompts.loader import get_examples
+from app.schemas.llm import LLMObservableResponse, LLMUsage
 
 ESTIMATION_EXAMPLES = get_examples()
 
@@ -26,24 +28,20 @@ def _make_litellm_mock(
     input_tokens: int = 600,
     output_tokens: int = 250,
     response_id: str = FAKE_RESPONSE_ID,
-) -> MagicMock:
-    """Build a minimal mock that mimics a LiteLLM completion response object."""
-    usage = MagicMock()
-    usage.prompt_tokens = input_tokens
-    usage.completion_tokens = output_tokens
-
-    message = MagicMock()
-    message.content = output_text
-
-    choice = MagicMock()
-    choice.message = message
-    choice.finish_reason = "stop"
-
-    response = MagicMock()
-    response.choices = [choice]
-    response.usage = usage
-    response.id = response_id
-    return response
+) -> LLMObservableResponse:
+    """Build a mock LLMObservableResponse object."""
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content=output_text,
+        usage=LLMUsage(
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
+        ),
+        latency_ms=500.0,
+        cost_usd=Decimal("0.01"),
+        response_id=response_id,
+    )
 
 
 def _patch_litellm_complete(mock_response: MagicMock):

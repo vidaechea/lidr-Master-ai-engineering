@@ -120,11 +120,24 @@ export interface SessionProjectMetadata {
   agreed_scope: string | null;
 }
 
+export interface AnchorInfo {
+  turn_number: number;
+  anchor_type: string;
+  key_information: string;
+  summary: string;
+}
+
 export interface SessionStateResponse {
   session_id: string;
   project_metadata: SessionProjectMetadata;
   history: SessionMessage[];
   turn_count: number;
+  message_count: number;
+  anchors_count: number;
+  summary_chars: number;
+  last_resolved_tier: string | null;
+  last_tier_rule: string | null;
+  anchors: AnchorInfo[];
 }
 
 export interface CacheMetrics {

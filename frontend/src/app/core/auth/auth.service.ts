@@ -14,7 +14,6 @@ export interface UserOut {
   id: string;
   email: string;
   full_name: string | null;
-  oauth_provider: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -28,7 +27,7 @@ export class AuthService {
   readonly user = this._user.asReadonly();
   readonly isLoggedIn = computed(() => this._user() !== null);
 
-  constructor(private http: HttpClient, private router: Router) {
+  constructor(private readonly http: HttpClient, private readonly router: Router) {
     // Restore session on page load if a token is present.
     if (this.accessToken) {
       this.fetchCurrentUser().subscribe({ error: () => this.clearTokens() });
@@ -73,10 +72,6 @@ export class AuthService {
     return this.http
       .get<UserOut>(`${environment.apiUrl}/v1/auth/me`)
       .pipe(tap(u => this._user.set(u)));
-  }
-
-  loginWithGoogle() {
-    window.location.href = `${environment.apiUrl}/v1/auth/google`;
   }
 
   private storeTokensAndFetchUser(tokens: TokenResponse) {

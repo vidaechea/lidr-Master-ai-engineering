@@ -310,7 +310,6 @@ class CachedEstimationService:
             raw = json.loads(cached)
             cost_avoided = float(raw.get("turn_cost_usd") or 0.0)
             latency_ms = (time.perf_counter() - t0) * 1000
-            log.info("cache_hit", key_prefix=key[:16], model=raw.get("model"), latency_ms=round(latency_ms, 1))
             await self._record_metrics(hit=True, latency_ms=latency_ms, cost_avoided_usd=cost_avoided)
             # Deserialise and mark as cache hit
             response = EstimationResponse.model_validate(raw)
@@ -334,11 +333,6 @@ class CachedEstimationService:
             if sem_result is not None:
                 cost_avoided = float(sem_result.turn_cost_usd or 0.0)
                 latency_ms = (time.perf_counter() - t0) * 1000
-                log.info(
-                    "semantic_cache_hit",
-                    key_prefix=key[:16],
-                    latency_ms=round(latency_ms, 1),
-                )
                 await self._record_metrics(
                     hit=True, latency_ms=latency_ms, cost_avoided_usd=cost_avoided
                 )
@@ -374,12 +368,24 @@ class CachedEstimationService:
         history: ConversationHistory,
         prompt_version: str = "v1",
         project_metadata: ProjectMetadata | None = None,
+        session_id: str | None = None,
+        enriched_transcript_chars: int | None = None,
+        attachments_total_chars: int = 0,
+        messages_in_window: int | None = None,
+        anchors_count: int = 0,
+        summary_chars: int = 0,
+        cache_hit_kind: str = "none",
+        last_resolved_tier: str | None = None,
     ) -> EstimationResponse:
         """Cache-aware wrapper for multi-turn estimations used by session routes.
 
         Semantic cache is intentionally skipped for multi-turn because history and
         evolving metadata strongly affect the response.
+        
+        Accepts optional context parameters for observation event emission.
         """
+        from app.schemas.observation import CacheHitKind
+
         key = self._cache_key_multi_turn(request, history, prompt_version, project_metadata)
         turn_key = self._cache_key_multi_turn_turn_exact(request, prompt_version)
         t0 = time.perf_counter()
@@ -401,12 +407,6 @@ class CachedEstimationService:
             raw = json.loads(cached)
             cost_avoided = float(raw.get("turn_cost_usd") or 0.0)
             latency_ms = (time.perf_counter() - t0) * 1000
-            log.info(
-                "cache_hit_multi_turn",
-                key_prefix=key[:16],
-                model=raw.get("model"),
-                latency_ms=round(latency_ms, 1),
-            )
             await self._record_metrics(
                 hit=True,
                 latency_ms=latency_ms,
@@ -421,6 +421,8 @@ class CachedEstimationService:
                 prompt_version,
                 project_metadata,
             )
+            # Update cache_hit_kind to reflect exact match
+            cache_hit_kind = "exact"
             return response
 
         log.info("cache_miss_multi_turn", key_prefix=key[:16])
@@ -430,6 +432,14 @@ class CachedEstimationService:
             history=history,
             prompt_version=prompt_version,
             project_metadata=project_metadata,
+            session_id=session_id,
+            enriched_transcript_chars=enriched_transcript_chars,
+            attachments_total_chars=attachments_total_chars,
+            messages_in_window=messages_in_window,
+            anchors_count=anchors_count,
+            summary_chars=summary_chars,
+            cache_hit_kind=CacheHitKind(cache_hit_kind) if cache_hit_kind in ["none", "exact", "semantic"] else CacheHitKind.NONE,
+            last_resolved_tier=last_resolved_tier,
         )
         latency_ms = (time.perf_counter() - t0) * 1000
 

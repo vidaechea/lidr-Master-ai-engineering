@@ -61,7 +61,6 @@ async def create_and_run_sync(
     ai_payload = data.model_dump(
         exclude={"project_id", "prompt_version", "estimation_mode", "acb_max_iterations"},
     )
-    ai_payload["prompt_version"] = data.prompt_version
 
     # Persist in 'processing' state
     estimation = Estimation(
@@ -79,9 +78,15 @@ async def create_and_run_sync(
     try:
         if data.estimation_mode == "acb":
             acb_payload = {**ai_payload, "max_iterations": data.acb_max_iterations}
-            ai_response = await ai_client.estimate_acb(acb_payload)
+            ai_response = await ai_client.estimate_acb(
+                acb_payload,
+                prompt_version=data.prompt_version,
+            )
         else:
-            ai_response = await ai_client.estimate_sync(ai_payload)
+            ai_response = await ai_client.estimate_sync(
+                ai_payload,
+                prompt_version=data.prompt_version,
+            )
         _apply_ai_response(estimation, ai_response)
         estimation.status = "completed"
         estimation.completed_at = datetime.now(timezone.utc)
@@ -103,7 +108,7 @@ async def create_async(
     backend_base_url: str,
 ) -> tuple[Estimation, str]:
     """Create an Estimation in 'pending' state and enqueue in the AI Engine worker."""
-    ai_payload = data.model_dump(exclude={"project_id"})
+    ai_payload = data.model_dump(exclude={"project_id", "prompt_version"})
 
     estimation = Estimation(
         user_id=user_id,
@@ -119,10 +124,18 @@ async def create_async(
 
     callback_url = f"{backend_base_url}/v1/internal/estimation-callback"
     # Store the estimation id so the callback can find it by job_id
-    job_id = await ai_client.enqueue_async(ai_payload, callback_url)
+    job_id = await ai_client.enqueue_async(
+        ai_payload,
+        callback_url,
+        prompt_version=data.prompt_version,
+    )
 
     # Store job_id for status polling
-    estimation.request_params = {**ai_payload, "job_id": job_id}
+    estimation.request_params = {
+        **ai_payload,
+        "job_id": job_id,
+        "prompt_version": data.prompt_version,
+    }
     await db.commit()
 
     return estimation, job_id
@@ -138,6 +151,9 @@ async def apply_callback(
     estimation.status = status
     if status == "completed" and result:
         _apply_ai_response(estimation, result)
+        callback_prompt_version = result.get("prompt_version")
+        if callback_prompt_version:
+            estimation.prompt_version = callback_prompt_version
         estimation.completed_at = datetime.now(timezone.utc)
     elif status == "failed":
         estimation.error_detail = error
