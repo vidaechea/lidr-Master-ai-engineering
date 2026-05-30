@@ -3,8 +3,8 @@ from __future__ import annotations
 import structlog
 from fastapi import APIRouter, HTTPException
 
-from app.embedding_pipeline.chunker import chunk_text
-from app.embedding_pipeline.embedder import embed_texts
+from app.embedding_pipeline.chunker import chunk_text, JSONStructuralChunker
+from app.embedding_pipeline.embedder import embed_texts, OpenAIEmbedder
 from app.embedding_pipeline.schemas import (
     ChunkItem,
     ChunkRequest,
@@ -12,11 +12,15 @@ from app.embedding_pipeline.schemas import (
     EmbedRequest,
     EmbedResponse,
     EmbeddingItem,
+    IngestRequest,
+    IngestResponse,
+    IngestStats,
 )
 
 log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/embedding-pipeline", tags=["embedding-pipeline"])
+ingest_router = APIRouter(tags=["embeddings"])
 
 
 @router.post("/chunks", responses={400: {"description": "Invalid chunk parameters"}})
@@ -49,3 +53,74 @@ def build_embeddings(payload: EmbedRequest) -> EmbedResponse:
 
     items = [EmbeddingItem(index=i, vector=vector) for i, vector in enumerate(vectors)]
     return EmbedResponse(model=payload.model, embeddings=items)
+
+
+# ============================================================================
+# Ingest endpoint: Chunk + Embed budgets
+# ============================================================================
+
+
+@ingest_router.post(
+    "/ingest",
+    responses={
+        200: {"description": "Successfully ingested and embedded budgets"},
+        400: {"description": "Validation error in chunker or embedder"},
+        422: {"description": "Validation error in request schema"},
+        500: {"description": "Internal processing error (e.g., OpenAI API failure)"},
+    },
+)
+def ingest(payload: IngestRequest) -> IngestResponse:
+    """
+    Ingest a list of budgets: chunk them and generate embeddings.
+
+    Orchestrates:
+    1. Chunk budgets into components (JSONStructuralChunker)
+    2. Embed chunks (OpenAIEmbedder)
+    3. Aggregate statistics
+
+    Returns:
+    - 200: IngestResponse with embedded chunks and statistics
+    - 422: Pydantic validation error (automatic)
+    - 500: OpenAI API error with generic message to client
+    """
+    try:
+        # Instantiate services
+        chunker = JSONStructuralChunker()
+        embedder = OpenAIEmbedder()
+
+        # Chunk budgets into components
+        chunks = chunker.chunk(payload.budgets)
+
+        # Embed chunks
+        embedded_chunks = embedder.embed_many(chunks)
+
+        # Calculate aggregated statistics
+        total_tokens = sum(chunk.token_count for chunk in embedded_chunks)
+        estimated_cost = embedder._calculate_cost(total_tokens)
+
+        stats = IngestStats(
+            total_budgets=len(payload.budgets),
+            total_chunks=len(embedded_chunks),
+            total_tokens=total_tokens,
+            estimated_cost_usd=round(estimated_cost, 6),
+        )
+
+        log.info(
+            "ingest_completed",
+            total_budgets=len(payload.budgets),
+            total_chunks=len(embedded_chunks),
+            total_tokens=total_tokens,
+            estimated_cost_usd=round(estimated_cost, 6),
+        )
+
+        return IngestResponse(chunks=embedded_chunks, stats=stats)
+
+    except ValueError as exc:
+        # Validation errors from chunker or embedder
+        log.warning("ingest_validation_error", error=str(exc)[:400])
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        # OpenAI API errors, network issues, etc. — generic message to client
+        log.error("ingest_failed", error=str(exc)[:400])
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+

@@ -7,6 +7,7 @@ from starlette.requests import Request
 from app.config import settings
 from app.logging import configure_logging
 from app.routers import estimations, cache_metrics, ingestion, internal, sessions
+from app.embedding_pipeline.router import ingest_router
 
 configure_logging()
 
@@ -46,6 +47,7 @@ app.include_router(cache_metrics.router, prefix=API_PREFIX)
 app.include_router(internal.router, prefix=API_PREFIX)
 app.include_router(sessions.router, prefix=API_PREFIX)
 app.include_router(ingestion.router, prefix=API_PREFIX)
+app.include_router(ingest_router, prefix=API_PREFIX + "/embeddings")
 
 
 @app.get("/health")
