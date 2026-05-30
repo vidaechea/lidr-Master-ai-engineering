@@ -5,6 +5,7 @@ boss action dispatch, and cost accumulation without making any real LLM calls.
 """
 from __future__ import annotations
 
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -19,6 +20,7 @@ from app.schemas.estimation import (
     IssueCategory,
     IssueSeverity,
 )
+from app.schemas.llm import LLMObservableResponse, LLMUsage
 from app.services.acb_service import ActorCriticBossService
 
 VALID_TRANSCRIPTION = (
@@ -34,25 +36,34 @@ _REQUEST_ONE = ActorCriticBossRequest(transcription=VALID_TRANSCRIPTION, max_ite
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _make_actor_response(content: str = "## Estimate\nTotal: 100 h / 80 000 EUR") -> MagicMock:
-    usage = MagicMock()
-    usage.prompt_tokens = 400
-    usage.completion_tokens = 200
-    choice = MagicMock()
-    choice.message.content = content
-    resp = MagicMock()
-    resp.choices = [choice]
-    resp.usage = usage
-    resp.id = "actor-resp-001"
-    return resp
+def _make_actor_response(content: str = "## Estimate\nTotal: 100 h / 80 000 EUR", response_id: str = "actor-resp-001") -> LLMObservableResponse:
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content=content,
+        usage=LLMUsage(
+            prompt_tokens=400,
+            completion_tokens=200,
+            total_tokens=600,
+        ),
+        latency_ms=150.0,
+        cost_usd=Decimal("0.001"),
+        response_id=response_id,
+    )
 
 
-def _make_completion(in_tok: int = 100, out_tok: int = 50) -> MagicMock:
-    completion = MagicMock()
-    completion.usage.prompt_tokens = in_tok
-    completion.usage.completion_tokens = out_tok
-    completion.id = "structured-resp-001"
-    return completion
+def _make_completion(in_tok: int = 100, out_tok: int = 50) -> LLMObservableResponse:
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content="{}",
+        usage=LLMUsage(
+            prompt_tokens=in_tok,
+            completion_tokens=out_tok,
+            total_tokens=in_tok + out_tok,
+        ),
+        latency_ms=100.0,
+        cost_usd=Decimal("0.0005"),
+        response_id="structured-resp-001",
+    )
 
 
 def _approved_critic() -> CriticFeedback:
@@ -356,8 +367,7 @@ class TestActorCriticBossServiceCosts:
 
     async def test_response_metadata_fields_populated(self):
         """response_id, model, prompt_version, tier are set correctly."""
-        actor_resp = _make_actor_response()
-        actor_resp.id = "actor-id-xyz"
+        actor_resp = _make_actor_response(response_id="actor-id-xyz")
         completion = _make_completion()
 
         with (

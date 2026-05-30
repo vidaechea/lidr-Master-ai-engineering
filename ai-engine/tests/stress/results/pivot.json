@@ -1,0 +1,154 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "pivot_01",
+      "profile": "pivot",
+      "total_cost_usd": 0.0,
+      "cost_curve": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "turns": [
+        {
+          "turn_number": 1,
+          "transcript": "Build a mobile app with React Native for iOS/Android. Backend is Node.js with PostgreSQL.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 1512,
+            "out": 542
+          },
+          "latency_ms": 18934.2,
+          "project_name": "MobileFirst",
+          "technologies": [
+            "node.js",
+            "postgresql",
+            "react-native"
+          ],
+          "memory_drift": 0.333,
+          "satisfied_facts": 2,
+          "violated_facts": 1
+        },
+        {
+          "turn_number": 3,
+          "transcript": "We need strong native iOS performance. Switch to Swift for iOS frontend.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 2245,
+            "out": 598
+          },
+          "latency_ms": 14567.8,
+          "project_name": "MobileFirst",
+          "technologies": [
+            "node.js",
+            "postgresql",
+            "swift",
+            "react-native"
+          ],
+          "memory_drift": 0.5,
+          "satisfied_facts": 2,
+          "violated_facts": 2
+        },
+        {
+          "turn_number": 5,
+          "transcript": "Pivot: Use Flutter across both platforms instead. Completely replace React Native.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 2876,
+            "out": 621
+          },
+          "latency_ms": 13201.5,
+          "project_name": "MobileFirst",
+          "technologies": [
+            "node.js",
+            "postgresql",
+            "flutter",
+            "dart"
+          ],
+          "memory_drift": 0.667,
+          "satisfied_facts": 1,
+          "violated_facts": 2,
+          "pivot_event": "React Native → Flutter"
+        },
+        {
+          "turn_number": 10,
+          "transcript": "Confirmed Flutter is working well. Add real-time sync with Firebase.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 3412,
+            "out": 615
+          },
+          "latency_ms": 12445.3,
+          "project_name": "MobileFirst",
+          "technologies": [
+            "node.js",
+            "postgresql",
+            "flutter",
+            "dart",
+            "firebase"
+          ],
+          "memory_drift": 0.667,
+          "satisfied_facts": 1,
+          "violated_facts": 2
+        },
+        {
+          "turn_number": 20,
+          "transcript": "Final phase: Optimize Flutter performance and add offline support.",
+          "cost_usd": 0.0,
+          "tokens": {
+            "in": 4134,
+            "out": 587
+          },
+          "latency_ms": 11876.9,
+          "project_name": "MobileFirst",
+          "technologies": [
+            "node.js",
+            "postgresql",
+            "flutter",
+            "dart",
+            "firebase"
+          ],
+          "memory_drift": 0.6,
+          "satisfied_facts": 2,
+          "violated_facts": 3
+        }
+      ],
+      "summary": {
+        "avg_memory_drift": 0.5734,
+        "final_project_name": "MobileFirst",
+        "final_technologies": [
+          "node.js",
+          "postgresql",
+          "flutter",
+          "dart",
+          "firebase"
+        ],
+        "pivot_detected": true,
+        "pivot_turn": 5,
+        "pre_pivot_stack": [
+          "node.js",
+          "postgresql",
+          "react-native"
+        ],
+        "post_pivot_stack": [
+          "node.js",
+          "postgresql",
+          "flutter",
+          "dart"
+        ],
+        "stack_clean_transition": true,
+        "react_native_persistence": false,
+        "error": null
+      }
+    }
+  ],
+  "aggregate": {
+    "total_scenarios": 1,
+    "successful": 1,
+    "total_cost_usd": 0.0,
+    "avg_memory_drift": 0.5734,
+    "pivot_transitions_detected": 1
+  }
+}

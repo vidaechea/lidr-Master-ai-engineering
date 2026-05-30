@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 
 import openai
@@ -17,7 +18,9 @@ from app.schemas.estimation import (
     ExtractedRequirements,
     UserTier,
 )
-from app.services.helpers.cost_calculator import CostCalculator
+from app.schemas.llm import LLMObservableResponse
+from app.schemas.observation import CacheHitKind, TurnObservedEvent
+from app.services.estimation_renderer import format_requirements_text, render_estimation_markdown
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.helpers.output_validator import evaluate_estimation_structure
 from app.services.helpers.prompt_builder import PromptBuilder
@@ -47,7 +50,6 @@ def _get_moderation_client() -> openai.OpenAI | None:
 # Estimation service
 # ---------------------------------------------------------------------------
 
-_cost_calculator = CostCalculator()
 
 class EstimationService:
     """Async service that dispatches to the configured LLM provider."""
@@ -68,11 +70,6 @@ class EstimationService:
         builder = PromptBuilder(request, model_cfg, prompt_version, tier=tier, project_metadata=project_metadata)
         builder.validate_context_window()
 
-        estimated_input_tokens = builder.estimated_input_tokens
-        estimated_precall_cost_usd = _cost_calculator.estimate_precall_cost(
-            estimated_input_tokens, model_cfg.input_price
-        )
-
         requirements: str | None = None
         pre_call_cost_usd: float | None = None
 
@@ -85,21 +82,15 @@ class EstimationService:
                 user_prompt=req_user,
                 max_output_tokens=request.max_output_tokens,
             )
-            requirements, pre_in_tok, pre_out_tok, *_ = pre_resp
-            pre_call_cost_usd = _cost_calculator.compute_cost(
-                pre_in_tok, pre_out_tok, model_cfg.input_price, model_cfg.output_price
-            )
+            requirements, _, _, _finish_reason, _response_id, pre_call_cost_usd = pre_resp
 
         main_resp = await self._call_provider(
             system_prompt=builder.system_prompt,
             user_prompt=builder.user_prompt,
             max_output_tokens=request.max_output_tokens,
         )
-        estimation_text, input_tokens, output_tokens, finish_reason, response_id = main_resp
+        estimation_text, input_tokens, output_tokens, finish_reason, response_id, turn_cost_usd = main_resp
 
-        turn_cost_usd = _cost_calculator.compute_cost(
-            input_tokens, output_tokens, model_cfg.input_price, model_cfg.output_price
-        )
         total_cost_usd = turn_cost_usd + (pre_call_cost_usd or 0.0)
 
         validation = evaluate_estimation_structure(estimation_text, finish_reason)
@@ -120,8 +111,8 @@ class EstimationService:
             output_tokens=output_tokens,
             turn_cost_usd=turn_cost_usd,
             total_cost_usd=total_cost_usd,
-            estimated_input_tokens=estimated_input_tokens,
-            estimated_precall_cost_usd=estimated_precall_cost_usd,
+            estimated_input_tokens=builder.estimated_input_tokens,
+            estimated_precall_cost_usd=None,
             requirements=requirements,
             pre_call_cost_usd=pre_call_cost_usd,
             validation=validation,
@@ -173,41 +164,35 @@ class EstimationService:
             yield delta
 
         if response_out is not None and usage_out:
-            usage_data = usage_out[0]
-            usage = usage_data.get("usage")
-            response_id: str = usage_data.get("response_id") or ""
-            if usage is not None:
-                input_tokens = getattr(usage, "prompt_tokens", 0) or 0
-                output_tokens = getattr(usage, "completion_tokens", 0) or 0
-                estimated_input_tokens = builder.estimated_input_tokens
-                turn_cost_usd = _cost_calculator.compute_cost(
-                    input_tokens, output_tokens, model_cfg.input_price, model_cfg.output_price
-                )
-                response_out.append(EstimationResponse(
-                    estimation="",
-                    model=model_name,
-                    response_id=response_id,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    turn_cost_usd=turn_cost_usd,
-                    total_cost_usd=turn_cost_usd,
-                    estimated_input_tokens=estimated_input_tokens,
-                    estimated_precall_cost_usd=_cost_calculator.estimate_precall_cost(
-                        estimated_input_tokens, model_cfg.input_price
-                    ),
-                    requirements=None,
-                    pre_call_cost_usd=None,
-                    validation=None,
-                    prompt_version=prompt_version,
-                ))
+            observable_resp = usage_out[0]
+            input_tokens = observable_resp.usage.prompt_tokens
+            output_tokens = observable_resp.usage.completion_tokens
+            response_id = observable_resp.response_id or ""
+            turn_cost_usd = float(observable_resp.cost_usd)
+            estimated_input_tokens = builder.estimated_input_tokens
+            response_out.append(EstimationResponse(
+                estimation="",
+                model=model_name,
+                response_id=response_id,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                turn_cost_usd=turn_cost_usd,
+                total_cost_usd=turn_cost_usd,
+                estimated_input_tokens=estimated_input_tokens,
+                estimated_precall_cost_usd=None,
+                requirements=None,
+                pre_call_cost_usd=None,
+                validation=None,
+                prompt_version=prompt_version,
+            ))
 
     async def _call_provider(
         self,
         system_prompt: str,
         user_prompt: str,
         max_output_tokens: int,
-    ) -> tuple[str, int, int, str, str]:
-        """Call the configured provider. Returns (text, input_tokens, output_tokens, finish_reason, response_id)."""
+    ) -> tuple[str, int, int, str, str, float]:
+        """Call the configured provider. Returns (text, input_tokens, output_tokens, finish_reason, response_id, cost_usd)."""
         return await self._call_litellm(system_prompt, user_prompt, max_output_tokens)
 
     async def _call_litellm(
@@ -215,10 +200,10 @@ class EstimationService:
         system_prompt: str,
         user_prompt: str,
         max_output_tokens: int,
-    ) -> tuple[str, int, int, str, str]:
+    ) -> tuple[str, int, int, str, str, float]:
         from app.services.litellm_service import litellm_router_service
 
-        response = await litellm_router_service.complete(
+        observable_resp = await litellm_router_service.complete(
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -226,34 +211,36 @@ class EstimationService:
             max_tokens=max_output_tokens,
         )
         return (
-            response.choices[0].message.content,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            response.choices[0].finish_reason or "stop",
-            response.id,
+            observable_resp.content or "",
+            observable_resp.usage.prompt_tokens,
+            observable_resp.usage.completion_tokens,
+            "stop",
+            observable_resp.response_id or "",
+            float(observable_resp.cost_usd),
         )
 
     async def _call_litellm_messages(
         self,
         messages: list[dict[str, str]],
         max_output_tokens: int,
-    ) -> tuple[str, int, int, str, str]:
+    ) -> tuple[str, int, int, str, str, float]:
         """Send a pre-built messages list to LiteLLM (used for multi-turn conversations).
 
-        Returns ``(text, input_tokens, output_tokens, finish_reason, response_id)``.
+        Returns ``(text, input_tokens, output_tokens, finish_reason, response_id, cost_usd)``.
         """
         from app.services.litellm_service import litellm_router_service
 
-        response = await litellm_router_service.complete(
+        observable_resp = await litellm_router_service.complete(
             messages=messages,
             max_tokens=max_output_tokens,
         )
         return (
-            response.choices[0].message.content,
-            response.usage.prompt_tokens,
-            response.usage.completion_tokens,
-            response.choices[0].finish_reason or "stop",
-            response.id,
+            observable_resp.content or "",
+            observable_resp.usage.prompt_tokens,
+            observable_resp.usage.completion_tokens,
+            "stop",
+            observable_resp.response_id or "",
+            float(observable_resp.cost_usd),
         )
 
     async def estimate_multi_turn(
@@ -262,12 +249,23 @@ class EstimationService:
         history: ConversationHistory,
         prompt_version: str = "v1",
         project_metadata: ProjectMetadata | None = None,
+        session_id: str | None = None,
+        enriched_transcript_chars: int | None = None,
+        attachments_total_chars: int = 0,
+        messages_in_window: int | None = None,
+        anchors_count: int = 0,
+        summary_chars: int = 0,
+        cache_hit_kind: CacheHitKind = CacheHitKind.NONE,
+        last_resolved_tier: str | None = None,
     ) -> EstimationResponse:
         """Run one estimation turn using the full conversation history.
 
         Adds the user prompt to *history* before calling the provider and
         appends the assistant response afterwards, so the caller does not need
         to manage history entries manually.
+
+        Optionally collects context metadata and emits a unified ``turn_observed``
+        event at the end of the turn with all relevant metrics.
 
         Args:
             request: The current estimation request (transcript + options).
@@ -276,11 +274,21 @@ class EstimationService:
             prompt_version: Prompt template version (e.g. ``"v1"``).
             project_metadata: Current session metadata used to refresh the
                 system prompt for this turn.
+            session_id: Optional session identifier for event observation.
+            enriched_transcript_chars: Character count of transcript + attachments.
+            attachments_total_chars: Character count from uploaded files.
+            messages_in_window: Number of messages in history after compression.
+            anchors_count: Number of key information anchors extracted.
+            summary_chars: Character count of the conversation summary.
+            cache_hit_kind: Type of cache hit achieved (none, exact, semantic).
+            last_resolved_tier: User tier resolved by the estimation logic.
 
         Returns:
             :class:`~app.schemas.estimation.EstimationResponse` with full cost
             and token metadata.
         """
+        start_time = time.time()
+        
         await asyncio.to_thread(
             check_input,
             request.transcription,
@@ -292,37 +300,47 @@ class EstimationService:
         builder = PromptBuilder(request, model_cfg, prompt_version, project_metadata=project_metadata)
         builder.validate_context_window()
 
-        estimated_input_tokens = builder.estimated_input_tokens
-        estimated_precall_cost_usd = _cost_calculator.estimate_precall_cost(
-            estimated_input_tokens, model_cfg.input_price
-        )
-
         # Register this turn's user message and build the full messages list
         # with the system prompt refreshed from current project_metadata.
         history.add("user", builder.user_prompt)
         messages = history.to_messages_list(system_prompt=builder.system_prompt)
 
-        estimation_text, input_tokens, output_tokens, finish_reason, response_id = (
+        estimation_text, input_tokens, output_tokens, finish_reason, response_id, turn_cost_usd = (
             await self._call_litellm_messages(messages, request.max_output_tokens)
         )
 
         # Persist the assistant response in the sliding window.
         history.add("assistant", estimation_text)
 
-        turn_cost_usd = _cost_calculator.compute_cost(
-            input_tokens, output_tokens, model_cfg.input_price, model_cfg.output_price
-        )
-
         validation = evaluate_estimation_structure(estimation_text, finish_reason)
 
-        log.info(
-            "multi_turn_estimation_completed",
-            model=model_name,
-            turn=history.turn_count,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            turn_cost_usd=turn_cost_usd,
-        )
+        # Emit unified turn observation event if session_id is provided
+        if session_id is not None:
+            elapsed_ms = (time.time() - start_time) * 1000
+            turn_index = history.turn_count
+            
+            # Use provided values or compute from defaults
+            transcript_chars = enriched_transcript_chars or len(request.transcription)
+            msg_count = messages_in_window or len(history.messages())
+            
+            turn_event = TurnObservedEvent(
+                turn_index=turn_index,
+                session_id=session_id,
+                enriched_transcript_chars=transcript_chars,
+                attachments_total_chars=attachments_total_chars,
+                messages_in_window=msg_count,
+                anchors_count=anchors_count,
+                summary_chars=summary_chars,
+                tokens_in=input_tokens,
+                tokens_out=output_tokens,
+                cost_usd=turn_cost_usd,
+                latency_ms=elapsed_ms,
+                cache_hit_kind=cache_hit_kind,
+                last_resolved_tier=last_resolved_tier,
+                model=model_name,
+                response_id=response_id,
+            )
+            log.info("turn_observed", **turn_event.model_dump())
 
         return EstimationResponse(
             estimation=estimation_text,
@@ -332,8 +350,8 @@ class EstimationService:
             output_tokens=output_tokens,
             turn_cost_usd=turn_cost_usd,
             total_cost_usd=turn_cost_usd,
-            estimated_input_tokens=estimated_input_tokens,
-            estimated_precall_cost_usd=estimated_precall_cost_usd,
+            estimated_input_tokens=builder.estimated_input_tokens,
+            estimated_precall_cost_usd=None,
             requirements=None,
             pre_call_cost_usd=None,
             validation=validation,
@@ -361,11 +379,6 @@ class EstimationService:
         builder = PromptBuilder(request, model_cfg, prompt_version, tier=tier)
         builder.validate_context_window()
 
-        estimated_input_tokens = builder.estimated_input_tokens
-        estimated_precall_cost_usd = _cost_calculator.estimate_precall_cost(
-            estimated_input_tokens, model_cfg.input_price
-        )
-
         requirements: str | None = None
         extracted_requirements: ExtractedRequirements | None = None
         pre_call_cost_usd: float | None = None
@@ -382,13 +395,9 @@ class EstimationService:
                 response_model=ExtractedRequirements,
                 max_tokens=512,
             )
-            pre_in_tok = pre_completion.usage.prompt_tokens
-            pre_out_tok = pre_completion.usage.completion_tokens
-            pre_call_cost_usd = _cost_calculator.compute_cost(
-                pre_in_tok, pre_out_tok, model_cfg.input_price, model_cfg.output_price
-            )
+            pre_call_cost_usd = float(pre_completion.cost_usd)
             extracted_requirements = extracted
-            requirements = _format_requirements_text(extracted)
+            requirements = format_requirements_text(extracted)
 
         structured_result, completion = await litellm_router_service.complete_structured(
             messages=[
@@ -402,29 +411,20 @@ class EstimationService:
         # --- Output guardrails (mandatory) ---------------------------------
         # 1. Scope filter: rewrite low-confidence results before rendering.
         structured_result = enforce_scope_response(structured_result)
-        estimation_markdown = _render_estimation_markdown(structured_result)
-        finish_reason = (
-            completion.choices[0].finish_reason
-            if completion.choices
-            else "stop"
-        )
+        estimation_markdown = render_estimation_markdown(structured_result)
+        finish_reason = "stop"  # Observable response doesn't track finish_reason
         # 2. Structure check: same validator used in the markdown path.
         validation = evaluate_estimation_structure(estimation_markdown, finish_reason)
         # -------------------------------------------------------------------
 
-        input_tokens = completion.usage.prompt_tokens
-        output_tokens = completion.usage.completion_tokens
-        response_id = completion.id
-        turn_cost_usd = _cost_calculator.compute_cost(
-            input_tokens, output_tokens, model_cfg.input_price, model_cfg.output_price
-        )
+        turn_cost_usd = float(completion.cost_usd)
         total_cost_usd = turn_cost_usd + (pre_call_cost_usd or 0.0)
 
         log.info(
             "structured_estimation_completed",
             model=model_name,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=completion.usage.prompt_tokens,
+            output_tokens=completion.usage.completion_tokens,
             turn_cost_usd=turn_cost_usd,
             total_phases=len(structured_result.phases),
             validation_score=validation.score,
@@ -434,13 +434,13 @@ class EstimationService:
         return structured_result, EstimationResponse(
             estimation=estimation_markdown,
             model=model_name,
-            response_id=response_id,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            response_id=completion.response_id or "",
+            input_tokens=completion.usage.prompt_tokens,
+            output_tokens=completion.usage.completion_tokens,
             turn_cost_usd=turn_cost_usd,
             total_cost_usd=total_cost_usd,
-            estimated_input_tokens=estimated_input_tokens,
-            estimated_precall_cost_usd=estimated_precall_cost_usd,
+            estimated_input_tokens=builder.estimated_input_tokens,
+            estimated_precall_cost_usd=None,
             requirements=requirements,
             pre_call_cost_usd=pre_call_cost_usd,
             validation=validation,
@@ -448,42 +448,4 @@ class EstimationService:
             structured_result=structured_result,
             extracted_requirements=extracted_requirements,
         )
-
-
-# ---------------------------------------------------------------------------
-# Helpers for EstimationResult → human-readable text
-# ---------------------------------------------------------------------------
-
-def _format_requirements_text(extracted: ExtractedRequirements) -> str:
-    lines = [f"[{r.id}] ({r.category.value}) {r.description}" for r in extracted.requirements]
-    if extracted.open_questions:
-        lines.append("\nOpen questions:")
-        lines.extend(f"  - {q}" for q in extracted.open_questions)
-    return "\n".join(lines)
-
-
-def _render_estimation_markdown(result: EstimationResult) -> str:
-    """Render a structured EstimationResult as markdown for display."""
-    lines = [
-        f"## {result.summary}",
-        "",
-        (
-            f"**Confidence:** {result.confidence_pct}%  |  "
-            f"**Duration:** {result.total_duration_weeks} weeks  |  "
-            f"**Total cost:** {result.total_cost_eur:,} EUR"
-        ),
-        "",
-        "| Phase | Duration (weeks) | Cost (EUR) | Confidence |",
-        "|-------|-----------------|------------|------------|",
-    ]
-    for phase in result.phases:
-        lines.append(
-            f"| {phase.name} | {phase.duration_weeks} | {phase.cost_eur:,} | {phase.confidence_pct}% |"
-        )
-    for phase in result.phases:
-        if phase.assumptions:
-            lines.extend(["", f"**{phase.name}** assumptions:"])
-            lines.extend(f"- {a}" for a in phase.assumptions)
-    lines.extend(["", f"**Total cost:** {result.total_cost_eur:,} EUR"])
-    return "\n".join(lines)
 

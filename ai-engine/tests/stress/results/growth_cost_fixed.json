@@ -1,0 +1,143 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "growth_01",
+      "profile": "growth",
+      "total_cost_usd": 0.00425235,
+      "cost_curve": [
+        0.0005930999999999999,
+        0.00132615,
+        0.0021754499999999998,
+        0.003162,
+        0.00425235
+      ],
+      "turns": [
+        {
+          "turn_number": 1,
+          "transcript": "We're building a SaaS platform called TaskMaster. Phase 1 is a simple landing page with a contact form and email notifications. Stack: React, Node.js, PostgreSQL.",
+          "cost_usd": 0.0005930999999999999,
+          "tokens": {
+            "in": 1706,
+            "out": 562
+          },
+          "latency_ms": 14863.817163999556,
+          "project_name": "TaskMaster",
+          "technologies": [
+            "node.js",
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.5,
+          "satisfied_facts": 1,
+          "violated_facts": 1
+        },
+        {
+          "turn_number": 3,
+          "transcript": "Now we need to add user authentication and authorization. Users will have profiles and can log in with email/password. We're using JWT tokens.",
+          "cost_usd": 0.00073305,
+          "tokens": {
+            "in": 2363,
+            "out": 631
+          },
+          "latency_ms": 11244.173129000046,
+          "project_name": "TaskMaster",
+          "technologies": [
+            "expo",
+            "go",
+            "node.js",
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.6666666666666666,
+          "satisfied_facts": 1,
+          "violated_facts": 2
+        },
+        {
+          "turn_number": 6,
+          "transcript": "The platform needs to support multiple tenants. Each tenant has isolated data. We need to add tenant isolation logic to the database.",
+          "cost_usd": 0.0008493,
+          "tokens": {
+            "in": 3034,
+            "out": 657
+          },
+          "latency_ms": 12619.9894399997,
+          "project_name": "TaskMaster",
+          "technologies": [
+            "expo",
+            "go",
+            "ios",
+            "node.js",
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.6666666666666666,
+          "satisfied_facts": 1,
+          "violated_facts": 2
+        },
+        {
+          "turn_number": 10,
+          "transcript": "We need a comprehensive audit log. Track all user actions, data changes, and access events. Logs must be tamper-proof and queryable.",
+          "cost_usd": 0.0009865499999999999,
+          "tokens": {
+            "in": 3733,
+            "out": 711
+          },
+          "latency_ms": 11904.500984999686,
+          "project_name": "TaskMaster",
+          "technologies": [
+            "expo",
+            "go",
+            "ios",
+            "node.js",
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.75,
+          "satisfied_facts": 1,
+          "violated_facts": 3
+        },
+        {
+          "turn_number": 20,
+          "transcript": "Finally, add CSV export functionality. Users can export their data, audit logs, and reports as CSV. Use a background job queue for large exports.",
+          "cost_usd": 0.00109035,
+          "tokens": {
+            "in": 4485,
+            "out": 696
+          },
+          "latency_ms": 12727.07362699839,
+          "project_name": "TaskMaster",
+          "technologies": [
+            "expo",
+            "go",
+            "ios",
+            "node.js",
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.8,
+          "satisfied_facts": 1,
+          "violated_facts": 4
+        }
+      ],
+      "summary": {
+        "avg_memory_drift": 0.6766666666666666,
+        "final_project_name": "TaskMaster",
+        "final_technologies": [
+          "expo",
+          "go",
+          "ios",
+          "node.js",
+          "postgresql",
+          "react"
+        ],
+        "error": null
+      }
+    }
+  ],
+  "aggregate": {
+    "total_scenarios": 1,
+    "successful": 1,
+    "total_cost_usd": 0.00425235,
+    "avg_memory_drift": 0.6766666666666666
+  }
+}

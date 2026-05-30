@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Async HTTP client that proxies requests to the AI Engine service."""
 
+from collections.abc import Callable
 from typing import Any
 
 import structlog
@@ -16,156 +17,202 @@ _HEADERS: dict[str, str] = {}
 if settings.internal_api_key:
     _HEADERS["X-Internal-API-Key"] = settings.internal_api_key
 
+_AI_ENGINE_UNREACHABLE = "AI Engine unreachable"
 
-async def estimate_sync(request_payload: dict) -> dict:
-    """Call ``POST /api/v1/estimate`` on the AI Engine and return the JSON response."""
+
+HttpErrorStrategy = Callable[[HTTPStatusError], tuple[HTTPException, bool, Any]]
+
+
+def _extract_error_detail(exc: HTTPStatusError) -> Any:
+    try:
+        payload = exc.response.json()
+    except ValueError:
+        return exc.response.text
+
+    if isinstance(payload, dict):
+        return payload.get("detail", exc.response.text)
+    return exc.response.text
+
+
+def _default_http_error_strategy(exc: HTTPStatusError) -> tuple[HTTPException, bool, Any]:
+    status_code = exc.response.status_code
+    return (
+        HTTPException(status_code=502, detail=f"AI Engine returned {status_code}"),
+        True,
+        exc.response.text,
+    )
+
+
+def _session_state_http_error_strategy(
+    exc: HTTPStatusError,
+    *,
+    session_id: str,
+) -> tuple[HTTPException, bool, Any]:
+    status_code = exc.response.status_code
+    if status_code == 404:
+        return HTTPException(status_code=404, detail=f"Session '{session_id}' not found"), False, None
+
+    return (
+        HTTPException(status_code=502, detail=f"AI Engine returned {status_code}"),
+        True,
+        exc.response.text,
+    )
+
+
+def _session_estimate_http_error_strategy(exc: HTTPStatusError) -> tuple[HTTPException, bool, Any]:
+    status_code = exc.response.status_code
+    detail = _extract_error_detail(exc)
+
+    if status_code in {400, 401, 404, 413, 422, 429, 500, 503, 504}:
+        return HTTPException(status_code=status_code, detail=detail), False, None
+
+    return (
+        HTTPException(status_code=502, detail=f"AI Engine returned {status_code}"),
+        True,
+        detail,
+    )
+
+
+def _cache_metrics_http_error_strategy(exc: HTTPStatusError) -> tuple[HTTPException, bool, Any]:
+    status_code = exc.response.status_code
+    detail = _extract_error_detail(exc)
+
+    if status_code == 400:
+        return HTTPException(status_code=400, detail=detail), False, None
+
+    return (
+        HTTPException(status_code=502, detail=f"AI Engine returned {status_code}"),
+        True,
+        detail,
+    )
+
+
+def _enqueue_http_error_strategy(exc: HTTPStatusError) -> tuple[HTTPException, bool, Any]:
+    return HTTPException(status_code=503, detail="Failed to enqueue estimation"), True, str(exc)
+
+
+async def _request_ai_engine(
+    method: str,
+    path: str,
+    *,
+    request_timeout: float,
+    params: dict[str, str] | None = None,
+    json_body: dict[str, Any] | None = None,
+    form_data: dict[str, str] | None = None,
+    files: list[tuple[str, tuple[str, bytes, str]]] | None = None,
+    http_error_event: str,
+    connection_error_event: str = "ai_engine_connection_error",
+    http_error_strategy: HttpErrorStrategy | None = None,
+    request_error_status_code: int = 503,
+    request_error_detail: str = _AI_ENGINE_UNREACHABLE,
+) -> Any:
+    strategy = http_error_strategy or _default_http_error_strategy
+
     async with AsyncClient(
         base_url=settings.ai_engine_url,
         headers=_HEADERS,
-        timeout=120.0,
+        timeout=request_timeout,
     ) as client:
         try:
-            response = await client.post("/api/v1/estimate", json=request_payload)
+            response = await client.request(
+                method,
+                path,
+                params=params,
+                json=json_body,
+                data=form_data,
+                files=files,
+            )
             response.raise_for_status()
             return response.json()
         except HTTPStatusError as exc:
-            log.error(
-                "ai_engine_http_error",
-                status_code=exc.response.status_code,
-                detail=exc.response.text[:200],
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=f"AI Engine returned {exc.response.status_code}",
-            ) from exc
+            http_exception, should_log, log_detail = strategy(exc)
+            if should_log:
+                log.error(
+                    http_error_event,
+                    status_code=exc.response.status_code,
+                    detail=str(log_detail)[:200],
+                )
+            raise http_exception from exc
         except RequestError as exc:
-            log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+            log.error(connection_error_event, error=str(exc))
+            raise HTTPException(
+                status_code=request_error_status_code,
+                detail=request_error_detail,
+            ) from exc
+
+
+async def estimate_sync(request_payload: dict, prompt_version: str) -> dict:
+    """Call ``POST /api/v1/estimate`` on the AI Engine and return the JSON response."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/estimate",
+        request_timeout=120.0,
+        params={"prompt_version": prompt_version},
+        json_body=request_payload,
+        http_error_event="ai_engine_http_error",
+    )
 
 
 async def estimate_structured(request_payload: dict) -> dict:
     """Call ``POST /api/v1/estimate/structured`` on the AI Engine."""
-    async with AsyncClient(
-        base_url=settings.ai_engine_url,
-        headers=_HEADERS,
-        timeout=120.0,
-    ) as client:
-        try:
-            response = await client.post("/api/v1/estimate/structured", json=request_payload)
-            response.raise_for_status()
-            return response.json()
-        except HTTPStatusError as exc:
-            log.error(
-                "ai_engine_structured_http_error",
-                status_code=exc.response.status_code,
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=f"AI Engine returned {exc.response.status_code}",
-            ) from exc
-        except RequestError as exc:
-            log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/estimate/structured",
+        request_timeout=120.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_structured_http_error",
+    )
 
 
-async def estimate_acb(request_payload: dict) -> dict:
+async def estimate_acb(request_payload: dict, prompt_version: str) -> dict:
     """Call ``POST /api/v1/estimate/acb`` on the AI Engine and return the JSON response."""
-    async with AsyncClient(
-        base_url=settings.ai_engine_url,
-        headers=_HEADERS,
-        timeout=300.0,  # ACB pipeline can take longer: actor + critic + boss × N iterations
-    ) as client:
-        try:
-            response = await client.post("/api/v1/estimate/acb", json=request_payload)
-            response.raise_for_status()
-            return response.json()
-        except HTTPStatusError as exc:
-            log.error(
-                "ai_engine_acb_http_error",
-                status_code=exc.response.status_code,
-                detail=exc.response.text[:200],
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=f"AI Engine returned {exc.response.status_code}",
-            ) from exc
-        except RequestError as exc:
-            log.error("ai_engine_acb_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/estimate/acb",
+        request_timeout=300.0,  # ACB pipeline can take longer: actor + critic + boss × N iterations
+        params={"prompt_version": prompt_version},
+        json_body=request_payload,
+        http_error_event="ai_engine_acb_http_error",
+        connection_error_event="ai_engine_acb_connection_error",
+    )
 
 
-async def enqueue_async(request_payload: dict, callback_url: str) -> str:
+async def enqueue_async(request_payload: dict, callback_url: str, prompt_version: str) -> str:
     """Call ``POST /api/v1/internal/estimate/async`` — returns job_id."""
-    async with AsyncClient(
-        base_url=settings.ai_engine_url,
-        headers=_HEADERS,
-        timeout=10.0,
-    ) as client:
-        try:
-            response = await client.post(
-                "/api/v1/internal/estimate/async",
-                json=request_payload,
-                params={"callback_url": callback_url},
-            )
-            response.raise_for_status()
-            return response.json()["job_id"]
-        except (HTTPStatusError, RequestError) as exc:
-            log.error("ai_engine_enqueue_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="Failed to enqueue estimation") from exc
+    response_payload = await _request_ai_engine(
+        "POST",
+        "/api/v1/internal/estimate/async",
+        request_timeout=10.0,
+        params={"callback_url": callback_url, "prompt_version": prompt_version},
+        json_body=request_payload,
+        http_error_event="ai_engine_enqueue_error",
+        connection_error_event="ai_engine_enqueue_error",
+        http_error_strategy=_enqueue_http_error_strategy,
+        request_error_status_code=503,
+        request_error_detail="Failed to enqueue estimation",
+    )
+    return response_payload["job_id"]
 
 
 async def create_session() -> dict[str, Any]:
     """Call ``POST /api/v1/sessions`` on the AI Engine."""
-    async with AsyncClient(
-        base_url=settings.ai_engine_url,
-        headers=_HEADERS,
-        timeout=30.0,
-    ) as client:
-        try:
-            response = await client.post("/api/v1/sessions")
-            response.raise_for_status()
-            return response.json()
-        except HTTPStatusError as exc:
-            log.error(
-                "ai_engine_session_create_http_error",
-                status_code=exc.response.status_code,
-                detail=exc.response.text[:200],
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=f"AI Engine returned {exc.response.status_code}",
-            ) from exc
-        except RequestError as exc:
-            log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/sessions",
+        request_timeout=30.0,
+        http_error_event="ai_engine_session_create_http_error",
+    )
 
 
 async def get_session_state(session_id: str) -> dict[str, Any]:
     """Call ``GET /api/v1/sessions/{session_id}`` on the AI Engine."""
-    async with AsyncClient(
-        base_url=settings.ai_engine_url,
-        headers=_HEADERS,
-        timeout=30.0,
-    ) as client:
-        try:
-            response = await client.get(f"/api/v1/sessions/{session_id}")
-            response.raise_for_status()
-            return response.json()
-        except HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found") from exc
-            log.error(
-                "ai_engine_session_state_http_error",
-                status_code=exc.response.status_code,
-                detail=exc.response.text[:200],
-            )
-            raise HTTPException(
-                status_code=502,
-                detail=f"AI Engine returned {exc.response.status_code}",
-            ) from exc
-        except RequestError as exc:
-            log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+    return await _request_ai_engine(
+        "GET",
+        f"/api/v1/sessions/{session_id}",
+        request_timeout=30.0,
+        http_error_event="ai_engine_session_state_http_error",
+        http_error_strategy=lambda exc: _session_state_http_error_strategy(exc, session_id=session_id),
+    )
 
 
 async def estimate_session_multipart(
@@ -175,70 +222,24 @@ async def estimate_session_multipart(
     prompt_version: str,
 ) -> dict[str, Any]:
     """Call ``POST /api/v1/sessions/{session_id}/estimate`` with multipart payload."""
-    async with AsyncClient(
-        base_url=settings.ai_engine_url,
-        headers=_HEADERS,
-        timeout=120.0,
-    ) as client:
-        try:
-            response = await client.post(
-                f"/api/v1/sessions/{session_id}/estimate",
-                params={"prompt_version": prompt_version},
-                data=form_fields,
-                files=files,
-            )
-            response.raise_for_status()
-            return response.json()
-        except HTTPStatusError as exc:
-            status_code = exc.response.status_code
-            detail: Any
-            try:
-                detail = exc.response.json().get("detail")
-            except Exception:
-                detail = exc.response.text
-
-            if status_code in {400, 401, 404, 413, 422, 429, 500, 503, 504}:
-                raise HTTPException(status_code=status_code, detail=detail) from exc
-
-            log.error(
-                "ai_engine_session_estimate_http_error",
-                status_code=status_code,
-                detail=str(detail)[:200],
-            )
-            raise HTTPException(status_code=502, detail=f"AI Engine returned {status_code}") from exc
-        except RequestError as exc:
-            log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+    return await _request_ai_engine(
+        "POST",
+        f"/api/v1/sessions/{session_id}/estimate",
+        request_timeout=120.0,
+        params={"prompt_version": prompt_version},
+        form_data=form_fields,
+        files=files,
+        http_error_event="ai_engine_session_estimate_http_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
 
 
 async def get_cache_metrics() -> dict[str, Any]:
     """Call ``GET /api/v1/cache/metrics`` on the AI Engine."""
-    async with AsyncClient(
-        base_url=settings.ai_engine_url,
-        headers=_HEADERS,
-        timeout=30.0,
-    ) as client:
-        try:
-            response = await client.get("/api/v1/cache/metrics")
-            response.raise_for_status()
-            return response.json()
-        except HTTPStatusError as exc:
-            status_code = exc.response.status_code
-            detail: Any
-            try:
-                detail = exc.response.json().get("detail")
-            except Exception:
-                detail = exc.response.text
-
-            if status_code == 400:
-                raise HTTPException(status_code=400, detail=detail) from exc
-
-            log.error(
-                "ai_engine_cache_metrics_http_error",
-                status_code=status_code,
-                detail=str(detail)[:200],
-            )
-            raise HTTPException(status_code=502, detail=f"AI Engine returned {status_code}") from exc
-        except RequestError as exc:
-            log.error("ai_engine_connection_error", error=str(exc))
-            raise HTTPException(status_code=503, detail="AI Engine unreachable") from exc
+    return await _request_ai_engine(
+        "GET",
+        "/api/v1/cache/metrics",
+        request_timeout=30.0,
+        http_error_event="ai_engine_cache_metrics_http_error",
+        http_error_strategy=_cache_metrics_http_error_strategy,
+    )

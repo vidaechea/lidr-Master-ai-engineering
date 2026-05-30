@@ -18,6 +18,7 @@ async def estimate_task(
     estimation_request_dict: dict,
     callback_url: str,
     job_id: str,
+    prompt_version: str,
 ) -> None:
     """Process a single estimation and POST the result to ``callback_url``."""
     log.info("worker_estimate_start", job_id=job_id)
@@ -25,7 +26,7 @@ async def estimate_task(
     service: EstimationService = ctx["estimation_service"]
 
     try:
-        response = await service.estimate(request, prompt_version=settings.prompt_version)
+        response = await service.estimate(request, prompt_version=prompt_version)
         payload = {
             "job_id": job_id,
             "status": "completed",
@@ -51,11 +52,12 @@ async def estimate_task(
             log.error("worker_callback_failed", job_id=job_id, error=str(exc))
 
 
-async def startup(ctx: dict) -> None:
+def startup(ctx: dict) -> None:
     ctx["estimation_service"] = EstimationService()
 
 
 async def shutdown(ctx: dict) -> None:
+    """Clean up resources on worker shutdown."""
     pass
 
 

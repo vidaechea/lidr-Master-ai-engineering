@@ -23,11 +23,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
 
-    # ── OAuth2 — Google ───────────────────────────────────────────────────────
-    google_client_id: Optional[str] = None
-    google_client_secret: Optional[str] = None
-    google_redirect_uri: str = "http://localhost:8000/v1/auth/google/callback"
-
     # ── AI Engine ─────────────────────────────────────────────────────────────
     ai_engine_url: str = "http://localhost:8001"
     # Shared secret with the ai-engine service.

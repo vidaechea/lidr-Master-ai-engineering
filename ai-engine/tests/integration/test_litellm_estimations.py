@@ -6,10 +6,13 @@ upstream HTTP call.
 
 The litellm.Router is mocked at construction time so no real API keys are needed.
 """
+from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+from app.schemas.llm import LLMObservableResponse, LLMUsage
 
 VALID_TRANSCRIPTION = "Build an e-commerce platform with user auth and product catalog."
 
@@ -42,12 +45,16 @@ def _make_litellm_response(
     """Build a minimal mock that mimics a litellm / OpenAI Chat Completions response."""
     response = MagicMock()
     response.id = response_id
+    response.model = "gpt-4o-mini"
     response.choices = [MagicMock()]
     response.choices[0].message.content = content
     response.choices[0].finish_reason = finish_reason
     response.usage = MagicMock()
     response.usage.prompt_tokens = prompt_tokens
     response.usage.completion_tokens = completion_tokens
+    response.usage.total_tokens = prompt_tokens + completion_tokens
+    response._cost = 0.01
+    response.cost = 0.01
     return response
 
 
@@ -318,15 +325,20 @@ class TestCreateEstimationLiteLLMErrors:
 # POST /api/v1/estimate/structured — output guardrail (scope filter + validation)
 # --------------------------------------------------------------------------- #
 
-def _make_struct_completion(finish_reason: str = "stop") -> MagicMock:
-    comp = MagicMock()
-    comp.id = "resp-struct-integration-001"
-    comp.choices = [MagicMock()]
-    comp.choices[0].finish_reason = finish_reason
-    comp.usage = MagicMock()
-    comp.usage.prompt_tokens = 400
-    comp.usage.completion_tokens = 150
-    return comp
+def _make_struct_completion(finish_reason: str = "stop") -> LLMObservableResponse:
+    """Build a mock LLMObservableResponse object for structured completion."""
+    return LLMObservableResponse(
+        model="gpt-4o-mini",
+        content=None,
+        usage=LLMUsage(
+            prompt_tokens=400,
+            completion_tokens=150,
+            total_tokens=550,
+        ),
+        latency_ms=500.0,
+        cost_usd=Decimal("0.01"),
+        response_id="resp-struct-integration-001",
+    )
 
 
 def _patch_complete_structured(mock_result, mock_completion):

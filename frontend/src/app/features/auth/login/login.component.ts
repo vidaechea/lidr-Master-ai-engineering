@@ -5,7 +5,6 @@ import { MatCardModule } from '@angular/material/card';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDividerModule } from '@angular/material/divider';
 import { AuthService } from '../../../core/auth/auth.service';
 
 @Component({
@@ -18,7 +17,6 @@ import { AuthService } from '../../../core/auth/auth.service';
     MatFormFieldModule,
     MatInputModule,
     MatButtonModule,
-    MatDividerModule,
   ],
   template: `
     <div class="auth-container">
@@ -43,10 +41,6 @@ import { AuthService } from '../../../core/auth/auth.service';
               Sign in
             </button>
           </form>
-          <mat-divider class="divider" />
-          <button mat-stroked-button class="full-width google-btn" (click)="loginGoogle()">
-            Sign in with Google
-          </button>
         </mat-card-content>
         <mat-card-actions>
           <span>No account? <a routerLink="/auth/register">Register</a></span>
@@ -58,8 +52,6 @@ import { AuthService } from '../../../core/auth/auth.service';
     .auth-container { display:flex; justify-content:center; align-items:center; height:100vh; }
     .auth-card { width:400px; padding:16px; }
     .full-width { width:100%; margin-bottom:12px; }
-    .divider { margin:16px 0; }
-    .google-btn { margin-top:8px; }
     .error-msg { color:var(--mat-sys-error); font-size:0.875rem; margin-bottom:8px; }
   `],
 })
@@ -68,7 +60,7 @@ export class LoginComponent {
   password = '';
   error = signal<string | null>(null);
 
-  constructor(private auth: AuthService, private router: Router) {}
+  constructor(private readonly auth: AuthService, private readonly router: Router) {}
 
   submit() {
     this.error.set(null);
@@ -76,9 +68,5 @@ export class LoginComponent {
       next: () => this.router.navigate(['/estimations'], { replaceUrl: true }),
       error: () => this.error.set('Invalid email or password'),
     });
-  }
-
-  loginGoogle() {
-    this.auth.loginWithGoogle();
   }
 }

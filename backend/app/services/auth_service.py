@@ -4,11 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models.user import User
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -52,26 +49,3 @@ def decode_refresh_token(token: str) -> str:
         return user_id
     except JWTError as exc:
         raise ValueError("Invalid or expired refresh token") from exc
-
-
-async def get_or_create_oauth_user(
-    db: AsyncSession,
-    *,
-    email: str,
-    full_name: str | None,
-    provider: str,
-    provider_id: str,
-) -> User:
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-    if user is None:
-        user = User(
-            email=email,
-            full_name=full_name,
-            oauth_provider=provider,
-            oauth_provider_id=provider_id,
-        )
-        db.add(user)
-        await db.commit()
-        await db.refresh(user)
-    return user

@@ -1,0 +1,121 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "pivot_01",
+      "profile": "pivot",
+      "total_cost_usd": 0.0031240499999999997,
+      "cost_curve": [
+        0.000648,
+        0.0013878,
+        0.0022044,
+        0.0031240499999999997
+      ],
+      "turns": [
+        {
+          "turn_number": 1,
+          "transcript": "Building a mobile-first CRM application called SalesFlow. Initially planned as a React web app with REST API backend.",
+          "cost_usd": 0.000648,
+          "tokens": {
+            "in": 1692,
+            "out": 657
+          },
+          "latency_ms": 16914.75512299985,
+          "project_name": "SalesFlow",
+          "technologies": [
+            "react"
+          ],
+          "memory_drift": 0.0,
+          "satisfied_facts": 1,
+          "violated_facts": 0
+        },
+        {
+          "turn_number": 3,
+          "transcript": "We've got the REST API running on FastAPI with PostgreSQL. React frontend is partially built.",
+          "cost_usd": 0.0007398,
+          "tokens": {
+            "in": 2416,
+            "out": 629
+          },
+          "latency_ms": 12149.800731998766,
+          "project_name": "SalesFlow",
+          "technologies": [
+            "fastapi",
+            "go",
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.5,
+          "satisfied_facts": 1,
+          "violated_facts": 1
+        },
+        {
+          "turn_number": 10,
+          "transcript": "Flutter app is well underway. The backend is stable. We're now adding push notifications and offline sync.",
+          "cost_usd": 0.0008165999999999999,
+          "tokens": {
+            "in": 3084,
+            "out": 590
+          },
+          "latency_ms": 10967.162388998986,
+          "project_name": "SalesFlow",
+          "technologies": [
+            "fastapi",
+            "flutter",
+            "go",
+            "postgresql",
+            "react",
+            "sqlite"
+          ],
+          "memory_drift": 0.6666666666666666,
+          "satisfied_facts": 1,
+          "violated_facts": 2
+        },
+        {
+          "turn_number": 20,
+          "transcript": "SalesFlow is shipping iOS and Android apps via Flutter. The REST API is running smoothly on FastAPI.",
+          "cost_usd": 0.0009196499999999999,
+          "tokens": {
+            "in": 3711,
+            "out": 605
+          },
+          "latency_ms": 6959.577331999753,
+          "project_name": "SalesFlow",
+          "technologies": [
+            "android",
+            "fastapi",
+            "flutter",
+            "go",
+            "ios",
+            "postgresql",
+            "react",
+            "sqlite"
+          ],
+          "memory_drift": 0.75,
+          "satisfied_facts": 1,
+          "violated_facts": 3
+        }
+      ],
+      "summary": {
+        "avg_memory_drift": 0.47916666666666663,
+        "final_project_name": "SalesFlow",
+        "final_technologies": [
+          "android",
+          "fastapi",
+          "flutter",
+          "go",
+          "ios",
+          "postgresql",
+          "react",
+          "sqlite"
+        ],
+        "error": null
+      }
+    }
+  ],
+  "aggregate": {
+    "total_scenarios": 1,
+    "successful": 1,
+    "total_cost_usd": 0.0031240499999999997,
+    "avg_memory_drift": 0.47916666666666663
+  }
+}

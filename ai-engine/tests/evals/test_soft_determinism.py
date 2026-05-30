@@ -14,7 +14,7 @@ Run flags
 ---------
 Both marks must be active for these tests to execute:
 
-    pytest -m "slow and llm_live" tests/eval/
+    pytest -m "slow and llm_live" tests/evals/
 
 During normal development, skip with:
 
@@ -28,7 +28,7 @@ import statistics
 
 import pytest
 
-from tests.eval.golden_dataset import GOLDEN_CASES, extract_total_hours, run_estimate
+from tests.evals.golden_dataset import GOLDEN_CASES, extract_total_hours, run_estimate
 
 pytestmark = [pytest.mark.slow, pytest.mark.llm_live]
 

@@ -87,6 +87,35 @@ const GUARDRAIL_ICONS: Record<GuardrailReason, string> = {
                   </div>
 
                   <div class="metadata-section">
+                    <div class="metadata-label">Total Messages</div>
+                    <div class="metadata-value">{{ messageCount() }}</div>
+                  </div>
+
+                  <div class="metadata-section">
+                    <div class="metadata-label">Anchors Count</div>
+                    <div class="metadata-value">{{ anchorsCount() }}</div>
+                  </div>
+
+                  <div class="metadata-section">
+                    <div class="metadata-label">Summary Chars</div>
+                    <div class="metadata-value">{{ summaryChars() }}</div>
+                  </div>
+
+                  @if (lastResolvedTier()) {
+                    <div class="metadata-section">
+                      <div class="metadata-label">Last Resolved Tier</div>
+                      <div class="metadata-value">{{ lastResolvedTier() }}</div>
+                    </div>
+                  }
+
+                  @if (lastTierRule()) {
+                    <div class="metadata-section">
+                      <div class="metadata-label">Last Tier Rule</div>
+                      <div class="metadata-value">{{ lastTierRule() }}</div>
+                    </div>
+                  }
+
+                  <div class="metadata-section">
                     <div class="metadata-label metadata-label-row">
                       <span>Cache Metrics</span>
                       <button type="button" class="btn-cache-refresh" (click)="refreshCacheMetrics()">
@@ -1361,6 +1390,11 @@ export class EstimationFormComponent implements OnInit {
   projectMetadata = signal<SessionProjectMetadata | null>(null);
   historyMessageCount = signal(0);
   turnCount = signal(0);
+  messageCount = signal(0);
+  anchorsCount = signal(0);
+  summaryChars = signal(0);
+  lastResolvedTier = signal<string | null>(null);
+  lastTierRule = signal<string | null>(null);
   cacheMetrics = signal<CacheMetrics | null>(null);
   cacheMetricsLoading = signal(false);
   cacheMetricsError = signal<string | null>(null);
@@ -1673,6 +1707,11 @@ export class EstimationFormComponent implements OnInit {
             this.projectMetadata.set(sessionState.project_metadata);
             this.historyMessageCount.set(sessionState.history.length);
             this.turnCount.set(sessionState.turn_count);
+            this.messageCount.set(sessionState.message_count);
+            this.anchorsCount.set(sessionState.anchors_count);
+            this.summaryChars.set(sessionState.summary_chars);
+            this.lastResolvedTier.set(sessionState.last_resolved_tier);
+            this.lastTierRule.set(sessionState.last_tier_rule);
           },
           error: (err: HttpErrorResponse) => this._handleError(err),
         });
@@ -1686,6 +1725,11 @@ export class EstimationFormComponent implements OnInit {
         this.projectMetadata.set(sessionState.project_metadata);
         this.historyMessageCount.set(sessionState.history.length);
         this.turnCount.set(sessionState.turn_count);
+        this.messageCount.set(sessionState.message_count);
+        this.anchorsCount.set(sessionState.anchors_count);
+        this.summaryChars.set(sessionState.summary_chars);
+        this.lastResolvedTier.set(sessionState.last_resolved_tier);
+        this.lastTierRule.set(sessionState.last_tier_rule);
         if (this.sidebarOpen()) {
           this.refreshCacheMetrics();
         }

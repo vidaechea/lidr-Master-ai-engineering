@@ -79,3 +79,5 @@ frontend/typings/
 frontend/__screenshots__/
 Thumbs.db
 
+# Generated PDF fixtures - regenerate with build_pdfs.py
+*.pdf

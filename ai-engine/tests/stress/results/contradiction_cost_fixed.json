@@ -1,0 +1,85 @@
+{
+  "scenarios": [
+    {
+      "scenario_id": "contradiction_01",
+      "profile": "contradiction",
+      "total_cost_usd": 0.00244605,
+      "cost_curve": [
+        0.0006789,
+        0.00144855,
+        0.00244605
+      ],
+      "turns": [
+        {
+          "turn_number": 1,
+          "transcript": "We're building an enterprise logistics platform called LogHub. Frontend, backend, database, integrations with 3PL providers.",
+          "cost_usd": 0.0006789,
+          "tokens": {
+            "in": 1694,
+            "out": 708
+          },
+          "latency_ms": 16196.199206000529,
+          "project_name": "LogHub",
+          "technologies": [
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.0,
+          "satisfied_facts": 1,
+          "violated_facts": 0
+        },
+        {
+          "turn_number": 3,
+          "transcript": "Initial budget estimate: \u20ac30,000. Team of 3 developers, 8-week timeline.",
+          "cost_usd": 0.00076965,
+          "tokens": {
+            "in": 2475,
+            "out": 664
+          },
+          "latency_ms": 15624.072229000376,
+          "project_name": "LogHub",
+          "technologies": [
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.5,
+          "satisfied_facts": 1,
+          "violated_facts": 1
+        },
+        {
+          "turn_number": 20,
+          "transcript": "Project scope and cost are now aligned to the \u20ac80,000 budget. Deliverables are comprehensive.",
+          "cost_usd": 0.0009975,
+          "tokens": {
+            "in": 3170,
+            "out": 870
+          },
+          "latency_ms": 13394.42095099912,
+          "project_name": "LogHub",
+          "technologies": [
+            "postgresql",
+            "react"
+          ],
+          "memory_drift": 0.75,
+          "satisfied_facts": 1,
+          "violated_facts": 3
+        }
+      ],
+      "summary": {
+        "avg_memory_drift": 0.4166666666666667,
+        "final_project_name": "LogHub",
+        "final_technologies": [
+          "postgresql",
+          "react"
+        ],
+        "error": null
+      }
+    }
+  ],
+  "aggregate": {
+    "total_scenarios": 1,
+    "successful": 1,
+    "total_cost_usd": 0.00244605,
+    "avg_memory_drift": 0.4166666666666667
+  }
+}
