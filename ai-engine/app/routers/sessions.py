@@ -1,4 +1,3 @@
-import asyncio
 from typing import Annotated
 
 import structlog
@@ -6,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 
 from app.config import LLMModel, settings
 from app.guardrails.input import InputGuardrailViolation
-from app.schemas.estimation import EstimationRequest, EstimationResponse, OutputFormat
+from app.schemas.estimation import EstimationResponse, OutputFormat
 from app.schemas.session import SessionCreateResponse, SessionListItem, SessionMessageResponse, SessionStateResponse
 from app.services.attachment_service import (
     AttachmentService,
@@ -17,6 +16,7 @@ from app.services.cache_service import CachedEstimationService
 from app.services.estimation_service import EstimationService
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.metadata_extractor import MetadataExtractor
+from app.services.session_estimation_service import AttachmentPayload, SessionEstimationService
 from app.services.sessions import store
 
 log = structlog.get_logger(__name__)
@@ -55,6 +55,21 @@ def _get_attachment_service() -> AttachmentService:
 
 def _get_metadata_extractor() -> MetadataExtractor:
     return MetadataExtractor()
+
+
+def _get_session_estimation_service(
+    estimation_service: Annotated[
+        EstimationService | CachedEstimationService,
+        Depends(_get_cached_estimation_service),
+    ],
+    attachment_svc: Annotated[AttachmentService, Depends(_get_attachment_service)],
+    metadata_extractor: Annotated[MetadataExtractor, Depends(_get_metadata_extractor)],
+) -> SessionEstimationService:
+    return SessionEstimationService(
+        estimation_service=estimation_service,
+        attachment_service=attachment_svc,
+        metadata_extractor=metadata_extractor,
+    )
 
 
 @router.post("", status_code=201)
@@ -138,12 +153,7 @@ async def get_session_state(session_id: str) -> SessionStateResponse:
 )
 async def create_session_estimation(
     session_id: str,
-    estimation_service: Annotated[
-        EstimationService | CachedEstimationService,
-        Depends(_get_cached_estimation_service),
-    ],
-    attachment_svc: Annotated[AttachmentService, Depends(_get_attachment_service)],
-    metadata_extractor: Annotated[MetadataExtractor, Depends(_get_metadata_extractor)],
+    session_estimation_service: Annotated[SessionEstimationService, Depends(_get_session_estimation_service)],
     transcript: Annotated[
         str,
         Form(min_length=20, description="Meeting transcription or project description to estimate"),
@@ -183,72 +193,27 @@ async def create_session_estimation(
     if session is None:
         raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found.")
 
-    # ------------------------------------------------------------------ #
-    # Extract text from each attachment (CPU-bound → thread pool)         #
-    # ------------------------------------------------------------------ #
-    extracted_texts = []
+    attachment_payloads: list[AttachmentPayload] = []
     for upload in attachments:
         raw = await upload.read()
-        content_type = upload.content_type or ""
-        filename = upload.filename or "unknown"
-        try:
-            extracted = await asyncio.to_thread(
-                attachment_svc.extract, filename, content_type, raw
+        attachment_payloads.append(
+            AttachmentPayload(
+                filename=upload.filename or "unknown",
+                content_type=upload.content_type or "",
+                data=raw,
             )
-            extracted_texts.append(extracted)
-        except UnsupportedAttachmentType as exc:
-            log.warning(
-                "unsupported_attachment_type",
-                session_id=session_id,
-                filename=filename,
-                content_type=content_type,
-                error=str(exc),
-            )
-            raise HTTPException(status_code=422, detail="Unsupported attachment type")
-        except AttachmentExtractionError as exc:
-            log.error(
-                "attachment_extraction_failed",
-                session_id=session_id,
-                filename=filename,
-                content_type=content_type,
-                error=str(exc),
-            )
-            raise HTTPException(status_code=422, detail="Attachment extraction failed")
-
-    combined_transcript = attachment_svc.build_combined_transcript(transcript, extracted_texts)
-
-    log.info(
-        "session_estimation_requested",
-        session_id=session_id,
-        transcript_chars=len(transcript),
-        attachment_count=len(extracted_texts),
-        combined_chars=len(combined_transcript),
-    )
-
-    # ------------------------------------------------------------------ #
-    # Delegate to estimation service                                       #
-    # ------------------------------------------------------------------ #
-    request = EstimationRequest(
-        transcription=combined_transcript,
-        model=model,
-        temperature=temperature,
-        pre_call=pre_call,
-        output_format=output_format,
-    )
-
-    # Calculate total attachment size
-    attachments_total_chars = sum(len(ea.text) for ea in extracted_texts)
+        )
 
     try:
-        response = await estimation_service.estimate_multi_turn(
-            request,
-            history=session.history,
+        response = await session_estimation_service.estimate(
+            session=session,
+            transcript=transcript,
+            attachments=attachment_payloads,
+            model=model,
+            temperature=temperature,
+            pre_call=pre_call,
+            output_format=output_format,
             prompt_version=prompt_version,
-            project_metadata=session.metadata,
-            session_id=session_id,
-            enriched_transcript_chars=len(combined_transcript),
-            attachments_total_chars=attachments_total_chars,
-            last_resolved_tier=session.last_resolved_tier,
         )
     except InputGuardrailViolation as exc:
         _GUARDRAIL_STATUS: dict[str, int] = {
@@ -260,37 +225,14 @@ async def create_session_estimation(
             status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
             detail={"message": exc.message, "reason": exc.reason},
         )
+    except UnsupportedAttachmentType:
+        raise HTTPException(status_code=422, detail="Unsupported attachment type")
+    except AttachmentExtractionError:
+        raise HTTPException(status_code=422, detail="Attachment extraction failed")
     except LLMServiceError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("session_estimation_failed", session_id=session_id, error=str(exc))
         raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
-
-    # ------------------------------------------------------------------ #
-    # Update session metadata from this turn (heuristic, in-place)        #
-    # ------------------------------------------------------------------ #
-    session.metadata = metadata_extractor.update(
-        transcript=combined_transcript,
-        llm_response=response.estimation,
-        existing=session.metadata,
-    )
-    log.debug(
-        "session_metadata_updated",
-        session_id=session_id,
-        project_name=session.metadata.project_name,
-        technologies=session.metadata.mentioned_technologies,
-        team_size=session.metadata.assumed_team_size,
-    )
-
-    # ------------------------------------------------------------------ #
-    # Process turn through summarizer to generate anchors                 #
-    # ------------------------------------------------------------------ #
-    summarizer = session.get_summarizer()
-    turn_number = session.history.turn_count  # Current turn (already incremented by estimate_multi_turn)
-    summarizer.process_turn(
-        turn_number=turn_number,
-        user_message=combined_transcript,
-        assistant_response=response.estimation,
-    )
 
     return response

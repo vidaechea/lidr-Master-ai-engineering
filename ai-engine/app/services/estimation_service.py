@@ -20,6 +20,7 @@ from app.schemas.estimation import (
 )
 from app.schemas.llm import LLMObservableResponse
 from app.schemas.observation import CacheHitKind, TurnObservedEvent
+from app.services.estimation_renderer import format_requirements_text, render_estimation_markdown
 from app.services.helpers.error_mapper import LLMServiceError
 from app.services.helpers.output_validator import evaluate_estimation_structure
 from app.services.helpers.prompt_builder import PromptBuilder
@@ -396,7 +397,7 @@ class EstimationService:
             )
             pre_call_cost_usd = float(pre_completion.cost_usd)
             extracted_requirements = extracted
-            requirements = _format_requirements_text(extracted)
+            requirements = format_requirements_text(extracted)
 
         structured_result, completion = await litellm_router_service.complete_structured(
             messages=[
@@ -410,7 +411,7 @@ class EstimationService:
         # --- Output guardrails (mandatory) ---------------------------------
         # 1. Scope filter: rewrite low-confidence results before rendering.
         structured_result = enforce_scope_response(structured_result)
-        estimation_markdown = _render_estimation_markdown(structured_result)
+        estimation_markdown = render_estimation_markdown(structured_result)
         finish_reason = "stop"  # Observable response doesn't track finish_reason
         # 2. Structure check: same validator used in the markdown path.
         validation = evaluate_estimation_structure(estimation_markdown, finish_reason)
@@ -447,42 +448,4 @@ class EstimationService:
             structured_result=structured_result,
             extracted_requirements=extracted_requirements,
         )
-
-
-# ---------------------------------------------------------------------------
-# Helpers for EstimationResult → human-readable text
-# ---------------------------------------------------------------------------
-
-def _format_requirements_text(extracted: ExtractedRequirements) -> str:
-    lines = [f"[{r.id}] ({r.category.value}) {r.description}" for r in extracted.requirements]
-    if extracted.open_questions:
-        lines.append("\nOpen questions:")
-        lines.extend(f"  - {q}" for q in extracted.open_questions)
-    return "\n".join(lines)
-
-
-def _render_estimation_markdown(result: EstimationResult) -> str:
-    """Render a structured EstimationResult as markdown for display."""
-    lines = [
-        f"## {result.summary}",
-        "",
-        (
-            f"**Confidence:** {result.confidence_pct}%  |  "
-            f"**Duration:** {result.total_duration_weeks} weeks  |  "
-            f"**Total cost:** {result.total_cost_eur:,} EUR"
-        ),
-        "",
-        "| Phase | Duration (weeks) | Cost (EUR) | Confidence |",
-        "|-------|-----------------|------------|------------|",
-    ]
-    for phase in result.phases:
-        lines.append(
-            f"| {phase.name} | {phase.duration_weeks} | {phase.cost_eur:,} | {phase.confidence_pct}% |"
-        )
-    for phase in result.phases:
-        if phase.assumptions:
-            lines.extend(["", f"**{phase.name}** assumptions:"])
-            lines.extend(f"- {a}" for a in phase.assumptions)
-    lines.extend(["", f"**Total cost:** {result.total_cost_eur:,} EUR"])
-    return "\n".join(lines)
 

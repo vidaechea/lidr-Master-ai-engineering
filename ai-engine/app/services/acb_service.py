@@ -51,6 +51,7 @@ class _LoopState:
     candidate_text: str = ""
     final_text: str = ""
     final_decision: BossDecision | None = None
+    last_critic_feedback: CriticFeedback | None = None
     iteration_instructions: str | None = None
     first_actor_response_id: str = ""
 
@@ -202,15 +203,16 @@ class ActorCriticBossService:
             observable_resp.usage.completion_tokens,
             float(observable_resp.cost_usd),
         )
-        # Store on state so _run_boss can access it
-        state._last_critic_feedback = critic_feedback  # type: ignore[attr-defined]
+        state.last_critic_feedback = critic_feedback
         return critic_feedback
 
     async def _run_boss(
         self, state: _LoopState, request: ActorCriticBossRequest,
         project_metadata: ProjectMetadata | None, model_cfg, litellm_service, iteration: int,
     ) -> BossDecision:
-        critic_feedback: CriticFeedback = state._last_critic_feedback  # type: ignore[attr-defined]
+        critic_feedback = state.last_critic_feedback
+        if critic_feedback is None:
+            raise RuntimeError("Boss cannot run before critic feedback is available")
         boss_sys, boss_user = render_boss_prompt(
             candidate_estimate=state.candidate_text,
             critic_feedback=critic_feedback,
