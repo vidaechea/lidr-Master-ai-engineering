@@ -210,6 +210,52 @@ curl -X POST http://localhost:8001/api/v1/estimate \
   }'
 ```
 
+---
+
+## Session 06 Smoke
+
+Use these commands to verify ingestion + persistence migration pieces:
+
+```bash
+# 1) Validate local setup and seed corpus
+python scripts/preflight_s06.py
+
+# 2) Run cleaning demo over budgets
+python scripts/demo_cleaning_s06.py
+
+# 3) Run PII pseudonymization demo over transcripts
+python scripts/demo_pii_s06.py
+```
+
+If `preflight_s06.py` fails on missing packages, install from `pyproject.toml` / `requirements.txt` first.
+
+---
+
+## Dependency Installation Guide
+
+### Local virtualenv (pip)
+
+Use this when running the service outside dev containers (for example on Windows):
+
+```bash
+cd ai-engine
+python -m venv .venv
+# PowerShell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+```
+
+`requirements.txt` includes Session 06 ingestion extras (`pandera`, `openpyxl`) and Python-version-aware markers for Presidio packages.
+
+### Dev container / Codespaces
+
+In dev containers we use `uv sync` from `pyproject.toml` (not `pip install -r requirements.txt`).
+
+Detailed flow and scripts are documented in:
+
+- `../.devcontainer/README.md`
+
 **Response:**
 ```json
 {
