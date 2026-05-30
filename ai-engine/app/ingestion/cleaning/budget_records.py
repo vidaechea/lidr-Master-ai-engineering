@@ -14,24 +14,31 @@ def clean_budget_records(records: Iterable[dict]) -> pd.DataFrame:
     if df.empty:
         return df
 
-    for column in ("client_name", "contact", "contact_email", "notes"):
-        if column in df.columns:
-            df[column] = df[column].apply(
-                lambda v: pd.NA if (isinstance(v, str) and v.strip() in NULL_PLACEHOLDERS) else v
-            )
+    # Clean project_summary field if present
+    if "project_summary" in df.columns:
+        df["project_summary"] = df["project_summary"].apply(
+            lambda v: pd.NA if (isinstance(v, str) and v.strip() in NULL_PLACEHOLDERS) else v
+        )
 
-    if "currency" in df.columns:
-        df["currency"] = df["currency"].astype("string").str.upper()
+    # Clean nested client_metadata.name field if the structure exists
+    if "client_metadata" in df.columns:
+        def clean_metadata(meta):
+            if not isinstance(meta, dict):
+                return meta
+            if "name" in meta and isinstance(meta["name"], str):
+                if meta["name"].strip() in NULL_PLACEHOLDERS:
+                    meta["name"] = None
+            return meta
+        df["client_metadata"] = df["client_metadata"].apply(clean_metadata)
 
-    if "signed_at" in df.columns:
-        df["signed_at"] = pd.to_datetime(df["signed_at"], errors="coerce", dayfirst=True)
+    # Ensure total_estimated_hours is numeric
+    if "total_estimated_hours" in df.columns:
+        df["total_estimated_hours"] = pd.to_numeric(df["total_estimated_hours"], errors="coerce")
 
-    if "total_amount" in df.columns:
-        df["total_amount"] = pd.to_numeric(df["total_amount"], errors="coerce")
-
-    if {"budget_id", "signed_at"}.issubset(df.columns):
+    # Deduplication and sorting by budget_id
+    if "budget_id" in df.columns:
         df["content_hash"] = df.apply(_content_hash, axis=1)
-        df = df.sort_values(by=["budget_id", "signed_at"], na_position="first")
+        df = df.sort_values(by="budget_id", na_position="first")
         df = df.drop_duplicates(subset=["budget_id"], keep="last").reset_index(drop=True)
 
     return df

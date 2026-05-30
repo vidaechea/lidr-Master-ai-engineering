@@ -183,8 +183,8 @@ def test_ingest_source_json_applies_cleaning_and_keeps_only_valid_rows() -> None
     pytest.importorskip("pandera")
 
     jobs = _FakeJobsRepo()
-    valid = b'{"budget_id":"BUDGET-2024-0001","client_name":"Acme","client_code":"CLI-0042","currency":"EUR","total_amount":1200,"signed_at":"2024-02-14"}'
-    invalid = b'{"budget_id":"BUDGET-2024-0002","client_name":"Beta","client_code":"CLI-0043","currency":"EUR","total_amount":-10,"signed_at":"2024-02-14"}'
+    valid = b'{"budget_id":"BUD-2024-001","year":2024,"total_estimated_hours":480,"project_summary":"Mobile banking API","main_technology":"ruby_on_rails","client_metadata":{"name":"FintechCorp","sector":"finance","country":"ES"},"components":[]}'
+    invalid = b'{"budget_id":"BUD-2024-002","year":2024,"total_estimated_hours":-10,"project_summary":"Invalid project","main_technology":"nodejs","client_metadata":{"name":"BadCorp","sector":"tech","country":"US"},"components":[]}'
 
     docs = ingest_source(
         catalog=_catalog_json(),
@@ -199,6 +199,6 @@ def test_ingest_source_json_applies_cleaning_and_keeps_only_valid_rows() -> None
     )
 
     assert len(docs) == 1
-    assert "BUDGET-2024-0001" in docs[0].content
+    assert "BUD-2024-001" in docs[0].content
     assert jobs.states[-1][0] == "completed"
     assert jobs.states[-1][1]["documents_count"] == 1

@@ -1,15 +1,32 @@
 {
-  "budget_id": "BUDGET-2024-0005",
-  "client_name": "Industrias Toledo",
-  "client_code": "CLI-0288",
-  "currency": "EUR",
-  "total_amount": 32000,
-  "signed_at": "2024-04-12",
-  "phases": [
-    {"name": "Discovery", "weeks": 2, "amount": 6000},
-    {"name": "Implementación", "weeks": 6, "amount": 26000}
-  ],
-  "contact": "Carmen Vidal",
-  "contact_email": "carmen.vidal@toledo-ind.es",
-  "notes": "Revisión tras alcance ampliado en reunión del 11/04."
+  "budget_id": "BUD-2024-005",
+  "client_metadata": {
+    "name": "Industrias Toledo",
+    "sector": "manufacturing",
+    "country": "ES"
+  },
+  "project_summary": "Manufacturing management system implementation with expanded scope",
+  "main_technology": "dotnet",
+  "year": 2024,
+  "total_estimated_hours": 256,
+  "components": [
+    {
+      "component_id": "DISC-005",
+      "name": "Discovery Phase",
+      "description": "Requirements gathering and system analysis",
+      "tech_stack": [".net", "sqlserver"],
+      "estimated_hours": 40,
+      "complexity": "medium",
+      "dependencies": []
+    },
+    {
+      "component_id": "IMPL-005",
+      "name": "System Implementation",
+      "description": "Full manufacturing management system development with expanded modules",
+      "tech_stack": [".net", "aspnet", "angular", "sqlserver"],
+      "estimated_hours": 216,
+      "complexity": "high",
+      "dependencies": ["DISC-005"]
+    }
+  ]
 }

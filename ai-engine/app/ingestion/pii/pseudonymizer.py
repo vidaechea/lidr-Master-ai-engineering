@@ -61,7 +61,7 @@ class ConsistentPseudonymizer:
             "EMAIL_ADDRESS": email_factory,
             "LOCATION": city_factory,
             "BUDGET_ID": lambda: (
-                f"BUDGET-{random.randint(2020, 2029)}-{random.randint(0, 9999):04d}"
+                f"BUD-{random.randint(2020, 2029)}-{random.randint(0, 999):03d}"
             ),
             "CLIENT_CODE": lambda: f"CLI-{random.randint(0, 9999):04d}",
         }

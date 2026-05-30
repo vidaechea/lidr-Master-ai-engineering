@@ -16,7 +16,7 @@ class BudgetIdRecognizer(PatternRecognizer):
             patterns=[
                 Pattern(
                     name="budget_id_pattern",
-                    regex=r"\bBUDGET-\d{4}-\d{4}\b",
+                    regex=r"\bBUD-\d{4}-\d{3}\b",
                     score=0.95,
                 )
             ],

@@ -21,8 +21,8 @@ class _FakeAnalyzer:
         name_end = name_start + len("Laura Fernandez")
         name2_start = text.index("Laura Fernandez", name_end)
         name2_end = name2_start + len("Laura Fernandez")
-        budget_start = text.index("BUDGET-2024-0001")
-        budget_end = budget_start + len("BUDGET-2024-0001")
+        budget_start = text.index("BUD-2024-001")
+        budget_end = budget_start + len("BUD-2024-001")
         return [
             _Entity(start=name_start, end=name_end, entity_type="PERSON"),
             _Entity(start=name2_start, end=name2_end, entity_type="PERSON"),
@@ -31,7 +31,7 @@ class _FakeAnalyzer:
 
 
 def test_consistent_pseudonymizer_keeps_same_value_for_same_entity() -> None:
-    text = "Laura Fernandez revisa BUDGET-2024-0001 y Laura Fernandez confirma."
+    text = "Laura Fernandez revisa BUD-2024-001 y Laura Fernandez confirma."
     pseudo = ConsistentPseudonymizer(
         analyzer=_FakeAnalyzer(),
         mapping_store=InMemoryMappingStore(),
