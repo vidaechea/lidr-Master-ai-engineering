@@ -1,0 +1,29 @@
+[
+  {
+    "budget_id": "BUDGET-SAMPLE-0001",
+    "client": "ACME Industrial",
+    "currency": "EUR",
+    "total": 12500.0,
+    "status": "draft",
+    "items": [
+      {
+        "concept": "Discovery workshop",
+        "hours": 20,
+        "rate": 120.0,
+        "subtotal": 2400.0
+      },
+      {
+        "concept": "Backend implementation",
+        "hours": 60,
+        "rate": 140.0,
+        "subtotal": 8400.0
+      },
+      {
+        "concept": "QA and validation",
+        "hours": 10,
+        "rate": 170.0,
+        "subtotal": 1700.0
+      }
+    ]
+  }
+]

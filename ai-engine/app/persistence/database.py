@@ -9,10 +9,17 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.config import settings
 
 
+def _to_sync_database_url(database_url: str) -> str:
+    # ai-engine uses a synchronous SQLAlchemy engine in this module.
+    if database_url.startswith("postgresql+asyncpg://"):
+        return database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    return database_url
+
+
 @lru_cache
 def create_engine_from_settings() -> Engine:
     return create_engine(
-        settings.database_url,
+        _to_sync_database_url(settings.database_url),
         pool_pre_ping=True,
         future=True,
     )
