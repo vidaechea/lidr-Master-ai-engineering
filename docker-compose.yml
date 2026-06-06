@@ -84,7 +84,7 @@ services:
   # ─────────────────────────────────────────────────────────────────────────
   backend:
     build:
-      context: ./backend
+      context: ./application-web/backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -112,7 +112,7 @@ services:
   # ─────────────────────────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
+      context: ./application-web/frontend
       dockerfile: Dockerfile
     ports:
       - "4200:80"

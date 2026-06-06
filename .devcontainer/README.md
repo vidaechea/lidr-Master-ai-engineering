@@ -20,8 +20,8 @@ This repository includes a multi-service dev container under `.devcontainer/`.
    - calls `postStart.sh`
 4. Run `postStart.sh`:
    - ensures `uv` exists
-   - runs `uv sync` in `backend/` and `ai-engine/` when `pyproject.toml` is present
-   - runs `npm ci` in `frontend/` when `package-lock.json` exists and Angular CLI is missing
+   - runs `uv sync` in `application-web/backend/` and `ai-engine/` when `pyproject.toml` is present
+   - runs `npm ci` in `application-web/frontend/` when `package-lock.json` exists and Angular CLI is missing
 
 ## Dependency source of truth
 
@@ -32,9 +32,9 @@ This repository includes a multi-service dev container under `.devcontainer/`.
 
 ```bash
 # From repo root in the dev container terminal
-cd backend && uv sync
-cd ../ai-engine && uv sync
-cd ../frontend && npm ci
+cd application-web/backend && uv sync
+cd ../../ai-engine && uv sync
+cd ../application-web/frontend && npm ci
 ```
 
 If the environment drifts, use VS Code command: `Dev Containers: Rebuild Container`.
