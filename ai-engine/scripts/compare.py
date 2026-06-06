@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import settings  # noqa: E402
-from app.embedding_pipeline.embedder import OpenAIEmbedder  # noqa: E402
+from app.foundation.llm.embedder import OpenAIEmbedder  # noqa: E402
 
 
 def cosine_similarity(vec_a: list[float], vec_b: list[float]) -> float:
@@ -123,3 +123,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

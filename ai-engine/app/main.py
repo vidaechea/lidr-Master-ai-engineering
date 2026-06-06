@@ -6,8 +6,8 @@ from starlette.requests import Request
 
 from app.config import settings
 from app.logging import configure_logging
-from app.routers import estimations, cache_metrics, ingestion, internal, sessions
-from app.embedding_pipeline.router import ingest_router
+from app.api import cache_metrics, estimations, ingestion, internal, sessions
+from app.api.embeddings import ingest_router
 
 configure_logging()
 
@@ -54,3 +54,4 @@ app.include_router(ingest_router, prefix=API_PREFIX + "/embeddings")
 def health_check():
     log.debug("health_check called")
     return {"status": "ok"}
+

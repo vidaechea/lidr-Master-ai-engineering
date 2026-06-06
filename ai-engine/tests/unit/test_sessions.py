@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.sessions import (
+from app.generation.conversation.sessions import (
     MAX_CONVERSATION_TURNS,
     ConversationHistory,
     ProjectMetadata,
@@ -224,3 +224,4 @@ class TestSessionStoreGet:
         session = store.create()
         store.get(session.session_id).metadata.project_name = "Updated"
         assert store.get(session.session_id).metadata.project_name == "Updated"
+

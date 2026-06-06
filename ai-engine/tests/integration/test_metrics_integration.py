@@ -1,8 +1,8 @@
 """Integration tests for metrics with real project structures."""
 
 import pytest
-from app.schemas.observation import TurnObservedEvent, CacheHitKind
-from app.services.sessions import ProjectMetadata
+from app.domain.schemas.observation import TurnObservedEvent, CacheHitKind
+from app.generation.conversation.sessions import ProjectMetadata
 from tests.evals.deterministic_metrics import (
     LatencyBudgetMetric,
     CostBudgetMetric,
@@ -183,3 +183,5 @@ class TestMetricsWithRealStructures:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+

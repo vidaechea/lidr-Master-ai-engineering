@@ -15,10 +15,10 @@ import asyncio
 from pathlib import Path
 from typing import TypedDict
 
-from app.schemas.estimation import EstimationRequest, EstimationResponse
-from app.services.estimation_service import EstimationService
+from app.domain.schemas.estimation import EstimationRequest, EstimationResponse
+from app.domain.estimation_service import EstimationService
 
-_FIXTURES = Path(__file__).parent.parent.parent / "app" / "fixtures"
+_FIXTURES = Path(__file__).parent.parent.parent / "app" / "foundation" / "fixtures"
 
 
 # ---------------------------------------------------------------------------
@@ -352,3 +352,5 @@ def extract_total_hours(response: EstimationResponse) -> int | None:
     if response.validation.declared_total_hours is not None:
         return response.validation.declared_total_hours
     return response.validation.sum_row_hours
+
+

@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from app.embedding_pipeline import embedder
-from app.embedding_pipeline.schemas import Chunk, EmbeddedChunk
+from app.foundation.llm import embedder
+from app.domain.schemas.embeddings import Chunk, EmbeddedChunk
 
 
 def test_embed_texts_raises_when_openai_api_key_is_missing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -220,7 +220,7 @@ def test_openai_embedder_embed_many_calculates_cost(monkeypatch: pytest.MonkeyPa
     emb = embedder.OpenAIEmbedder()
     
     # Mock logging to capture the info call
-    with patch("app.embedding_pipeline.embedder.log") as mock_log:
+    with patch("app.foundation.llm.embedder.log") as mock_log:
         emb.embed_many(chunks)
         
         # Verify that log.info was called with cost calculation
@@ -246,3 +246,4 @@ def test_openai_embedder_calculate_cost_static_method() -> None:
     # Test: 0 tokens
     cost = embedder.OpenAIEmbedder._calculate_cost(0)
     assert cost == 0.0
+

@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.prompts.loader import render_estimation_prompt
-from app.schemas.estimation import (
+from app.foundation.prompts.loader import render_estimation_prompt
+from app.domain.schemas.estimation import (
     DetailLevel,
     EstimationRequest,
     OutputFormat,
@@ -297,29 +297,30 @@ class TestGetExamplesByTier:
     """Tests for tier-specific example loading."""
 
     def test_developer_examples_are_loaded(self):
-        from app.prompts.loader import get_examples
+        from app.foundation.prompts.loader import get_examples
         examples = get_examples(tier="developer")
         assert len(examples) > 0
 
     def test_pm_examples_are_loaded(self):
-        from app.prompts.loader import get_examples
+        from app.foundation.prompts.loader import get_examples
         examples = get_examples(tier="pm")
         assert len(examples) > 0
 
     def test_executive_examples_are_loaded(self):
-        from app.prompts.loader import get_examples
+        from app.foundation.prompts.loader import get_examples
         examples = get_examples(tier="executive")
         assert len(examples) > 0
 
     def test_pm_and_developer_examples_differ(self):
-        from app.prompts.loader import get_examples
+        from app.foundation.prompts.loader import get_examples
         dev = get_examples(tier="developer")
         pm = get_examples(tier="pm")
         # Same project scenario but PM estimation should differ from developer estimation
         assert dev[0].estimation_markdown != pm[0].estimation_markdown
 
     def test_none_tier_defaults_to_developer(self):
-        from app.prompts.loader import get_examples
+        from app.foundation.prompts.loader import get_examples
         default = get_examples()
         explicit_dev = get_examples(tier="developer")
         assert default is explicit_dev
+

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.embedding_pipeline.chunker import chunk_text, JSONStructuralChunker
-from app.embedding_pipeline.schemas import Budget, BudgetComponent, ClientMetadata
+from app.ingestion.documents.chunker import chunk_text, JSONStructuralChunker
+from app.domain.schemas.embeddings import Budget, BudgetComponent, ClientMetadata
 
 
 def test_chunk_text_raises_when_overlap_is_not_smaller_than_chunk_size() -> None:
@@ -187,3 +187,4 @@ class TestJSONStructuralChunker:
         assert len(chunks) == 2
         assert chunks[0].chunk_id == "BUD-2024-001::COMP-001"
         assert chunks[1].chunk_id == "BUD-2024-002::COMP-002"
+

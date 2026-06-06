@@ -12,7 +12,7 @@ from app.config import settings
 from app.ingestion.catalog import DataCatalog, load_catalog
 from app.ingestion.loaders import FileSystemLoader
 from app.ingestion.parsers import ParserRegistry, default_registry
-from app.schemas.estimation import UserTier
+from app.domain.schemas.estimation import UserTier
 
 log = structlog.get_logger(__name__)
 

@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.prompts.loader import format_examples_for_prompt, get_examples
-from app.schemas.estimation import ExampleFormat
+from app.foundation.prompts.loader import format_examples_for_prompt, get_examples
+from app.domain.schemas.estimation import ExampleFormat
 
 
 class TestGetExamples:
@@ -138,3 +138,4 @@ class TestFormatExamplesForPrompt:
             assert "--- Example 2 ---" in result
             if len(examples) > 2:
                 assert "--- Example 3 ---" not in result
+

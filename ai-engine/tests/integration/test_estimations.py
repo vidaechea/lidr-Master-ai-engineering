@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 from jose import jwt
 
-from app.prompts.loader import get_examples
-from app.schemas.llm import LLMObservableResponse, LLMUsage
+from app.foundation.prompts.loader import get_examples
+from app.domain.schemas.llm import LLMObservableResponse, LLMUsage
 
 ESTIMATION_EXAMPLES = get_examples()
 
@@ -47,7 +47,7 @@ def _make_litellm_mock(
 def _patch_litellm_complete(mock_response: MagicMock):
     """Context manager: patches LiteLLMRouterService.complete to return mock_response."""
     return patch(
-        "app.services.litellm_service.LiteLLMRouterService.complete",
+        "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
         AsyncMock(return_value=mock_response),
     )
 
@@ -200,8 +200,8 @@ class TestCreateEstimation:
 # --------------------------------------------------------------------------- #
 class TestCreateEstimationErrors:
     def test_returns_413_on_context_overflow(self, client: TestClient):
-        from app.services.helpers.prompt_builder import PromptBuilder
-        from app.services.helpers.error_mapper import LLMServiceError
+        from app.foundation.prompts.prompt_builder import PromptBuilder
+        from app.foundation.llm.error_mapper import LLMServiceError
 
         # Patch validate_context_window to raise context overflow error
         def raise_overflow(*args, **kwargs):
@@ -219,8 +219,8 @@ class TestCreateEstimationErrors:
         assert response.status_code == 413
 
     def test_error_detail_mentions_overflow(self, client: TestClient):
-        from app.services.helpers.prompt_builder import PromptBuilder
-        from app.services.helpers.error_mapper import LLMServiceError
+        from app.foundation.prompts.prompt_builder import PromptBuilder
+        from app.foundation.llm.error_mapper import LLMServiceError
 
         # Patch validate_context_window to raise context overflow error
         def raise_overflow(*args, **kwargs):
@@ -239,7 +239,7 @@ class TestCreateEstimationErrors:
 
     def test_returns_500_when_llm_raises_unexpected_error(self, client: TestClient):
         with patch(
-            "app.services.litellm_service.LiteLLMRouterService.complete",
+            "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
             AsyncMock(side_effect=RuntimeError("unexpected provider failure")),
         ):
             response = client.post(
@@ -268,7 +268,7 @@ def _patch_litellm_complete_two_calls(
     calls return pre_call_response first, then estimation_response."""
     complete_mock = AsyncMock(side_effect=[pre_call_response, estimation_response])
     return patch(
-        "app.services.litellm_service.LiteLLMRouterService.complete",
+        "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
         complete_mock,
     ), complete_mock
 
@@ -637,14 +637,14 @@ class TestPromptVersion:
         complete_mock_v1 = AsyncMock(return_value=_make_litellm_mock())
         complete_mock_v2 = AsyncMock(return_value=_make_litellm_mock())
 
-        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock_v1):
+        with patch("app.foundation.llm.litellm_service.LiteLLMRouterService.complete", complete_mock_v1):
             client.post(
                 "/api/v1/estimate?prompt_version=v1",
                 json={"transcription": VALID_TRANSCRIPTION},
             )
         system_v1 = complete_mock_v1.call_args.kwargs["messages"][0]["content"]
 
-        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock_v2):
+        with patch("app.foundation.llm.litellm_service.LiteLLMRouterService.complete", complete_mock_v2):
             client.post(
                 "/api/v1/estimate?prompt_version=v2",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -657,7 +657,7 @@ class TestPromptVersion:
         """v2 template should inject a confidence-level requirement into the system prompt."""
         complete_mock = AsyncMock(return_value=_make_litellm_mock())
 
-        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock):
+        with patch("app.foundation.llm.litellm_service.LiteLLMRouterService.complete", complete_mock):
             client.post(
                 "/api/v1/estimate?prompt_version=v2",
                 json={"transcription": VALID_TRANSCRIPTION},
@@ -672,9 +672,9 @@ class TestPromptVersion:
 
 def _patch_guardrail(violation_reason: str, message: str):
     """Patch check_input to raise InputGuardrailViolation with the given reason."""
-    from app.guardrails.input import InputGuardrailViolation
+    from app.foundation.guardrails.input import InputGuardrailViolation
     return patch(
-        "app.services.estimation_service.check_input",
+        "app.domain.estimation_service.check_input",
         side_effect=InputGuardrailViolation(message, reason=violation_reason),  # type: ignore[arg-type]
     )
 
@@ -801,7 +801,7 @@ def _make_tier_token(tier: str) -> str:
 def _capture_system_prompt(client: TestClient, headers: dict | None = None) -> str:
     """POST /estimate, capture the system prompt that was sent to the LLM."""
     complete_mock = AsyncMock(return_value=_make_litellm_mock())
-    with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock):
+    with patch("app.foundation.llm.litellm_service.LiteLLMRouterService.complete", complete_mock):
         client.post(
             "/api/v1/estimate",
             json={"transcription": VALID_TRANSCRIPTION},
@@ -855,7 +855,7 @@ class TestTierPropagation:
           (because EstimationRequest has no tier field).
         """
         complete_mock = AsyncMock(return_value=_make_litellm_mock())
-        with patch("app.services.litellm_service.LiteLLMRouterService.complete", complete_mock):
+        with patch("app.foundation.llm.litellm_service.LiteLLMRouterService.complete", complete_mock):
             response = client.post(
                 "/api/v1/estimate",
                 json={"transcription": VALID_TRANSCRIPTION, "tier": "executive"},
@@ -894,4 +894,7 @@ class TestTierPropagation:
                 headers={"Authorization": f"Bearer {token}"},
             )
         assert response.status_code == 200
+
+
+
 

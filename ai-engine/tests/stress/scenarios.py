@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from app.services.sessions import ProjectMetadata
+    from app.generation.conversation.sessions import ProjectMetadata
 
 log = logging.getLogger(__name__)
 
@@ -689,7 +689,7 @@ class MultiTurnScenarioEvaluator:
                 self.use_http_client = False
 
         if not self.use_http_client:
-            from app.services.sessions import store as session_store
+            from app.generation.conversation.sessions import store as session_store
             self._session_store = session_store
 
     async def run_scenario(self, config: ScenarioConfig) -> ScenarioResult:
@@ -868,9 +868,9 @@ class MultiTurnScenarioEvaluator:
 
         else:
             # Use services directly
-            from app.schemas.estimation import EstimationRequest
-            from app.services.cache_service import CachedEstimationService
-            from app.services.estimation_service import EstimationService
+            from app.domain.schemas.estimation import EstimationRequest
+            from app.generation.cag.cache_service import CachedEstimationService
+            from app.domain.estimation_service import EstimationService
 
             session = self._session_store.get(session_id)
             if not session:
@@ -991,3 +991,5 @@ if __name__ == "__main__":
 
     # Print summary
     print(json.dumps(summary, indent=2))
+
+

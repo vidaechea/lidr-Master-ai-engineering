@@ -1,5 +1,5 @@
 import pytest
-from app.services.helpers.output_validator import evaluate_estimation_structure
+from app.domain.output_validator import evaluate_estimation_structure
 
 # ---------------------------------------------------------------------------
 # Fixtures — reusable estimation text fragments
@@ -43,7 +43,7 @@ _EMPTY = ""
 # ---------------------------------------------------------------------------
 
 def test_returns_structure_check_instance():
-    from app.schemas.estimation import StructureCheck
+    from app.domain.schemas.estimation import StructureCheck
     result = evaluate_estimation_structure(_FULL_ESTIMATION, "stop")
     assert isinstance(result, StructureCheck)
 
@@ -277,3 +277,5 @@ def test_missing_title_reported_in_issues():
 def test_missing_table_reported_in_issues():
     result = evaluate_estimation_structure(_NO_TABLE, "stop")
     assert any("breakdown table" in issue.lower() for issue in result.issues)
+
+
