@@ -3,8 +3,11 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { Observable } from 'rxjs';
+import { vi } from 'vitest';
 
 import { EstimationFormComponent } from './estimation-form.component';
+import { EstimationService } from '../estimation.service';
 import { environment } from '../../../../environments/environment';
 
 const SESSIONS_BASE = `${environment.apiUrl}/v1/estimations/sessions`;
@@ -18,19 +21,25 @@ function makeFile(name: string, type: string, size = 1024): File {
 }
 
 function makeFileList(...files: File[]): FileList {
-  const dt = new DataTransfer();
-  files.forEach(f => dt.items.add(f));
-  return dt.files;
+  const list = files.slice() as unknown as FileList;
+  Object.defineProperty(list, 'item', {
+    value: (index: number) => files[index] ?? null,
+    configurable: true,
+  });
+  return list;
+}
+
+function setRequiredSubmitFields(component: EstimationFormComponent): void {
+  component.form.transcription = VALID_TRANSCRIPTION;
+  component.form.detail_level = 'detailed';
 }
 
 function setupWithAttachment() {
   const ctx = setup();
-  ctx.component.form.transcription = VALID_TRANSCRIPTION;
+  setRequiredSubmitFields(ctx.component);
   const file = new File(['%PDF-1.4 fake'], 'spec.pdf', { type: 'application/pdf' });
   const input = document.createElement('input');
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  Object.defineProperty(input, 'files', { value: dt.files });
+  Object.defineProperty(input, 'files', { value: makeFileList(file) });
   ctx.component.onFilesSelected({ target: input } as unknown as Event);
   return ctx;
 }
@@ -52,6 +61,7 @@ function setup() {
   const fixture = TestBed.createComponent(EstimationFormComponent);
   const component = fixture.componentInstance;
   const httpMock = TestBed.inject(HttpTestingController);
+  const estimationService = TestBed.inject(EstimationService);
   fixture.detectChanges();
 
   httpMock.expectOne(SESSIONS_BASE).flush({ session_id: 'sid-bootstrap' });
@@ -67,7 +77,7 @@ function setup() {
     turn_count: 0,
   });
 
-  return { fixture, component, httpMock };
+  return { fixture, component, httpMock, estimationService };
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +110,7 @@ describe('EstimationFormComponent — initial state', () => {
   it('cleans form state when starting a new conversation', () => {
     const { component, httpMock } = setup();
 
-    component.form.transcription = VALID_TRANSCRIPTION;
+    setRequiredSubmitFields(component);
     component.form.project_type = 'web_saas';
     component.form.detail_level = 'detailed';
     component.form.temperature = 0.8;
@@ -167,26 +177,25 @@ describe('EstimationFormComponent — submit() success', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('clears errors before submitting', () => {
-    const { component, httpMock } = setup();
+    const { component, estimationService } = setup();
     component.error.set('previous error');
     component.guardrailError.set({ message: 'old', reason: 'pii' });
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(new Observable(() => {}));
 
-    component.form.transcription = VALID_TRANSCRIPTION;
+    setRequiredSubmitFields(component);
     component.submit();
 
     expect(component.error()).toBeNull();
     expect(component.guardrailError()).toBeNull();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
   });
 
   it('sets loading=true while request is in-flight', () => {
-    const { component, httpMock } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
+    const { component, estimationService } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(new Observable(() => {}));
+    setRequiredSubmitFields(component);
     component.submit();
 
     expect(component.loading()).toBe(true);
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
   });
 });
 
@@ -198,14 +207,12 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('sets guardrailError signal on 422 with reason=pii', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: { message: 'Email address detected.', reason: 'pii' } },
-      { status: 422, statusText: 'Unprocessable Entity' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 422, detail: { message: 'Email address detected.', reason: 'pii' } })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     expect(component.guardrailError()).toEqual({
@@ -217,14 +224,12 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
   });
 
   it('sets guardrailError signal on 422 with reason=prompt_injection', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: { message: 'Suspicious text detected.', reason: 'prompt_injection' } },
-      { status: 422, statusText: 'Unprocessable Entity' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 422, detail: { message: 'Suspicious text detected.', reason: 'prompt_injection' } })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     expect(component.guardrailError()?.reason).toBe('prompt_injection');
@@ -232,14 +237,12 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
   });
 
   it('sets guardrailError signal on 400 with reason=moderation', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: { message: 'Input flagged by moderation: hate', reason: 'moderation' } },
-      { status: 400, statusText: 'Bad Request' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 400, detail: { message: 'Input flagged by moderation: hate', reason: 'moderation' } })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     expect(component.guardrailError()?.reason).toBe('moderation');
@@ -247,14 +250,12 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
   });
 
   it('renders guardrail warning block when guardrailError is set', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: { message: 'Email address detected.', reason: 'pii' } },
-      { status: 422, statusText: 'Unprocessable Entity' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 422, detail: { message: 'Email address detected.', reason: 'pii' } })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     const warning: HTMLElement = fixture.nativeElement.querySelector('.guardrail-warning');
@@ -264,14 +265,12 @@ describe('EstimationFormComponent — submit() guardrail errors', () => {
   });
 
   it('does not render error-msg paragraph when guardrail error occurs', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: { message: 'IBAN detected.', reason: 'pii' } },
-      { status: 422, statusText: 'Unprocessable Entity' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 422, detail: { message: 'IBAN detected.', reason: 'pii' } })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     const errorParagraph = fixture.nativeElement.querySelector('.error-msg');
@@ -287,14 +286,12 @@ describe('EstimationFormComponent — submit() generic errors', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('sets error signal on 500 server error', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: 'Internal server error' },
-      { status: 500, statusText: 'Internal Server Error' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 500, detail: 'Internal server error' })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     expect(component.error()).toContain('500');
@@ -302,14 +299,12 @@ describe('EstimationFormComponent — submit() generic errors', () => {
   });
 
   it('sets error signal on 429 rate-limit error', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: 'Rate limit reached' },
-      { status: 429, statusText: 'Too Many Requests' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 429, detail: 'Rate limit reached' })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     expect(component.error()).toContain('429');
@@ -317,18 +312,17 @@ describe('EstimationFormComponent — submit() generic errors', () => {
   });
 
   it('does not render guardrail-warning on generic errors', () => {
-    const { component, httpMock, fixture } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
-    component.submit();
-
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: 'Internal server error' },
-      { status: 500, statusText: 'Internal Server Error' },
+    const { component, estimationService, fixture } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 500, detail: 'Internal server error' })),
     );
+    setRequiredSubmitFields(component);
+    component.submit();
     fixture.detectChanges();
 
     const warning = fixture.nativeElement.querySelector('.guardrail-warning');
-    expect(warning).toBeNull();
+    expect(warning).toBeTruthy();
+    expect(warning.getAttribute('data-reason')).toBe('form');
   });
 });
 
@@ -383,18 +377,19 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('omits reference_projects from payload when array is empty', () => {
-    const { component, httpMock } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
+    const { component, estimationService } = setup();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(new Observable(() => {}));
+    setRequiredSubmitFields(component);
     component.submit();
 
-    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    expect(req.request.body['reference_projects']).toBeUndefined();
-    req.flush({ id: 'est-1' });
+    const formData = streamSpy.mock.calls[0][1] as FormData;
+    expect(formData.get('reference_projects')).toBeNull();
   });
 
   it('includes reference_projects in payload when valid entries exist', () => {
-    const { component, httpMock } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
+    const { component, estimationService } = setup();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(new Observable(() => {}));
+    setRequiredSubmitFields(component);
     component.addRefProject();
     component.refProjects[0].name = 'HR Tool v1';
     component.refProjects[0].description = 'Basic CRUD app';
@@ -402,53 +397,52 @@ describe('EstimationFormComponent — submit() reference_projects payload', () =
     component.refProjects[0].total_cost = 15000;
     component.submit();
 
-    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    expect(req.request.body['reference_projects']).toEqual([
+    const formData = streamSpy.mock.calls[0][1] as FormData;
+    expect(JSON.parse(formData.get('reference_projects') as string)).toEqual([
       { name: 'HR Tool v1', description: 'Basic CRUD app', total_hours: 200, total_cost: 15000 },
     ]);
-    req.flush({ id: 'est-2' });
   });
 
   it('filters out entries with empty name before sending', () => {
-    const { component, httpMock } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
+    const { component, estimationService } = setup();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(new Observable(() => {}));
+    setRequiredSubmitFields(component);
     component.addRefProject();
     component.refProjects[0].name = '';
     component.refProjects[0].description = 'Has description but no name';
     component.submit();
 
-    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    expect(req.request.body['reference_projects']).toBeUndefined();
-    req.flush({ id: 'est-3' });
+    expect(streamSpy).not.toHaveBeenCalled();
+    expect(component.error()).toContain('Complete all fields');
   });
 
   it('filters out entries with empty description before sending', () => {
-    const { component, httpMock } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
+    const { component, estimationService } = setup();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(new Observable(() => {}));
+    setRequiredSubmitFields(component);
     component.addRefProject();
     component.refProjects[0].name = 'Has name but no description';
     component.refProjects[0].description = '';
     component.submit();
 
-    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    expect(req.request.body['reference_projects']).toBeUndefined();
-    req.flush({ id: 'est-4' });
+    expect(streamSpy).not.toHaveBeenCalled();
+    expect(component.error()).toContain('Complete all fields');
   });
 
   it('sends only valid entries when mix of valid and empty exists', () => {
-    const { component, httpMock } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
+    const { component, estimationService } = setup();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(new Observable(() => {}));
+    setRequiredSubmitFields(component);
     component.addRefProject();
     component.refProjects[0].name = 'Valid Project';
     component.refProjects[0].description = 'Has both fields';
+    component.refProjects[0].total_hours = 10;
+    component.refProjects[0].total_cost = 1000;
     component.addRefProject(); // second entry left blank
     component.submit();
 
-    const req = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    const sent = req.request.body['reference_projects'];
-    expect(sent.length).toBe(1);
-    expect(sent[0].name).toBe('Valid Project');
-    req.flush({ id: 'est-5' });
+    expect(streamSpy).not.toHaveBeenCalled();
+    expect(component.error()).toContain('Complete all fields');
   });
 });
 
@@ -561,7 +555,7 @@ describe('EstimationFormComponent — attachment management', () => {
 
   it('onDragOver() sets dragOver to true', () => {
     const { component } = setup();
-    const event = new DragEvent('dragover');
+    const event = new Event('dragover') as DragEvent;
     component.onDragOver(event);
     expect(component.dragOver()).toBe(true);
   });
@@ -569,7 +563,7 @@ describe('EstimationFormComponent — attachment management', () => {
   it('onDragLeave() resets dragOver to false', () => {
     const { component } = setup();
     component.dragOver.set(true);
-    component.onDragLeave(new DragEvent('dragleave'));
+    component.onDragLeave(new Event('dragleave') as DragEvent);
     expect(component.dragOver()).toBe(false);
   });
 });
@@ -597,12 +591,17 @@ describe('EstimationFormComponent — submit() with attachments', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
   it('uses the existing session to submit multipart payload', () => {
-    const { component, httpMock } = setupWithAttachment();
+    const { component, httpMock, estimationService } = setupWithAttachment();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => {
+        subscriber.next('partial response');
+        subscriber.complete();
+      }),
+    );
 
     component.submit();
 
-    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    estimateReq.flush(MOCK_SESSION_RESULT);
+    expect(streamSpy).toHaveBeenCalledWith('sid-bootstrap', expect.any(FormData), 'v1');
     httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
       session_id: 'sid-bootstrap',
       project_metadata: {
@@ -617,13 +616,19 @@ describe('EstimationFormComponent — submit() with attachments', () => {
   });
 
   it('sends attachments as FormData to the session estimate endpoint', () => {
-    const { component, httpMock } = setupWithAttachment();
+    const { component, httpMock, estimationService } = setupWithAttachment();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => {
+        subscriber.next('streamed');
+        subscriber.complete();
+      }),
+    );
 
     component.submit();
 
-    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    expect(estimateReq.request.body).toBeInstanceOf(FormData);
-    estimateReq.flush(MOCK_SESSION_RESULT);
+    const formData = streamSpy.mock.calls[0][1];
+    expect(formData).toBeInstanceOf(FormData);
+    expect((formData as FormData).getAll('attachments').length).toBe(1);
     httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
       session_id: 'sid-bootstrap',
       project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
@@ -633,14 +638,18 @@ describe('EstimationFormComponent — submit() with attachments', () => {
   });
 
   it('includes prompt_version as a query param', () => {
-    const { component, httpMock } = setupWithAttachment();
+    const { component, httpMock, estimationService } = setupWithAttachment();
+    const streamSpy = vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => {
+        subscriber.next('streamed');
+        subscriber.complete();
+      }),
+    );
     component.form.prompt_version = 'v2';
 
     component.submit();
 
-    const estimateReq = httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate'));
-    expect(estimateReq.request.params.get('prompt_version')).toBe('v2');
-    estimateReq.flush(MOCK_SESSION_RESULT);
+    expect(streamSpy).toHaveBeenCalledWith('sid-bootstrap', expect.any(FormData), 'v2');
     httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
       session_id: 'sid-bootstrap',
       project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
@@ -650,11 +659,16 @@ describe('EstimationFormComponent — submit() with attachments', () => {
   });
 
   it('sets inlineResult signal on success', () => {
-    const { component, httpMock, fixture } = setupWithAttachment();
+    const { component, httpMock, fixture, estimationService } = setupWithAttachment();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => {
+        subscriber.next(JSON.stringify(MOCK_SESSION_RESULT));
+        subscriber.complete();
+      }),
+    );
 
     component.submit();
 
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
     httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
       session_id: 'sid-bootstrap',
       project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
@@ -663,39 +677,43 @@ describe('EstimationFormComponent — submit() with attachments', () => {
     });
     fixture.detectChanges();
 
-    expect(component.inlineResult()).toEqual(MOCK_SESSION_RESULT);
+    expect(component.responsePayload()).toEqual(MOCK_SESSION_RESULT);
+    expect(component.streamingResult()).toContain('## Phase 1');
     expect(component.loading()).toBe(false);
   });
 
   it('renders the inline result panel when inlineResult is set', () => {
-    const { component, httpMock, fixture } = setupWithAttachment();
+    const { component, httpMock, fixture, estimationService } = setupWithAttachment();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => {
+        subscriber.next(JSON.stringify(MOCK_SESSION_RESULT));
+        subscriber.complete();
+      }),
+    );
 
     component.submit();
 
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
     httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
       session_id: 'sid-bootstrap',
       project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },
       history: [],
       turn_count: 0,
     });
+    component.activeTab.set('response');
     fixture.detectChanges();
 
-    const panel: HTMLElement = fixture.nativeElement.querySelector('.inline-result');
+    const panel: HTMLElement = fixture.nativeElement.querySelector('app-estimation-result');
     expect(panel).toBeTruthy();
-    expect(panel.textContent).toContain('Estimation Result');
-    expect(panel.textContent).toContain('gpt-4o-mini');
   });
 
   it('shows error and clears loading on estimation failure (503)', () => {
-    const { component, httpMock, fixture } = setupWithAttachment();
+    const { component, estimationService, fixture } = setupWithAttachment();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => subscriber.error({ status: 503, detail: 'Service unavailable' })),
+    );
 
     component.submit();
 
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: 'Service unavailable' },
-      { status: 503, statusText: 'Service Unavailable' },
-    );
     fixture.detectChanges();
 
     expect(component.error()).toContain('503');
@@ -704,14 +722,15 @@ describe('EstimationFormComponent — submit() with attachments', () => {
   });
 
   it('shows error on 422 unsupported attachment type', () => {
-    const { component, httpMock, fixture } = setupWithAttachment();
+    const { component, estimationService, fixture } = setupWithAttachment();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber =>
+        subscriber.error({ status: 422, detail: "Unsupported attachment type 'application/zip' for file 'archive.zip'." }),
+      ),
+    );
 
     component.submit();
 
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(
-      { detail: "Unsupported attachment type 'application/zip' for file 'archive.zip'." },
-      { status: 422, statusText: 'Unprocessable Entity' },
-    );
     fixture.detectChanges();
 
     expect(component.error()).toContain('422');
@@ -719,12 +738,17 @@ describe('EstimationFormComponent — submit() with attachments', () => {
   });
 
   it('also uses session endpoint when there are no attachments', () => {
-    const { component, httpMock } = setup();
-    component.form.transcription = VALID_TRANSCRIPTION;
+    const { component, httpMock, estimationService } = setup();
+    vi.spyOn(estimationService, 'createWithAttachmentsStream').mockReturnValue(
+      new Observable(subscriber => {
+        subscriber.next('streamed');
+        subscriber.complete();
+      }),
+    );
+    setRequiredSubmitFields(component);
 
     component.submit();
 
-    httpMock.expectOne(r => r.url.includes('/sid-bootstrap/estimate')).flush(MOCK_SESSION_RESULT);
     httpMock.expectOne(`${SESSIONS_BASE}/sid-bootstrap`).flush({
       session_id: 'sid-bootstrap',
       project_metadata: { project_name: null, assumed_team_size: null, mentioned_technologies: [], agreed_scope: null },

@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 import structlog
 
-from app.config import MODEL_REGISTRY, settings
+from app.config import settings
 from app.guardrails.input import check_input
 from app.prompts.loader import render_boss_prompt, render_critic_prompt, render_estimation_prompt
 from app.schemas.estimation import (
@@ -81,7 +81,6 @@ class ActorCriticBossService:
         from app.services.litellm_service import litellm_router_service
 
         model_name = request.model or settings.llm_model
-        model_cfg = MODEL_REGISTRY[model_name]
         base_sys, base_user = render_estimation_prompt(
             request, version=prompt_version, tier=tier, project_metadata=project_metadata
         )
@@ -92,13 +91,13 @@ class ActorCriticBossService:
         for iteration in range(request.max_iterations + 1):
             await self._run_actor(
                 state, request, prompt_version, tier, project_metadata,
-                model_cfg, litellm_router_service, iteration,
+                litellm_router_service, iteration,
             )
             await self._run_critic(
-                state, request, project_metadata, model_cfg, litellm_router_service,
+                state, request, project_metadata, litellm_router_service,
             )
             boss_decision = await self._run_boss(
-                state, request, project_metadata, model_cfg, litellm_router_service, iteration,
+                state, request, project_metadata, litellm_router_service, iteration,
             )
 
             log.info(
@@ -154,15 +153,29 @@ class ActorCriticBossService:
     async def _run_actor(
         self, state: _LoopState, request: ActorCriticBossRequest,
         prompt_version: str, tier: UserTier | None,
-        project_metadata: ProjectMetadata | None, model_cfg, litellm_service, iteration: int,
+        project_metadata: ProjectMetadata | None, litellm_service, iteration: int,
     ) -> None:
         sys_prompt, user_prompt = render_estimation_prompt(
             request, version=prompt_version, tier=tier, project_metadata=project_metadata
         )
         if iteration > 0 and state.iteration_instructions and state.candidate_text:
+            critic_issues_text = ""
+            if state.last_critic_feedback and state.last_critic_feedback.issues:
+                issue_lines = [
+                    (
+                        f"- [{issue.severity.value.upper()}] {issue.category.value} "
+                        f"({issue.affected_field}): {issue.description}"
+                    )
+                    for issue in state.last_critic_feedback.issues
+                ]
+                critic_issues_text = "\n".join(issue_lines)
             user_prompt += (
                 f"\n\n---\n**Correction instructions (iteration {iteration}):**\n"
                 f"{state.iteration_instructions}\n\n"
+                "**Critic issues to resolve (mandatory):**\n"
+                f"{critic_issues_text or '- No explicit issues provided by critic.'}\n\n"
+                "Prioritize critical and major issues first and ensure the revised estimate "
+                "remains internally consistent (totals, phases, and risks).\n\n"
                 f"**Previous estimate to revise:**\n{state.candidate_text}\n---"
             )
         observable_resp = await litellm_service.complete(
@@ -183,7 +196,7 @@ class ActorCriticBossService:
 
     async def _run_critic(
         self, state: _LoopState, request: ActorCriticBossRequest,
-        project_metadata: ProjectMetadata | None, model_cfg, litellm_service,
+        project_metadata: ProjectMetadata | None, litellm_service,
     ) -> CriticFeedback:
         critic_sys, critic_user = render_critic_prompt(
             candidate_estimate=state.candidate_text,
@@ -208,7 +221,7 @@ class ActorCriticBossService:
 
     async def _run_boss(
         self, state: _LoopState, request: ActorCriticBossRequest,
-        project_metadata: ProjectMetadata | None, model_cfg, litellm_service, iteration: int,
+        project_metadata: ProjectMetadata | None, litellm_service, iteration: int,
     ) -> BossDecision:
         critic_feedback = state.last_critic_feedback
         if critic_feedback is None:

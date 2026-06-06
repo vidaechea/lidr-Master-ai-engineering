@@ -1,0 +1,32 @@
+{
+  "budget_id": "BUD-2024-003",
+  "client_metadata": {
+    "name": "TechStart Ventures",
+    "sector": "fintech",
+    "country": "ES"
+  },
+  "project_summary": "Payment gateway integration prototype and implementation",
+  "main_technology": "python",
+  "year": 2024,
+  "total_estimated_hours": 160,
+  "components": [
+    {
+      "component_id": "PROTO-001",
+      "name": "Prototype Development",
+      "description": "MVP prototype for payment gateway integration",
+      "tech_stack": ["python", "fastapi", "sqlite"],
+      "estimated_hours": 80,
+      "complexity": "medium",
+      "dependencies": []
+    },
+    {
+      "component_id": "GATEWAY-001",
+      "name": "Payment Gateway Integration",
+      "description": "Integration with payment processing gateway",
+      "tech_stack": ["python", "fastapi", "postgresql"],
+      "estimated_hours": 80,
+      "complexity": "high",
+      "dependencies": ["PROTO-001"]
+    }
+  ]
+}

@@ -210,6 +210,120 @@ curl -X POST http://localhost:8001/api/v1/estimate \
   }'
 ```
 
+---
+
+## Session 06 Smoke
+
+Use these commands to verify ingestion + persistence migration pieces:
+
+```bash
+# 1) Validate local setup and seed corpus
+python scripts/preflight_s06.py
+
+# 2) Run cleaning demo over budgets
+python scripts/demo_cleaning_s06.py
+
+# 3) Run PII pseudonymization demo over transcripts
+python scripts/demo_pii_s06.py
+```
+
+If `preflight_s06.py` fails on missing packages, install from `pyproject.toml` / `requirements.txt` first.
+
+---
+
+## Text Similarity Tool
+
+The `scripts/compare.py` script calculates **cosine similarity** between two text embeddings using the `OpenAIEmbedder` class. Useful for validating semantic relationships between texts without importing numpy or scikit-learn.
+
+### Usage
+
+**Inside Docker container:**
+```bash
+docker compose exec servicio_ia python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+**Outside Docker (with uv and .env loaded):**
+```bash
+cd ai-engine
+uv run python scripts/compare.py \
+  --text-a "OAuth 2.0 authentication backend for fintech" \
+  --text-b "JWT-based authorization service for banking app"
+```
+
+### Output
+
+```
+Text A: OAuth 2.0 authentication backend for fintech
+Text B: JWT-based authorization service for banking app
+Cosine similarity: 0.8421
+```
+
+**Details:**
+- Embeddings generated using `text-embedding-3-small` (OpenAI)
+- Cosine similarity computed manually: `(a·b) / (||a|| × ||b||)`
+- Range: `[0, 1]` for normalized embeddings (0 = orthogonal, 1 = identical)
+- Requires `OPENAI_API_KEY` environment variable
+
+---
+
+## Embedding Inspection Tool
+
+The `scripts/inspect_embedding.py` script generates a single embedding and prints key diagnostics:
+
+- Model used
+- Vector dimensions
+- First and last 5 values
+- Python value type (`float`)
+
+### Usage
+
+**Inside Docker container:**
+```bash
+docker compose exec servicio_ia python scripts/inspect_embedding.py \
+  --text "OAuth 2.0 authentication backend with JWT tokens for fintech mobile app"
+```
+
+**Outside Docker (with uv and .env loaded):**
+```bash
+cd ai-engine
+uv run python scripts/inspect_embedding.py \
+  --text "OAuth 2.0 authentication backend with JWT tokens for fintech mobile app"
+```
+
+To test with another embedding model:
+```bash
+uv run python scripts/inspect_embedding.py --model text-embedding-3-large
+```
+
+---
+
+## Dependency Installation Guide
+
+### Local virtualenv (pip)
+
+Use this when running the service outside dev containers (for example on Windows):
+
+```bash
+cd ai-engine
+python -m venv .venv
+# PowerShell
+.\.venv\Scripts\Activate.ps1
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+```
+
+`requirements.txt` includes Session 06 ingestion extras (`pandera`, `openpyxl`) and Python-version-aware markers for Presidio packages.
+
+### Dev container / Codespaces
+
+In dev containers we use `uv sync` from `pyproject.toml` (not `pip install -r requirements.txt`).
+
+Detailed flow and scripts are documented in:
+
+- `../.devcontainer/README.md`
+
 **Response:**
 ```json
 {

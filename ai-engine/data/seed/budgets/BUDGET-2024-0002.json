@@ -1,0 +1,41 @@
+{
+  "budget_id": "BUD-2024-002",
+  "client_metadata": {
+    "name": "BetaNorte Distribución",
+    "sector": "distribution",
+    "country": "ES"
+  },
+  "project_summary": "ERP migration from legacy system with three warehouse management",
+  "main_technology": "java",
+  "year": 2024,
+  "total_estimated_hours": 240,
+  "components": [
+    {
+      "component_id": "AUDIT-001",
+      "name": "Process Audit",
+      "description": "Audit of current business processes",
+      "tech_stack": ["java", "postgresql"],
+      "estimated_hours": 40,
+      "complexity": "medium",
+      "dependencies": []
+    },
+    {
+      "component_id": "INTEG-001",
+      "name": "Backend Integrations",
+      "description": "Integration with legacy ERP systems",
+      "tech_stack": ["java", "spring", "postgresql"],
+      "estimated_hours": 160,
+      "complexity": "high",
+      "dependencies": ["AUDIT-001"]
+    },
+    {
+      "component_id": "DASH-001",
+      "name": "Analytics Dashboards",
+      "description": "Business dashboards and reporting",
+      "tech_stack": ["java", "react", "postgresql"],
+      "estimated_hours": 40,
+      "complexity": "medium",
+      "dependencies": ["INTEG-001"]
+    }
+  ]
+}
