@@ -1,0 +1,32 @@
+{
+  "budget_id": "BUD-2024-004",
+  "client_metadata": {
+    "name": "Cooperativa Levante",
+    "sector": "finance",
+    "country": "ES"
+  },
+  "project_summary": "Legacy credit system refactoring and regulatory reporting implementation",
+  "main_technology": "scala",
+  "year": 2024,
+  "total_estimated_hours": 300,
+  "components": [
+    {
+      "component_id": "REFACTOR-001",
+      "name": "Credit System Refactoring",
+      "description": "Refactor legacy credit processing system",
+      "tech_stack": ["scala", "akka", "postgresql"],
+      "estimated_hours": 180,
+      "complexity": "high",
+      "dependencies": []
+    },
+    {
+      "component_id": "REPORT-001",
+      "name": "Regulatory Reporting",
+      "description": "Implement regulatory compliance reporting",
+      "tech_stack": ["scala", "spark", "postgresql"],
+      "estimated_hours": 120,
+      "complexity": "high",
+      "dependencies": ["REFACTOR-001"]
+    }
+  ]
+}

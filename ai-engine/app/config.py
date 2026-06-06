@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal, Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -99,6 +100,14 @@ class Settings(BaseSettings):
     # ai-engine can extract the tier claim from the Bearer token without a DB lookup.
     secret_key: str = "changeme-use-env-in-production"
     algorithm: str = "HS256"
+
+    # Session 6 style ingestion/persistence settings
+    database_url: str = "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"
+    catalog_path: Path = Path("data/catalog/catalog.yaml")
+    ingestion_data_root: Path = Path("data/seed")
+    presidio_spacy_model: str = "es_core_news_md"
+    pseudonym_faker_locale: str = "es_ES"
+    pseudonym_hash_salt: str = "change-me-in-prod"
 
 
 settings = Settings()

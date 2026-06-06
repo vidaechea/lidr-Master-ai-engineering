@@ -1,0 +1,61 @@
+from __future__ import annotations
+
+from typing import Callable, Protocol, runtime_checkable
+
+from sqlalchemy.orm import Session
+
+from app.persistence.repositories.mappings import MappingsRepository
+
+
+@runtime_checkable
+class MappingStore(Protocol):
+    def lookup_or_create(
+        self,
+        entity_type: str,
+        original_hash: str,
+        new_pseudonym_factory: Callable[[], str],
+    ) -> str:
+        ...
+
+    def forget(self, entity_type: str, original_hash: str) -> bool:
+        ...
+
+
+class PostgresMappingStore:
+    def __init__(self, session: Session) -> None:
+        self._repo = MappingsRepository(session)
+
+    def lookup_or_create(
+        self,
+        entity_type: str,
+        original_hash: str,
+        new_pseudonym_factory: Callable[[], str],
+    ) -> str:
+        mapping = self._repo.lookup_or_create(
+            entity_type=entity_type,
+            original_hash=original_hash,
+            new_pseudonym_factory=new_pseudonym_factory,
+        )
+        return mapping.pseudonym
+
+    def forget(self, entity_type: str, original_hash: str) -> bool:
+        return self._repo.forget(entity_type, original_hash)
+
+
+class InMemoryMappingStore:
+    def __init__(self) -> None:
+        self._mappings: dict[tuple[str, str], str] = {}
+
+    def lookup_or_create(
+        self,
+        entity_type: str,
+        original_hash: str,
+        new_pseudonym_factory: Callable[[], str],
+    ) -> str:
+        key = (entity_type, original_hash)
+        if key not in self._mappings:
+            self._mappings[key] = new_pseudonym_factory()
+        return self._mappings[key]
+
+    def forget(self, entity_type: str, original_hash: str) -> bool:
+        return self._mappings.pop((entity_type, original_hash), None) is not None

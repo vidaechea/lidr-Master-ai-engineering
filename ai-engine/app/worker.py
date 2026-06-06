@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import structlog
 from arq.connections import RedisSettings
@@ -52,8 +54,8 @@ async def estimate_task(
             log.error("worker_callback_failed", job_id=job_id, error=str(exc))
 
 
-def startup(ctx: dict) -> None:
-    ctx["estimation_service"] = EstimationService()
+async def startup(ctx: dict) -> None:
+    ctx["estimation_service"] = await asyncio.to_thread(EstimationService)
 
 
 async def shutdown(ctx: dict) -> None:

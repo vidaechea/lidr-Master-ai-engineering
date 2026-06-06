@@ -238,6 +238,8 @@ Minimal, reusable Python clients for OpenAI and Anthropic with cost tracking and
 
 This repository includes Dev Container configuration in `.devcontainer/` for GitHub Codespaces to automatically prepare the environment.
 
+Detailed documentation: [`.devcontainer/README.md`](.devcontainer/README.md).
+
 When creating (or rebuilding) the Codespace, `postCreate.sh` is executed, which installs:
 - System dependencies for running Angular tests with Playwright/Chromium
 - `uv` for Python environment/dependency management

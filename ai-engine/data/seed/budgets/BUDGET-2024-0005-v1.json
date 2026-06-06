@@ -1,0 +1,32 @@
+{
+  "budget_id": "BUD-2024-005",
+  "client_metadata": {
+    "name": "Industrias Toledo",
+    "sector": "manufacturing",
+    "country": "ES"
+  },
+  "project_summary": "Manufacturing management system implementation",
+  "main_technology": "dotnet",
+  "year": 2024,
+  "total_estimated_hours": 240,
+  "components": [
+    {
+      "component_id": "DISC-005",
+      "name": "Discovery Phase",
+      "description": "Requirements gathering and system analysis",
+      "tech_stack": [".net", "sqlserver"],
+      "estimated_hours": 40,
+      "complexity": "medium",
+      "dependencies": []
+    },
+    {
+      "component_id": "IMPL-005",
+      "name": "System Implementation",
+      "description": "Full manufacturing management system development",
+      "tech_stack": [".net", "aspnet", "angular", "sqlserver"],
+      "estimated_hours": 200,
+      "complexity": "high",
+      "dependencies": ["DISC-005"]
+    }
+  ]
+}
