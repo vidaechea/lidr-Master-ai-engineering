@@ -248,6 +248,33 @@ class RetrievalHit(BaseModel):
     similarity: float = Field(ge=0.0, le=1.0, description="Cosine similarity score")
 
 
+class SearchRequest(BaseModel):
+    """Request payload for semantic search endpoint."""
+
+    query: str = Field(min_length=1, description="Natural language semantic query")
+    k: int = Field(ge=1, le=50, description="Top-k nearest chunks to return")
+
+
+class SearchResultItem(BaseModel):
+    """Single nearest-neighbor result row from vector search."""
+
+    chunk_id: int = Field(ge=1)
+    document_id: int = Field(ge=1)
+    chunk_type: str
+    content: str
+    distance: float = Field(ge=0.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SearchResponse(BaseModel):
+    """Response payload for semantic search endpoint."""
+
+    query: str
+    k: int = Field(ge=1)
+    search_time_ms: int = Field(ge=0)
+    results: list[SearchResultItem] = Field(default_factory=list)
+
+
 __all__ = [
     "Budget",
     "BudgetComponent",
@@ -266,4 +293,7 @@ __all__ = [
     "IngestResponse",
     "IngestStats",
     "RetrievalHit",
+    "SearchRequest",
+    "SearchResponse",
+    "SearchResultItem",
 ]

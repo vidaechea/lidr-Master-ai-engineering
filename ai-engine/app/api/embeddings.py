@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.sql import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.generation.rag.chunking.structural import JSONStructuralChunker, chunk_text
@@ -21,6 +22,9 @@ from app.generation.rag.schemas import (
     EmbeddingItem,
     IngestPersistRequest,
     IngestPersistResponse,
+    SearchRequest,
+    SearchResponse,
+    SearchResultItem,
 )
 from app.persistence.database import get_async_session
 from app.persistence.models import ChunkRow, DocumentRow
@@ -165,6 +169,73 @@ async def ingest(
     except Exception as exc:
         # OpenAI API errors, network issues, etc. — generic message to client
         log.error("ingest_failed", error=str(exc)[:400])
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+
+
+@ingest_router.post(
+    "/search",
+    response_model=SearchResponse,
+    responses={
+        400: {"description": "Invalid semantic search query"},
+        500: {"description": "Internal processing error"},
+    },
+)
+async def search(
+    payload: SearchRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> SearchResponse:
+    """Execute semantic nearest-neighbor search over persisted chunks."""
+    start_time = time.perf_counter()
+
+    try:
+        vectors = embed_texts(texts=[payload.query], model=EMBEDDING_MODEL)
+        if not vectors:
+            raise ValueError("Failed to generate query embedding")
+        query_vector = vectors[0]
+
+        distance_expr = ChunkRow.embedding.cosine_distance(query_vector)
+        stmt: Select = (
+            select(
+                ChunkRow.id,
+                ChunkRow.document_id,
+                ChunkRow.chunk_type,
+                ChunkRow.content,
+                ChunkRow.metadata_json.label("metadata"),
+                distance_expr.label("distance"),
+            )
+            .where(ChunkRow.embedding.is_not(None))
+            .order_by(distance_expr)
+            .limit(payload.k)
+        )
+
+        db_result = await session.execute(stmt)
+        rows = db_result.all()
+
+        response_rows = [
+            SearchResultItem(
+                chunk_id=int(row.id),
+                document_id=int(row.document_id),
+                chunk_type=row.chunk_type,
+                content=row.content,
+                distance=float(row.distance),
+                metadata=row.metadata or {},
+            )
+            for row in rows
+        ]
+
+        search_time_ms = int((time.perf_counter() - start_time) * 1000)
+
+        return SearchResponse(
+            query=payload.query,
+            k=payload.k,
+            search_time_ms=search_time_ms,
+            results=response_rows,
+        )
+    except ValueError as exc:
+        log.warning("search_validation_error", error=str(exc)[:400])
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log.error("search_failed", error=str(exc)[:400])
         raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
