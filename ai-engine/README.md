@@ -570,6 +570,17 @@ for tier in UserTier:
 
 ## Design Decisions
 
+### Persistence Schema Rationale
+
+The semantic retrieval baseline uses PostgreSQL + pgvector with a two-table relational design.
+
+- Two tables (`documents` and `chunks`) instead of one: one budget document produces N chunks. Splitting avoids duplicating document-level metadata per chunk and preserves referential integrity. `ON DELETE CASCADE` ensures deleting one document removes all dependent chunks automatically.
+- `metadata JSONB` in both tables: stable fields stay as typed columns (`document_type`, `chunk_type`, timestamps), while variable enrichment attributes live in JSONB (tags, scope, technologies). This reduces schema churn while keeping query flexibility.
+- GIN index on `chunks.metadata`: supports key-based JSONB filters efficiently when needed.
+- `vector(1536)` for embeddings: fixed dimension aligned with `text-embedding-3-small`. Changing dimensions implies re-embedding the full corpus, so this is intentionally explicit in schema.
+- `embedding` is nullable: allows future async ingestion flows where chunk rows are inserted first and vectors are backfilled later. In the current flow, chunk content and embedding are still ingested atomically.
+- No vector index in this baseline: deliberate choice so sequential scan behavior is measurable before introducing HNSW/IVFFlat.
+
 ### Heuristic vs. LLM Metadata Extraction
 
 After each estimation, session metadata (project name, tech stack, team size) is extracted and injected into subsequent prompts as context.
