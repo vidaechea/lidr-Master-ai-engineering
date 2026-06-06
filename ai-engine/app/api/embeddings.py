@@ -93,26 +93,26 @@ async def ingest(
     start_time = time.perf_counter()
 
     try:
-        existing_document_id = (
-            await session.execute(
-                select(DocumentRow.id).where(DocumentRow.source_path == payload.source_path)
-            )
-        ).scalar_one_or_none()
-        if existing_document_id is not None:
-            return JSONResponse(
-                status_code=409,
-                content={
-                    "detail": "Document already ingested",
-                    "document_id": int(existing_document_id),
-                },
-            )
-
         budget = Budget.model_validate(payload.content)
         document_id: int | None = None
         chunks_created = 0
         embedding_dimension = EMBEDDING_DIMENSION
 
         async with session.begin():
+            existing_document_id = (
+                await session.execute(
+                    select(DocumentRow.id).where(DocumentRow.source_path == payload.source_path)
+                )
+            ).scalar_one_or_none()
+            if existing_document_id is not None:
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "detail": "Document already ingested",
+                        "document_id": int(existing_document_id),
+                    },
+                )
+
             document = DocumentRow(
                 source_path=payload.source_path,
                 document_type=payload.document_type,

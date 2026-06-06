@@ -113,7 +113,9 @@ async def test_ingest_returns_409_when_document_already_exists() -> None:
         "detail": "Document already ingested",
         "document_id": 42,
     }
-    assert session.tx_entered == 0
+    assert session.tx_entered == 1
+    assert session.tx_committed == 1
+    assert session.tx_rolled_back == 0
 
 
 @pytest.mark.asyncio
