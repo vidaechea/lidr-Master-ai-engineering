@@ -33,6 +33,7 @@ const MOCK_ESTIMATION: EstimationOut = {
   output_tokens: 180,
   turn_cost_usd: 0.0006,
   error_detail: null,
+  output_format: 'phases_table',
 };
 
 const VALID_PAYLOAD: EstimationCreate = {
@@ -306,7 +307,10 @@ const MOCK_SESSION_RESPONSE: SessionEstimationResponse = {
   estimated_precall_cost_usd: null,
   requirements: null,
   pre_call_cost_usd: null,
+  validation: null,
   prompt_version: 'v1',
+  structured_result: null,
+  output_format: 'phases_table',
 };
 
 describe('EstimationService — createSession()', () => {
@@ -423,7 +427,7 @@ describe('EstimationService — createWithAttachmentsStream()', () => {
   it('includes the bearer token from localStorage in the streaming request', async () => {
     localStorage.setItem('access_token', 'stream.token');
 
-    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue({
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       body: {
         getReader: () => ({
@@ -449,7 +453,7 @@ describe('EstimationService — createWithAttachmentsStream()', () => {
   });
 
   it('omits Authorization when there is no stored token', async () => {
-    const fetchSpy = vi.spyOn(window, 'fetch').mockResolvedValue({
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       body: {
         getReader: () => ({

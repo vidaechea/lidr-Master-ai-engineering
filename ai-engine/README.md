@@ -268,6 +268,37 @@ Cosine similarity: 0.8421
 
 ---
 
+## Embedding Inspection Tool
+
+The `scripts/inspect_embedding.py` script generates a single embedding and prints key diagnostics:
+
+- Model used
+- Vector dimensions
+- First and last 5 values
+- Python value type (`float`)
+
+### Usage
+
+**Inside Docker container:**
+```bash
+docker compose exec servicio_ia python scripts/inspect_embedding.py \
+  --text "OAuth 2.0 authentication backend with JWT tokens for fintech mobile app"
+```
+
+**Outside Docker (with uv and .env loaded):**
+```bash
+cd ai-engine
+uv run python scripts/inspect_embedding.py \
+  --text "OAuth 2.0 authentication backend with JWT tokens for fintech mobile app"
+```
+
+To test with another embedding model:
+```bash
+uv run python scripts/inspect_embedding.py --model text-embedding-3-large
+```
+
+---
+
 ## Dependency Installation Guide
 
 ### Local virtualenv (pip)

@@ -62,7 +62,17 @@ def _run_acb_sync(transcript: str, max_iterations: int = 1) -> dict:
                 "iteration": trace.iteration,
                 "critic_approved": trace.critic_feedback.approved,
                 "issues_count": len(trace.critic_feedback.issues),
+                "critic_issues": [
+                    {
+                        "category": issue.category.value,
+                        "severity": issue.severity.value,
+                        "affected_field": issue.affected_field,
+                        "description": issue.description,
+                    }
+                    for issue in trace.critic_feedback.issues
+                ],
                 "boss_action": trace.boss_decision.action,
+                "boss_reasoning": trace.boss_decision.reasoning,
             }
             for trace in result.iterations
         ],

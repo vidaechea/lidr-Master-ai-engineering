@@ -19,6 +19,12 @@ def _build_schema() -> Any:
                 nullable=False,
                 required=True,
             ),
+            "total_estimated_hours": column_cls(
+                float,
+                checks=check_cls.greater_than_or_equal_to(0),
+                nullable=False,
+                required=True,
+            ),
         },
         strict=False,
         coerce=True,
