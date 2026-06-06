@@ -2,14 +2,27 @@ from __future__ import annotations
 
 import runpy
 import tomllib
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 import yaml
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-AI_ENGINE_ROOT = PROJECT_ROOT / "ai-engine"
+AI_ENGINE_ROOT = Path.cwd().resolve()
+PROJECT_ROOT = AI_ENGINE_ROOT.parent
+
+
+def _resolve_compose_path() -> Path:
+    candidates = [
+        PROJECT_ROOT / "docker-compose.yml",
+        Path("/workspaces/lidr-Master-ai-engineering/docker-compose.yml"),
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    pytest.skip("docker-compose.yml not available in this test environment")
 
 
 def test_pyproject_includes_persistence_dependencies() -> None:
@@ -25,7 +38,7 @@ def test_pyproject_includes_persistence_dependencies() -> None:
 
 
 def test_compose_config_has_pgvector_and_ai_engine_db_dependency() -> None:
-    compose_path = PROJECT_ROOT / "docker-compose.yml"
+    compose_path = _resolve_compose_path()
     compose = yaml.safe_load(compose_path.read_text(encoding="utf-8"))
 
     postgres = compose["services"]["postgres"]
@@ -64,7 +77,7 @@ def _load_migration_module() -> dict[str, object]:
 
 class _FakeOp:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, object]] = []
+        self.calls: list[tuple[Any, ...]] = []
 
     def execute(self, sql: str) -> None:
         self.calls.append(("execute", sql))
@@ -85,9 +98,9 @@ class _FakeOp:
 def test_migration_upgrade_contract() -> None:
     migration = _load_migration_module()
     fake_op = _FakeOp()
-    migration["op"] = fake_op
 
-    upgrade = migration["upgrade"]
+    upgrade = cast(Callable[[], None], migration["upgrade"])
+    upgrade.__globals__["op"] = fake_op
     upgrade()
 
     assert migration["revision"] == "0001"
@@ -110,9 +123,9 @@ def test_migration_upgrade_contract() -> None:
 def test_migration_downgrade_contract() -> None:
     migration = _load_migration_module()
     fake_op = _FakeOp()
-    migration["op"] = fake_op
 
-    downgrade = migration["downgrade"]
+    downgrade = cast(Callable[[], None], migration["downgrade"])
+    downgrade.__globals__["op"] = fake_op
     downgrade()
 
     drop_indexes = [call for call in fake_op.calls if call[0] == "drop_index"]

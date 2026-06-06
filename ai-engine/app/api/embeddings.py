@@ -1,21 +1,29 @@
 from __future__ import annotations
 
+import time
+
 import structlog
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import ValidationError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.generation.rag.chunking.structural import JSONStructuralChunker, chunk_text
-from app.generation.rag.embedding.embedder import OpenAIEmbedder, embed_texts
+from app.generation.rag.embedding.embedder import EMBEDDING_DIMENSION, EMBEDDING_MODEL, embed_texts
 from app.generation.rag.schemas import (
+    Budget,
     ChunkItem,
     ChunkRequest,
     ChunkResponse,
     EmbedRequest,
     EmbedResponse,
     EmbeddingItem,
-    IngestRequest,
-    IngestResponse,
-    IngestStats,
+    IngestPersistRequest,
+    IngestPersistResponse,
 )
+from app.persistence.database import get_async_session
+from app.persistence.models import ChunkRow, DocumentRow
 
 log = structlog.get_logger(__name__)
 
@@ -62,59 +70,94 @@ def build_embeddings(payload: EmbedRequest) -> EmbedResponse:
 
 @ingest_router.post(
     "/ingest",
+    response_model=IngestPersistResponse,
     responses={
-        200: {"description": "Successfully ingested and embedded budgets"},
+        200: {"description": "Successfully ingested and persisted document chunks"},
+        409: {"description": "Document already ingested"},
         400: {"description": "Validation error in chunker or embedder"},
         422: {"description": "Validation error in request schema"},
         500: {"description": "Internal processing error (e.g., OpenAI API failure)"},
     },
 )
-def ingest(payload: IngestRequest) -> IngestResponse:
+async def ingest(
+    payload: IngestPersistRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> IngestPersistResponse:
     """
-    Ingest a list of budgets: chunk them and generate embeddings.
-
-    Orchestrates:
-    1. Chunk budgets into components (JSONStructuralChunker)
-    2. Embed chunks (OpenAIEmbedder)
-    3. Aggregate statistics
-
-    Returns:
-    - 200: IngestResponse with embedded chunks and statistics
-    - 422: Pydantic validation error (automatic)
-    - 500: OpenAI API error with generic message to client
+    Ingest one document and persist its chunks+embeddings in a single transaction.
     """
+    start_time = time.perf_counter()
+
     try:
-        # Instantiate services
-        chunker = JSONStructuralChunker()
-        embedder = OpenAIEmbedder()
+        existing_document_id = (
+            await session.execute(
+                select(DocumentRow.id).where(DocumentRow.source_path == payload.source_path)
+            )
+        ).scalar_one_or_none()
+        if existing_document_id is not None:
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": "Document already ingested",
+                    "document_id": int(existing_document_id),
+                },
+            )
 
-        # Chunk budgets into components
-        chunks = chunker.chunk(payload.budgets)
+        budget = Budget.model_validate(payload.content)
+        document_id: int | None = None
+        chunks_created = 0
+        embedding_dimension = EMBEDDING_DIMENSION
 
-        # Embed chunks
-        embedded_chunks = embedder.embed_many(chunks)
+        async with session.begin():
+            document = DocumentRow(
+                source_path=payload.source_path,
+                document_type=payload.document_type,
+                metadata_json={},
+            )
+            session.add(document)
+            await session.flush()
+            document_id = int(document.id)
 
-        # Calculate aggregated statistics
-        total_tokens = sum(chunk.token_count for chunk in embedded_chunks)
-        estimated_cost = embedder._calculate_cost(total_tokens)
+            chunker = JSONStructuralChunker()
+            chunks = chunker.chunk([budget])
+            vectors = embed_texts(texts=[chunk.text for chunk in chunks], model=EMBEDDING_MODEL)
 
-        stats = IngestStats(
-            total_budgets=len(payload.budgets),
-            total_chunks=len(embedded_chunks),
-            total_tokens=total_tokens,
-            estimated_cost_usd=round(estimated_cost, 6),
-        )
+            if len(vectors) != len(chunks):
+                raise ValueError("Embedding count does not match generated chunks")
+
+            chunk_rows = [
+                ChunkRow(
+                    document_id=document.id,
+                    chunk_type="budget_component",
+                    content=chunk.text,
+                    embedding=vector,
+                    metadata_json=chunk.metadata,
+                )
+                for chunk, vector in zip(chunks, vectors)
+            ]
+            session.add_all(chunk_rows)
+            chunks_created = len(chunk_rows)
+            embedding_dimension = len(vectors[0]) if vectors else EMBEDDING_DIMENSION
 
         log.info(
             "ingest_completed",
-            total_budgets=len(payload.budgets),
-            total_chunks=len(embedded_chunks),
-            total_tokens=total_tokens,
-            estimated_cost_usd=round(estimated_cost, 6),
+            source_path=payload.source_path,
+            document_id=document_id,
+            chunks_created=chunks_created,
         )
 
-        return IngestResponse(chunks=embedded_chunks, stats=stats)
+        ingestion_time_ms = int((time.perf_counter() - start_time) * 1000)
 
+        return IngestPersistResponse(
+            document_id=document_id or 0,
+            chunks_created=chunks_created,
+            embedding_dimension=embedding_dimension,
+            ingestion_time_ms=ingestion_time_ms,
+        )
+
+    except ValidationError as exc:
+        log.warning("ingest_validation_error", error=str(exc)[:400])
+        raise HTTPException(status_code=400, detail="Invalid budget content") from exc
     except ValueError as exc:
         # Validation errors from chunker or embedder
         log.warning("ingest_validation_error", error=str(exc)[:400])

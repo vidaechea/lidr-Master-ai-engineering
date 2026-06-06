@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -223,6 +224,23 @@ class IngestResponse(BaseModel):
     model_config = ConfigDict(json_schema_extra={"example": {"chunks": [], "stats": {}}})
 
 
+class IngestPersistRequest(BaseModel):
+    """Request payload for persistent ingestion endpoint."""
+
+    source_path: str = Field(min_length=1, description="Canonical source path for the ingested document")
+    document_type: str = Field(min_length=1, max_length=50, description="Document classifier")
+    content: dict[str, Any] = Field(description="Full budget JSON payload")
+
+
+class IngestPersistResponse(BaseModel):
+    """Response payload for persistent ingestion endpoint."""
+
+    document_id: int = Field(ge=1, description="Persisted document identifier")
+    chunks_created: int = Field(ge=0, description="Number of persisted chunks")
+    embedding_dimension: int = Field(ge=1, description="Embedding vector dimensionality")
+    ingestion_time_ms: int = Field(ge=0, description="Total ingestion latency in milliseconds")
+
+
 class RetrievalHit(BaseModel):
     """A retrieved chunk with similarity score for downstream generation."""
 
@@ -243,6 +261,8 @@ __all__ = [
     "EmbedResponse",
     "EmbeddingItem",
     "IngestRequest",
+    "IngestPersistRequest",
+    "IngestPersistResponse",
     "IngestResponse",
     "IngestStats",
     "RetrievalHit",
