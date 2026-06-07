@@ -275,6 +275,52 @@ class SearchResponse(BaseModel):
     results: list[SearchResultItem] = Field(default_factory=list)
 
 
+class CompareRequest(BaseModel):
+    """Request payload for chunking strategy comparison."""
+
+    budgets: list[Budget] = Field(min_length=1, description="Budgets to compare across strategies")
+    queries: list[str] = Field(default_factory=list, description="Optional semantic queries to evaluate")
+    strategies: list[str] | None = Field(
+        default=None,
+        description="Chunking strategies to execute. When omitted, all default strategies are used.",
+    )
+    top_k: int = Field(default=3, ge=1, le=10, description="Top-k chunks to return per query and strategy")
+
+
+class StrategyStats(BaseModel):
+    """Aggregate statistics for one chunking strategy."""
+
+    total_chunks: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    avg_tokens_per_chunk: float = Field(ge=0.0)
+    min_tokens: int = Field(ge=0)
+    max_tokens: int = Field(ge=0)
+    estimated_cost_usd: float = Field(ge=0.0)
+
+
+class CompareHit(BaseModel):
+    """Single retrieved chunk for a query within one strategy."""
+
+    chunk_id: str
+    payload: str
+    similarity: float = Field(ge=-1.0, le=1.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class CompareQueryResult(BaseModel):
+    """Top-k results for one query within one strategy."""
+
+    query: str
+    results: list[CompareHit] = Field(default_factory=list)
+
+
+class CompareResponse(BaseModel):
+    """Response payload for chunking comparison."""
+
+    stats_per_strategy: dict[str, StrategyStats]
+    queries_per_strategy: dict[str, list[CompareQueryResult]]
+
+
 __all__ = [
     "Budget",
     "BudgetComponent",
@@ -293,7 +339,12 @@ __all__ = [
     "IngestResponse",
     "IngestStats",
     "RetrievalHit",
+    "CompareHit",
+    "CompareQueryResult",
+    "CompareRequest",
+    "CompareResponse",
     "SearchRequest",
     "SearchResponse",
     "SearchResultItem",
+    "StrategyStats",
 ]

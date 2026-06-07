@@ -164,6 +164,32 @@ export interface RuntimeModelsResponse {
   available_models: string[];
 }
 
+export interface ChunkingComparisonStats {
+  total_chunks: number;
+  total_tokens: number;
+  avg_tokens_per_chunk: number;
+  min_tokens: number;
+  max_tokens: number;
+  estimated_cost_usd: number;
+}
+
+export interface ChunkingComparisonHit {
+  chunk_id: string;
+  payload: string;
+  similarity: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface ChunkingComparisonQueryResult {
+  query: string;
+  results: ChunkingComparisonHit[];
+}
+
+export interface ChunkingComparisonResponse {
+  stats_per_strategy: Record<string, ChunkingComparisonStats>;
+  queries_per_strategy: Record<string, ChunkingComparisonQueryResult[]>;
+}
+
 export type IssueSeverity = 'critical' | 'major' | 'minor';
 export type IssueCategory =
   | 'arithmetic_error'
@@ -227,6 +253,7 @@ export class EstimationService {
   private readonly base = `${environment.apiUrl}/v1/estimations`;
   private readonly sessionsBase = `${environment.apiUrl}/v1/estimations/sessions`;
   private readonly configBase = `${this.base}/config/models`;
+  private readonly ragLabBase = `${this.base}/rag/chunking-comparison`;
 
   constructor(private readonly http: HttpClient) {}
 
@@ -328,6 +355,10 @@ export class EstimationService {
 
   updateRuntimeModels(changes: Record<string, string | null>) {
     return this.http.put<RuntimeModelsResponse>(this.configBase, { models: changes });
+  }
+
+  compareChunking(payload: { queries: string[]; strategies?: string[] | null; top_k: number }) {
+    return this.http.post<ChunkingComparisonResponse>(this.ragLabBase, payload);
   }
 
   listSessions() {

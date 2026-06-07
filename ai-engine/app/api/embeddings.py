@@ -10,10 +10,14 @@ from sqlalchemy import select
 from sqlalchemy.sql import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.generation.rag.analysis.comparison import ChunkingComparator, DEFAULT_STRATEGIES
+from app.generation.rag.chunking.strategies.fixed_size import FixedSizeBudgetChunker
 from app.generation.rag.chunking.structural import JSONStructuralChunker, chunk_text
 from app.generation.rag.embedding.embedder import EMBEDDING_DIMENSION, EMBEDDING_MODEL, embed_texts
 from app.generation.rag.schemas import (
     Budget,
+    CompareRequest,
+    CompareResponse,
     ChunkItem,
     ChunkRequest,
     ChunkResponse,
@@ -33,6 +37,12 @@ log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/embedding-pipeline", tags=["embedding-pipeline"])
 ingest_router = APIRouter(tags=["embeddings"])
+
+
+_AVAILABLE_CHUNKERS = {
+    "structural": JSONStructuralChunker,
+    "fixed_size": FixedSizeBudgetChunker,
+}
 
 
 @router.post("/chunks", responses={400: {"description": "Invalid chunk parameters"}})
@@ -65,6 +75,32 @@ def build_embeddings(payload: EmbedRequest) -> EmbedResponse:
 
     items = [EmbeddingItem(index=i, vector=vector) for i, vector in enumerate(vectors)]
     return EmbedResponse(model=payload.model, embeddings=items)
+
+
+@ingest_router.post(
+    "/compare",
+    response_model=CompareResponse,
+    responses={400: {"description": "Unknown strategy"}, 500: {"description": "Internal processing error"}},
+)
+def compare_chunking(payload: CompareRequest) -> CompareResponse:
+    strategy_names = payload.strategies or list(DEFAULT_STRATEGIES)
+    unknown = [name for name in strategy_names if name not in _AVAILABLE_CHUNKERS]
+    if unknown:
+        raise HTTPException(status_code=400, detail=f"Unknown strategy: {unknown[0]}")
+
+    try:
+        comparator = ChunkingComparator(
+            {name: _AVAILABLE_CHUNKERS[name]() for name in strategy_names}
+        )
+        stats = comparator.compute_stats(payload.budgets)
+        queries = comparator.run_queries(payload.budgets, payload.queries, payload.top_k)
+        return CompareResponse(stats_per_strategy=stats, queries_per_strategy=queries)
+    except ValueError as exc:
+        log.warning("chunking_compare_validation_error", error=str(exc)[:400])
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        log.error("chunking_compare_failed", error=str(exc)[:400])
+        raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
 # ============================================================================

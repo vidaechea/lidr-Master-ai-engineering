@@ -264,3 +264,14 @@ async def update_runtime_models(changes: dict[str, str | None]) -> dict[str, Any
         json_body={"models": changes},
         http_error_event="ai_engine_runtime_models_update_http_error",
     )
+
+
+async def compare_chunking(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/embeddings/compare`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/embeddings/compare",
+        request_timeout=600.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_chunking_compare_http_error",
+    )

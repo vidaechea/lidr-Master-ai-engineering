@@ -14,6 +14,7 @@ import { environment } from '../../../environments/environment';
 const BASE = `${environment.apiUrl}/v1/estimations`;
 const SESSIONS_BASE = `${environment.apiUrl}/v1/estimations/sessions`;
 const CONFIG_BASE = `${environment.apiUrl}/v1/estimations/config/models`;
+const RAG_LAB_BASE = `${environment.apiUrl}/v1/estimations/rag/chunking-comparison`;
 
 const MOCK_ESTIMATION: EstimationOut = {
   id: 'est-001',
@@ -529,5 +530,64 @@ describe('EstimationService — runtime model config', () => {
       },
       available_models: ['gpt-4o-mini', 'gpt-5.4-mini', 'claude-haiku-4-5-20251001'],
     });
+  });
+});
+
+describe('EstimationService — rag lab chunking comparison', () => {
+  let service: EstimationService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('compareChunking() sends POST to /v1/estimations/rag/chunking-comparison', () => {
+    service.compareChunking({ queries: ['oauth backend'], strategies: ['structural'], top_k: 3 }).subscribe();
+
+    const req = httpMock.expectOne(RAG_LAB_BASE);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ queries: ['oauth backend'], strategies: ['structural'], top_k: 3 });
+    req.flush({ stats_per_strategy: {}, queries_per_strategy: {} });
+  });
+
+  it('compareChunking() returns comparison payload', () => {
+    let result: unknown;
+    service.compareChunking({ queries: ['oauth backend'], top_k: 2 }).subscribe(r => (result = r));
+
+    httpMock.expectOne(RAG_LAB_BASE).flush({
+      stats_per_strategy: {
+        structural: {
+          total_chunks: 3,
+          total_tokens: 180,
+          avg_tokens_per_chunk: 60,
+          min_tokens: 40,
+          max_tokens: 80,
+          estimated_cost_usd: 0.000004,
+        },
+      },
+      queries_per_strategy: {
+        structural: [
+          {
+            query: 'oauth backend',
+            results: [
+              {
+                chunk_id: 'BUD-1::AUTH-001',
+                payload: 'OAuth component',
+                similarity: 0.91,
+                metadata: { budget_id: 'BUD-1' },
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    expect((result as { stats_per_strategy: Record<string, { total_chunks: number }> }).stats_per_strategy['structural'].total_chunks).toBe(3);
   });
 });

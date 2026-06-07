@@ -4,6 +4,7 @@
     <span class="spacer"></span>
     <button mat-button type="button" disabled class="menu-disabled" aria-disabled="true">Projects</button>
     <a mat-button routerLink="/estimations" routerLinkActive="active-link">Estimations</a>
+    <a mat-button routerLink="/estimations/rag-lab" routerLinkActive="active-link">RAG Lab</a>
     <a mat-button routerLink="/estimations/settings" routerLinkActive="active-link">Settings</a>
     @if (activeModel()) {
       <span class="model-badge" title="Active primary model">{{ activeModel() }}</span>

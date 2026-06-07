@@ -64,6 +64,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'rag-lab',
+        loadComponent: () =>
+          import('./features/estimations/rag-lab/rag-lab.component').then(
+            m => m.RagLabComponent,
+          ),
+      },
+      {
         path: ':sessionId',
         loadComponent: () =>
           import('./features/estimations/estimation-form/estimation-form.component').then(

@@ -163,6 +163,38 @@ class RuntimeModelsUpdateIn(BaseModel):
     models: dict[str, str | None]
 
 
+class ChunkingComparisonIn(BaseModel):
+    queries: list[str] = Field(default_factory=list)
+    strategies: list[str] | None = None
+    top_k: int = Field(default=3, ge=1, le=10)
+
+
+class ChunkingStrategyStatsOut(BaseModel):
+    total_chunks: int
+    total_tokens: int
+    avg_tokens_per_chunk: float
+    min_tokens: int
+    max_tokens: int
+    estimated_cost_usd: float
+
+
+class ChunkingComparisonHitOut(BaseModel):
+    chunk_id: str
+    payload: str
+    similarity: float
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChunkingComparisonQueryOut(BaseModel):
+    query: str
+    results: list[ChunkingComparisonHitOut] = Field(default_factory=list)
+
+
+class ChunkingComparisonOut(BaseModel):
+    stats_per_strategy: dict[str, ChunkingStrategyStatsOut]
+    queries_per_strategy: dict[str, list[ChunkingComparisonQueryOut]]
+
+
 # ── Callback payload (ai-engine worker → business backend) ────────────────────
 
 

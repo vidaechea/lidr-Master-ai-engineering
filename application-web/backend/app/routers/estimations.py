@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import uuid
 
-from typing import Annotated, TypeAlias
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile, status
 
-from app.dependencies import DbDep, CurrentUser, get_db
+from app.dependencies import DbDep, CurrentUser
 from app.schemas.estimation import (
     AsyncEstimationOut,
     CacheMetricsOut,
+    ChunkingComparisonIn,
+    ChunkingComparisonOut,
     EstimationCreate,
     EstimationListItem,
     EstimationOut,
@@ -20,7 +22,7 @@ from app.schemas.estimation import (
     SessionEstimationOut,
     SessionStateOut,
 )
-from app.services import ai_client, estimation_service
+from app.services import ai_client, estimation_service, rag_lab_service
 
 router = APIRouter(prefix="/estimations", tags=["estimations"])
 
@@ -47,6 +49,22 @@ async def update_runtime_models(body: RuntimeModelsUpdateIn, current_user: Curre
     _ = current_user
     payload = await ai_client.update_runtime_models(body.models)
     return RuntimeModelsOut(**payload)
+
+
+@router.post("/rag/chunking-comparison", response_model=ChunkingComparisonOut)
+async def compare_chunking(body: ChunkingComparisonIn, current_user: CurrentUser):
+    """Run chunking comparison over the bundled sample budgets corpus."""
+    _ = current_user
+    budgets = rag_lab_service.load_sample_budgets()
+    payload = await ai_client.compare_chunking(
+        {
+            "budgets": budgets,
+            "queries": body.queries,
+            "strategies": body.strategies,
+            "top_k": body.top_k,
+        }
+    )
+    return ChunkingComparisonOut(**payload)
 
 
 @router.post("/sessions", response_model=SessionCreateResponse, status_code=status.HTTP_201_CREATED)
