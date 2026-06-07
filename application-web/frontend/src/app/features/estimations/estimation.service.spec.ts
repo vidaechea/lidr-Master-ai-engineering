@@ -15,6 +15,8 @@ const BASE = `${environment.apiUrl}/v1/estimations`;
 const SESSIONS_BASE = `${environment.apiUrl}/v1/estimations/sessions`;
 const CONFIG_BASE = `${environment.apiUrl}/v1/estimations/config/models`;
 const RAG_LAB_BASE = `${environment.apiUrl}/v1/estimations/rag/chunking-comparison`;
+const PUBLIC_SEARCH_BASE = `${environment.apiUrl}/v1/estimations/search`;
+const LEGACY_SEARCH_BASE = `${environment.apiUrl}/v1/estimations/embeddings/search`;
 
 const MOCK_ESTIMATION: EstimationOut = {
   id: 'est-001',
@@ -530,6 +532,66 @@ describe('EstimationService — runtime model config', () => {
       },
       available_models: ['gpt-4o-mini', 'gpt-5.4-mini', 'claude-haiku-4-5-20251001'],
     });
+  });
+});
+
+describe('EstimationService — semantic search contract', () => {
+  const originalFlag = environment.usePublicSearchContract;
+
+  afterEach(() => {
+    environment.usePublicSearchContract = originalFlag;
+  });
+
+  it('searchSemantic() uses legacy route when feature flag is disabled', () => {
+    environment.usePublicSearchContract = false;
+
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    const service = TestBed.inject(EstimationService);
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    service.searchSemantic({ query: 'oauth backend', k: 2 }).subscribe();
+
+    const req = httpMock.expectOne(LEGACY_SEARCH_BASE);
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ query: 'oauth backend', k: 2 });
+    req.flush({ query: 'oauth backend', k: 2, search_time_ms: 4, results: [] });
+    httpMock.verify();
+  });
+
+  it('searchSemantic() uses public route when feature flag is enabled', () => {
+    environment.usePublicSearchContract = true;
+
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    const service = TestBed.inject(EstimationService);
+    const httpMock = TestBed.inject(HttpTestingController);
+
+    let result: unknown;
+    service.searchSemantic({ query: 'oauth backend', k: 2 }).subscribe(r => (result = r));
+
+    const req = httpMock.expectOne(PUBLIC_SEARCH_BASE);
+    expect(req.request.method).toBe('POST');
+    req.flush({
+      query: 'oauth backend',
+      k: 2,
+      search_time_ms: 6,
+      results: [
+        {
+          chunk_id: 156,
+          document_id: 12,
+          chunk_type: 'budget_component',
+          content: 'Backend service implementation with JWT-based authentication...',
+          distance: 0.231,
+          metadata: { scope: 'backend' },
+        },
+      ],
+    });
+
+    expect((result as { results: Array<{ chunk_id: number }> }).results[0].chunk_id).toBe(156);
+    httpMock.verify();
   });
 });
 

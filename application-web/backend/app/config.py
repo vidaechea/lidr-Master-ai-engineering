@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     # ── AI Engine ─────────────────────────────────────────────────────────────
     ai_engine_url: str = "http://localhost:8001"
+    ai_engine_public_search_enabled: bool = False
     # Shared secret with the ai-engine service.
     # Generate: python -c "import secrets; print(secrets.token_hex(32))"
     internal_api_key: Optional[str] = None

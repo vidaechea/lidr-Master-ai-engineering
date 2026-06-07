@@ -275,3 +275,24 @@ async def compare_chunking(request_payload: dict[str, Any]) -> dict[str, Any]:
         json_body=request_payload,
         http_error_event="ai_engine_chunking_compare_http_error",
     )
+
+
+def _semantic_search_path(use_public_contract: bool | None = None) -> str:
+    if use_public_contract is None:
+        use_public_contract = settings.ai_engine_public_search_enabled
+    return "/api/v1/search" if use_public_contract else "/api/v1/embeddings/search"
+
+
+async def search_semantic(
+    request_payload: dict[str, Any],
+    *,
+    use_public_contract: bool | None = None,
+) -> dict[str, Any]:
+    """Call the semantic search contract on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        _semantic_search_path(use_public_contract),
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_search_http_error",
+    )

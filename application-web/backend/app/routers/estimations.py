@@ -16,6 +16,8 @@ from app.schemas.estimation import (
     EstimationListItem,
     EstimationOut,
     OutputFormat,
+    SemanticSearchIn,
+    SemanticSearchOut,
     RuntimeModelsOut,
     RuntimeModelsUpdateIn,
     SessionCreateResponse,
@@ -65,6 +67,22 @@ async def compare_chunking(body: ChunkingComparisonIn, current_user: CurrentUser
         }
     )
     return ChunkingComparisonOut(**payload)
+
+
+@router.post("/search", response_model=SemanticSearchOut)
+async def search_semantic(body: SemanticSearchIn, current_user: CurrentUser):
+    """Proxy semantic search using the feature-flagged public AI Engine contract."""
+    _ = current_user
+    payload = await ai_client.search_semantic(body.model_dump())
+    return SemanticSearchOut(**payload)
+
+
+@router.post("/embeddings/search", response_model=SemanticSearchOut)
+async def search_semantic_legacy(body: SemanticSearchIn, current_user: CurrentUser):
+    """Legacy semantic search route kept for gradual migration of consumers."""
+    _ = current_user
+    payload = await ai_client.search_semantic(body.model_dump(), use_public_contract=False)
+    return SemanticSearchOut(**payload)
 
 
 @router.post("/sessions", response_model=SessionCreateResponse, status_code=status.HTTP_201_CREATED)

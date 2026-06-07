@@ -37,6 +37,7 @@ log = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/embedding-pipeline", tags=["embedding-pipeline"])
 ingest_router = APIRouter(tags=["embeddings"])
+public_search_router = APIRouter(tags=["search"])
 
 
 _AVAILABLE_CHUNKERS = {
@@ -208,15 +209,7 @@ async def ingest(
         raise HTTPException(status_code=500, detail="Internal processing error") from exc
 
 
-@ingest_router.post(
-    "/search",
-    response_model=SearchResponse,
-    responses={
-        400: {"description": "Invalid semantic search query"},
-        500: {"description": "Internal processing error"},
-    },
-)
-async def search(
+async def _execute_semantic_search(
     payload: SearchRequest,
     session: AsyncSession = Depends(get_async_session),
 ) -> SearchResponse:
@@ -273,5 +266,37 @@ async def search(
     except Exception as exc:
         log.error("search_failed", error=str(exc)[:400])
         raise HTTPException(status_code=500, detail="Internal processing error") from exc
+
+
+@ingest_router.post(
+    "/search",
+    response_model=SearchResponse,
+    responses={
+        400: {"description": "Invalid semantic search query"},
+        500: {"description": "Internal processing error"},
+    },
+)
+async def search(
+    payload: SearchRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> SearchResponse:
+    """Compatibility route for semantic nearest-neighbor search."""
+    return await _execute_semantic_search(payload, session)
+
+
+@public_search_router.post(
+    "/search",
+    response_model=SearchResponse,
+    responses={
+        400: {"description": "Invalid semantic search query"},
+        500: {"description": "Internal processing error"},
+    },
+)
+async def public_search(
+    payload: SearchRequest,
+    session: AsyncSession = Depends(get_async_session),
+) -> SearchResponse:
+    """Public semantic search contract matching the dedicated /search endpoint."""
+    return await _execute_semantic_search(payload, session)
 
 

@@ -195,6 +195,27 @@ class ChunkingComparisonOut(BaseModel):
     queries_per_strategy: dict[str, list[ChunkingComparisonQueryOut]]
 
 
+class SemanticSearchIn(BaseModel):
+    query: str = Field(min_length=1)
+    k: int = Field(default=5, ge=1, le=50)
+
+
+class SemanticSearchResultOut(BaseModel):
+    chunk_id: int
+    document_id: int
+    chunk_type: str
+    content: str
+    distance: float
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class SemanticSearchOut(BaseModel):
+    query: str
+    k: int
+    search_time_ms: int
+    results: list[SemanticSearchResultOut] = Field(default_factory=list)
+
+
 # ── Callback payload (ai-engine worker → business backend) ────────────────────
 
 

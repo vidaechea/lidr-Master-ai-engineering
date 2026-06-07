@@ -190,6 +190,27 @@ export interface ChunkingComparisonResponse {
   queries_per_strategy: Record<string, ChunkingComparisonQueryResult[]>;
 }
 
+export interface SemanticSearchRequest {
+  query: string;
+  k?: number;
+}
+
+export interface SemanticSearchHit {
+  chunk_id: number;
+  document_id: number;
+  chunk_type: string;
+  content: string;
+  distance: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface SemanticSearchResponse {
+  query: string;
+  k: number;
+  search_time_ms: number;
+  results: SemanticSearchHit[];
+}
+
 export type IssueSeverity = 'critical' | 'major' | 'minor';
 export type IssueCategory =
   | 'arithmetic_error'
@@ -254,6 +275,9 @@ export class EstimationService {
   private readonly sessionsBase = `${environment.apiUrl}/v1/estimations/sessions`;
   private readonly configBase = `${this.base}/config/models`;
   private readonly ragLabBase = `${this.base}/rag/chunking-comparison`;
+  private readonly semanticSearchBase = environment.usePublicSearchContract
+    ? `${this.base}/search`
+    : `${this.base}/embeddings/search`;
 
   constructor(private readonly http: HttpClient) {}
 
@@ -359,6 +383,10 @@ export class EstimationService {
 
   compareChunking(payload: { queries: string[]; strategies?: string[] | null; top_k: number }) {
     return this.http.post<ChunkingComparisonResponse>(this.ragLabBase, payload);
+  }
+
+  searchSemantic(payload: SemanticSearchRequest) {
+    return this.http.post<SemanticSearchResponse>(this.semanticSearchBase, payload);
   }
 
   listSessions() {

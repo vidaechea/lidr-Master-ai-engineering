@@ -52,3 +52,35 @@ class TestRuntimeModelConfigClient:
         assert payload == {"stats_per_strategy": {}, "queries_per_strategy": {}}
         assert captured["args"] == ("POST", "/api/v1/embeddings/compare")
         assert captured["kwargs"]["json_body"] == {"budgets": [], "queries": [], "top_k": 3}
+
+    async def test_search_semantic_uses_public_path_when_flag_enabled(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, object] = {}
+
+        async def _fake_request(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return {"query": "oauth", "k": 3, "search_time_ms": 5, "results": []}
+
+        monkeypatch.setattr(ai_client, "_request_ai_engine", _fake_request)
+        monkeypatch.setattr(ai_client.settings, "ai_engine_public_search_enabled", True)
+
+        payload = await ai_client.search_semantic({"query": "oauth", "k": 3})
+
+        assert payload["query"] == "oauth"
+        assert captured["args"] == ("POST", "/api/v1/search")
+        assert captured["kwargs"]["json_body"] == {"query": "oauth", "k": 3}
+
+    async def test_search_semantic_can_force_legacy_path(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, object] = {}
+
+        async def _fake_request(*args, **kwargs):
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return {"query": "oauth", "k": 3, "search_time_ms": 5, "results": []}
+
+        monkeypatch.setattr(ai_client, "_request_ai_engine", _fake_request)
+        monkeypatch.setattr(ai_client.settings, "ai_engine_public_search_enabled", True)
+
+        await ai_client.search_semantic({"query": "oauth", "k": 3}, use_public_contract=False)
+
+        assert captured["args"] == ("POST", "/api/v1/embeddings/search")
