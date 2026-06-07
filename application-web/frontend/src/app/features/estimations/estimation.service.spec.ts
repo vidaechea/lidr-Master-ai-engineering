@@ -13,6 +13,7 @@ import { environment } from '../../../environments/environment';
 
 const BASE = `${environment.apiUrl}/v1/estimations`;
 const SESSIONS_BASE = `${environment.apiUrl}/v1/estimations/sessions`;
+const CONFIG_BASE = `${environment.apiUrl}/v1/estimations/config/models`;
 
 const MOCK_ESTIMATION: EstimationOut = {
   id: 'est-001',
@@ -475,5 +476,58 @@ describe('EstimationService — createWithAttachmentsStream()', () => {
     const [, init] = fetchSpy.mock.calls[0];
     const headers = init?.headers as Headers;
     expect(headers.has('Authorization')).toBe(false);
+  });
+});
+
+describe('EstimationService — runtime model config', () => {
+  let service: EstimationService;
+  let httpMock: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(EstimationService);
+    httpMock = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => httpMock.verify());
+
+  it('getRuntimeModels() sends GET to /v1/estimations/config/models', () => {
+    service.getRuntimeModels().subscribe();
+
+    const req = httpMock.expectOne(CONFIG_BASE);
+    expect(req.request.method).toBe('GET');
+    req.flush({
+      models: {
+        LLM_MODEL: { effective: 'gpt-4o-mini', default: 'gpt-4o-mini', overridden: false },
+        LLM_FALLBACK: {
+          effective: 'claude-haiku-4-5-20251001',
+          default: 'claude-haiku-4-5-20251001',
+          overridden: false,
+        },
+      },
+      available_models: ['gpt-4o-mini', 'claude-haiku-4-5-20251001'],
+    });
+  });
+
+  it('updateRuntimeModels() sends PUT with models payload', () => {
+    const changes = { LLM_MODEL: 'gpt-5.4-mini', LLM_FALLBACK: null };
+    service.updateRuntimeModels(changes).subscribe();
+
+    const req = httpMock.expectOne(CONFIG_BASE);
+    expect(req.request.method).toBe('PUT');
+    expect(req.request.body).toEqual({ models: changes });
+    req.flush({
+      models: {
+        LLM_MODEL: { effective: 'gpt-5.4-mini', default: 'gpt-4o-mini', overridden: true },
+        LLM_FALLBACK: {
+          effective: 'claude-haiku-4-5-20251001',
+          default: 'claude-haiku-4-5-20251001',
+          overridden: false,
+        },
+      },
+      available_models: ['gpt-4o-mini', 'gpt-5.4-mini', 'claude-haiku-4-5-20251001'],
+    });
   });
 });

@@ -14,6 +14,8 @@ from app.schemas.estimation import (
     EstimationListItem,
     EstimationOut,
     OutputFormat,
+    RuntimeModelsOut,
+    RuntimeModelsUpdateIn,
     SessionCreateResponse,
     SessionEstimationOut,
     SessionStateOut,
@@ -29,6 +31,22 @@ async def get_cache_metrics(current_user: CurrentUser):
     _ = current_user
     payload = await ai_client.get_cache_metrics()
     return CacheMetricsOut(**payload)
+
+
+@router.get("/config/models", response_model=RuntimeModelsOut)
+async def get_runtime_models(current_user: CurrentUser):
+    """Return current runtime model configuration from the AI engine."""
+    _ = current_user
+    payload = await ai_client.get_runtime_models()
+    return RuntimeModelsOut(**payload)
+
+
+@router.put("/config/models", response_model=RuntimeModelsOut)
+async def update_runtime_models(body: RuntimeModelsUpdateIn, current_user: CurrentUser):
+    """Update runtime model overrides in the AI engine."""
+    _ = current_user
+    payload = await ai_client.update_runtime_models(body.models)
+    return RuntimeModelsOut(**payload)
 
 
 @router.post("/sessions", response_model=SessionCreateResponse, status_code=status.HTTP_201_CREATED)

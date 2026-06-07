@@ -148,6 +148,21 @@ class CacheMetricsOut(BaseModel):
     stale_rate_pct: float
 
 
+class RuntimeModelItem(BaseModel):
+    effective: str
+    default: str
+    overridden: bool
+
+
+class RuntimeModelsOut(BaseModel):
+    models: dict[str, RuntimeModelItem]
+    available_models: list[str]
+
+
+class RuntimeModelsUpdateIn(BaseModel):
+    models: dict[str, str | None]
+
+
 # ── Callback payload (ai-engine worker → business backend) ────────────────────
 
 

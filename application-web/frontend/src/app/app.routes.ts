@@ -57,6 +57,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/estimations/model-settings/model-settings.component').then(
+            m => m.ModelSettingsComponent,
+          ),
+      },
+      {
         path: ':sessionId',
         loadComponent: () =>
           import('./features/estimations/estimation-form/estimation-form.component').then(

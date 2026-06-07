@@ -153,6 +153,17 @@ export interface CacheMetrics {
   stale_rate_pct: number;
 }
 
+export interface RuntimeModelItem {
+  effective: string;
+  default: string;
+  overridden: boolean;
+}
+
+export interface RuntimeModelsResponse {
+  models: Record<string, RuntimeModelItem>;
+  available_models: string[];
+}
+
 export type IssueSeverity = 'critical' | 'major' | 'minor';
 export type IssueCategory =
   | 'arithmetic_error'
@@ -215,6 +226,7 @@ export interface EstimationCreate {
 export class EstimationService {
   private readonly base = `${environment.apiUrl}/v1/estimations`;
   private readonly sessionsBase = `${environment.apiUrl}/v1/estimations/sessions`;
+  private readonly configBase = `${this.base}/config/models`;
 
   constructor(private readonly http: HttpClient) {}
 
@@ -308,6 +320,14 @@ export class EstimationService {
 
   getCacheMetrics() {
     return this.http.get<CacheMetrics>(`${this.base}/cache/metrics`);
+  }
+
+  getRuntimeModels() {
+    return this.http.get<RuntimeModelsResponse>(this.configBase);
+  }
+
+  updateRuntimeModels(changes: Record<string, string | null>) {
+    return this.http.put<RuntimeModelsResponse>(this.configBase, { models: changes });
   }
 
   listSessions() {

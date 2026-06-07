@@ -243,3 +243,24 @@ async def get_cache_metrics() -> dict[str, Any]:
         http_error_event="ai_engine_cache_metrics_http_error",
         http_error_strategy=_cache_metrics_http_error_strategy,
     )
+
+
+async def get_runtime_models() -> dict[str, Any]:
+    """Call ``GET /api/v1/config/models`` on the AI Engine."""
+    return await _request_ai_engine(
+        "GET",
+        "/api/v1/config/models",
+        request_timeout=30.0,
+        http_error_event="ai_engine_runtime_models_http_error",
+    )
+
+
+async def update_runtime_models(changes: dict[str, str | None]) -> dict[str, Any]:
+    """Call ``PUT /api/v1/config/models`` on the AI Engine."""
+    return await _request_ai_engine(
+        "PUT",
+        "/api/v1/config/models",
+        request_timeout=30.0,
+        json_body={"models": changes},
+        http_error_event="ai_engine_runtime_models_update_http_error",
+    )
