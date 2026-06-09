@@ -59,6 +59,8 @@ _AVAILABLE_CHUNKERS = {
     "hierarchical": HierarchicalBudgetChunker,
 }
 
+_INTERNAL_ERROR_MSG = "Internal processing error"
+
 
 @router.post("/chunks", responses={400: {"description": "Invalid chunk parameters"}})
 def build_chunks(payload: ChunkRequest) -> ChunkResponse:
@@ -74,7 +76,7 @@ def build_chunks(payload: ChunkRequest) -> ChunkResponse:
     return ChunkResponse(chunks=[ChunkItem(index=i, text=chunk) for i, chunk in enumerate(chunks)])
 
 
-@router.post("/embeddings", responses={400: {"description": "Invalid embedding parameters"}, 500: {"description": "Internal processing error"}})
+@router.post("/embeddings", responses={400: {"description": "Invalid embedding parameters"}, 500: {"description": _INTERNAL_ERROR_MSG}})
 def build_embeddings(payload: EmbedRequest) -> EmbedResponse:
     texts = [item.strip() for item in payload.texts if item and item.strip()]
     if not texts:
@@ -86,7 +88,7 @@ def build_embeddings(payload: EmbedRequest) -> EmbedResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         log.error("embedding_generation_failed", error=str(exc)[:400], model=payload.model)
-        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR_MSG) from exc
 
     items = [EmbeddingItem(index=i, vector=vector) for i, vector in enumerate(vectors)]
     return EmbedResponse(model=payload.model, embeddings=items)
@@ -95,7 +97,7 @@ def build_embeddings(payload: EmbedRequest) -> EmbedResponse:
 @ingest_router.post(
     "/compare",
     response_model=CompareResponse,
-    responses={400: {"description": "Unknown strategy"}, 500: {"description": "Internal processing error"}},
+    responses={400: {"description": "Unknown strategy"}, 500: {"description": _INTERNAL_ERROR_MSG}},
 )
 def compare_chunking(payload: CompareRequest) -> CompareResponse:
     strategy_names = payload.strategies or list(DEFAULT_STRATEGIES)
@@ -115,7 +117,7 @@ def compare_chunking(payload: CompareRequest) -> CompareResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         log.error("chunking_compare_failed", error=str(exc)[:400])
-        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR_MSG) from exc
 
 
 # ============================================================================
@@ -131,7 +133,7 @@ def compare_chunking(payload: CompareRequest) -> CompareResponse:
         409: {"description": "Document already ingested"},
         400: {"description": "Validation error in chunker or embedder"},
         422: {"description": "Validation error in request schema"},
-        500: {"description": "Internal processing error (e.g., OpenAI API failure)"},
+        500: {"description": f"{_INTERNAL_ERROR_MSG} (e.g., OpenAI API failure)"},
     },
 )
 async def ingest(
@@ -220,7 +222,7 @@ async def ingest(
     except Exception as exc:
         # OpenAI API errors, network issues, etc. — generic message to client
         log.error("ingest_failed", error=str(exc)[:400])
-        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR_MSG) from exc
 
 
 async def _execute_semantic_search(
@@ -279,7 +281,7 @@ async def _execute_semantic_search(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         log.error("search_failed", error=str(exc)[:400])
-        raise HTTPException(status_code=500, detail="Internal processing error") from exc
+        raise HTTPException(status_code=500, detail=_INTERNAL_ERROR_MSG) from exc
 
 
 @ingest_router.post(
@@ -287,7 +289,7 @@ async def _execute_semantic_search(
     response_model=SearchResponse,
     responses={
         400: {"description": "Invalid semantic search query"},
-        500: {"description": "Internal processing error"},
+        500: {"description": _INTERNAL_ERROR_MSG},
     },
 )
 async def search(
@@ -303,7 +305,7 @@ async def search(
     response_model=SearchResponse,
     responses={
         400: {"description": "Invalid semantic search query"},
-        500: {"description": "Internal processing error"},
+        500: {"description": _INTERNAL_ERROR_MSG},
     },
 )
 async def public_search(
