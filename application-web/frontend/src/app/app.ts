@@ -25,7 +25,7 @@ export class App {
     }
     this.estimationService.getRuntimeModels().subscribe({
       next: payload => {
-        this.activeModel.set(payload.models?.LLM_MODEL?.effective ?? null);
+        this.activeModel.set(payload.models?.['LLM_MODEL']?.effective ?? null);
       },
       error: () => {
         this.activeModel.set(null);

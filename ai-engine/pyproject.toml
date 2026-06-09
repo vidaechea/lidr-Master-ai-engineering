@@ -5,6 +5,7 @@ description = "Cost estimation service for CAG workflows"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiosqlite>=0.20.0",
     "anthropic>=0.97.0",
     "alembic>=1.13",
     "arq>=0.25.0",

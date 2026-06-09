@@ -8,7 +8,16 @@ from app.generation.rag.schemas import CompareHit, CompareQueryResult, StrategyS
 from app.generation.rag.analysis.similarity import cosine_similarity
 
 
-DEFAULT_STRATEGIES: tuple[str, ...] = ("structural", "fixed_size")
+DEFAULT_STRATEGIES: tuple[str, ...] = (
+    "structural",
+    "fixed_size",
+    "recursive",
+    "sentence_window",
+    "semantic",
+    "propositional",
+    "contextual_retrieval",
+    "hierarchical",
+)
 
 
 @dataclass(frozen=True)

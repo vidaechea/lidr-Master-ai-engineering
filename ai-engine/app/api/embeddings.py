@@ -11,6 +11,14 @@ from sqlalchemy.sql import Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.generation.rag.analysis.comparison import ChunkingComparator, DEFAULT_STRATEGIES
+from app.generation.rag.chunking.strategies.advanced import (
+    ContextualRetrievalBudgetChunker,
+    HierarchicalBudgetChunker,
+    PropositionalBudgetChunker,
+    RecursiveBudgetChunker,
+    SemanticBudgetChunker,
+    SentenceWindowBudgetChunker,
+)
 from app.generation.rag.chunking.strategies.fixed_size import FixedSizeBudgetChunker
 from app.generation.rag.chunking.structural import JSONStructuralChunker, chunk_text
 from app.generation.rag.embedding.embedder import EMBEDDING_DIMENSION, EMBEDDING_MODEL, embed_texts
@@ -43,6 +51,12 @@ public_search_router = APIRouter(tags=["search"])
 _AVAILABLE_CHUNKERS = {
     "structural": JSONStructuralChunker,
     "fixed_size": FixedSizeBudgetChunker,
+    "recursive": RecursiveBudgetChunker,
+    "sentence_window": SentenceWindowBudgetChunker,
+    "semantic": SemanticBudgetChunker,
+    "propositional": PropositionalBudgetChunker,
+    "contextual_retrieval": ContextualRetrievalBudgetChunker,
+    "hierarchical": HierarchicalBudgetChunker,
 }
 
 

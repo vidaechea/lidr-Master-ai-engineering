@@ -8,7 +8,20 @@ import {
   EstimationService,
 } from '../estimation.service';
 
-type StrategyName = 'structural' | 'fixed_size';
+type StrategyName =
+  | 'structural'
+  | 'fixed_size'
+  | 'recursive'
+  | 'sentence_window'
+  | 'semantic'
+  | 'propositional'
+  | 'contextual_retrieval'
+  | 'hierarchical';
+
+interface StrategyOption {
+  key: StrategyName;
+  label: string;
+}
 
 @Component({
   selector: 'app-rag-lab',
@@ -31,13 +44,13 @@ type StrategyName = 'structural' | 'fixed_size';
         <input class="topk-input" type="number" min="1" max="10" [(ngModel)]="topK" />
 
         <div class="strategy-grid">
-          @for (strategy of strategies; track strategy) {
+          @for (strategy of strategies; track strategy.key) {
             <label class="checkbox-row">
               <input
                 type="checkbox"
-                [checked]="selectedStrategies().includes(strategy)"
-                (change)="toggleStrategy(strategy, $any($event.target).checked)" />
-              <span>{{ strategy }}</span>
+                [checked]="selectedStrategies().includes(strategy.key)"
+                (change)="toggleStrategy(strategy.key, $any($event.target).checked)" />
+              <span>{{ strategy.label }}</span>
             </label>
           }
         </div>
@@ -106,8 +119,17 @@ type StrategyName = 'structural' | 'fixed_size';
   `],
 })
 export class RagLabComponent {
-  strategies: StrategyName[] = ['structural', 'fixed_size'];
-  selectedStrategies = signal<StrategyName[]>(['structural', 'fixed_size']);
+  strategies: StrategyOption[] = [
+    { key: 'structural', label: 'Structural' },
+    { key: 'fixed_size', label: 'Fixed Size' },
+    { key: 'recursive', label: 'Recursive' },
+    { key: 'sentence_window', label: 'Sentence Window' },
+    { key: 'semantic', label: 'Semantic' },
+    { key: 'propositional', label: 'Propositional' },
+    { key: 'contextual_retrieval', label: 'Contextual Retrieval' },
+    { key: 'hierarchical', label: 'Hierarchical' },
+  ];
+  selectedStrategies = signal<StrategyName[]>(this.strategies.map(strategy => strategy.key));
   loading = signal(false);
   error = signal<string | null>(null);
   result = signal<ChunkingComparisonResponse | null>(null);

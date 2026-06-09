@@ -3,11 +3,36 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
-from sqlalchemy.dialects.postgresql import JSONB, UUID
-from pgvector.sqlalchemy import Vector
+from sqlalchemy import BigInteger, Float, ForeignKey, Index, Integer, JSON, String, Text, UniqueConstraint, func, text
+from sqlalchemy.sql import operators
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.types import DateTime
+from sqlalchemy.types import DateTime, TypeDecorator, Text as _Text, Uuid
+
+
+class _VectorType(TypeDecorator):
+    """Uses pgvector Vector on PostgreSQL; falls back to Text on other dialects (e.g. SQLite for tests)."""
+
+    impl = _Text
+    cache_ok = True
+
+    def __init__(self, dim: int) -> None:
+        self.dim = dim
+        super().__init__()
+
+    class Comparator(TypeDecorator.Comparator):
+        """Expose cosine_distance so statement construction works on all dialects."""
+
+        def cosine_distance(self, other):
+            return self.operate(operators.custom_op("<=>"), other, result_type=Float())
+
+    comparator_factory = Comparator
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from pgvector.sqlalchemy import Vector
+
+            return dialect.type_descriptor(Vector(self.dim))
+        return dialect.type_descriptor(_Text())
 
 
 class Base(DeclarativeBase):
@@ -35,7 +60,7 @@ class IngestionJobRow(Base):
     __table_args__ = (Index("idx_jobs_status", "status"),)
 
     job_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+        Uuid(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     source_name: Mapped[str] = mapped_column(String(128), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
@@ -63,9 +88,9 @@ class DocumentRow(Base):
     )
     metadata_json: Mapped[dict] = mapped_column(
         "metadata",
-        JSONB,
+        JSON,
         nullable=False,
-        server_default=func.cast("{}", JSONB),
+        server_default=text("'{}'"),
     )
 
 
@@ -85,12 +110,12 @@ class ChunkRow(Base):
     )
     chunk_type: Mapped[str] = mapped_column(String(50), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    embedding: Mapped[list[float] | None] = mapped_column(_VectorType(1536), nullable=True)
     metadata_json: Mapped[dict] = mapped_column(
         "metadata",
-        JSONB,
+        JSON,
         nullable=False,
-        server_default=func.cast("{}", JSONB),
+        server_default=text("'{}'"),
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

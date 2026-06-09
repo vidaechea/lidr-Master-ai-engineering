@@ -19,12 +19,16 @@ def _to_sync_database_url(database_url: str) -> str:
     # ai-engine uses a synchronous SQLAlchemy engine in this module.
     if database_url.startswith("postgresql+asyncpg://"):
         return database_url.replace("postgresql+asyncpg://", "postgresql+psycopg://", 1)
+    if database_url.startswith("sqlite+aiosqlite://"):
+        return database_url.replace("sqlite+aiosqlite://", "sqlite+pysqlite://", 1)
     return database_url
 
 
 def _to_async_database_url(database_url: str) -> str:
     if database_url.startswith("postgresql+psycopg://"):
         return database_url.replace("postgresql+psycopg://", "postgresql+asyncpg://", 1)
+    if database_url.startswith("sqlite+pysqlite://"):
+        return database_url.replace("sqlite+pysqlite://", "sqlite+aiosqlite://", 1)
     return database_url
 
 

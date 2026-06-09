@@ -105,6 +105,12 @@ _TECHNOLOGIES: frozenset[str] = frozenset(
         "kafka",
         "rabbitmq",
         "stripe",
+        # Auth standards
+        "jwt",
+        # Data formats
+        "csv",
+        # Features tracked as tech keywords
+        "audit",
     }
 )
 

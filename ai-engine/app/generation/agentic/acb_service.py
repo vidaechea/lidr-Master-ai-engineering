@@ -168,10 +168,12 @@ class ActorCriticBossService:
             user_prompt += (
                 f"\n\n---\n**Correction instructions (iteration {iteration}):**\n"
                 f"{state.iteration_instructions}\n\n"
-                "**Critic issues to resolve (mandatory):**\n"
+                "**Critic issues to resolve (each must be visibly addressed in the output):**\n"
                 f"{critic_issues_text or '- No explicit issues provided by critic.'}\n\n"
-                "Prioritize critical and major issues first and ensure the revised estimate "
-                "remains internally consistent (totals, phases, and risks).\n\n"
+                "For each critical or major issue above:\n"
+                "  • Directly fix the affected section — the correction must be observable in the revised text.\n"
+                "  • Do NOT omit any existing section unless explicitly instructed to do so.\n"
+                "Maintain internal consistency: totals, phases, and risks must align after your changes.\n\n"
                 f"**Previous estimate to revise:**\n{state.candidate_text}\n---"
             )
         observable_resp = await litellm_service.complete(

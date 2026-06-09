@@ -90,10 +90,13 @@ class FactTracker:
     def _match(actual: Any, expected: Any) -> bool:
         """Check if actual matches expected (handles strings, lists, etc.)."""
         if isinstance(expected, list):
-            # For lists, check containment (e.g., technologies must include all expected)
+            # For lists, check containment with case-insensitive comparison.
+            # MetadataExtractor stores technologies in lowercase from the allow-list,
+            # so facts defined with proper casing (e.g. "React") must still match.
             if not isinstance(actual, list):
                 return False
-            return all(item in actual for item in expected)
+            actual_lower = [str(a).lower() for a in actual]
+            return all(str(item).lower() in actual_lower for item in expected)
         elif isinstance(expected, str):
             # For strings, check substring containment
             if not isinstance(actual, str):
