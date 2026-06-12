@@ -10,7 +10,7 @@ import pytest
 from jose import jwt
 
 from app.dependencies import get_request_tier
-from app.schemas.estimation import UserTier
+from app.domain.schemas.estimation import UserTier
 
 # Shared secret for test tokens — must match what settings.secret_key provides
 _SECRET = "test-secret"
@@ -86,9 +86,10 @@ class TestGetRequestTier:
 
     def test_estimation_request_has_no_tier_field(self):
         """EstimationRequest must not expose a tier field — prevents client injection."""
-        from app.schemas.estimation import EstimationRequest
+        from app.domain.schemas.estimation import EstimationRequest
         fields = EstimationRequest.model_fields
         assert "tier" not in fields, (
             "EstimationRequest must NOT contain a 'tier' field. "
             "Tier must come exclusively from the JWT claim."
         )
+

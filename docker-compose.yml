@@ -4,7 +4,7 @@ services:
   # Infrastructure
   # ─────────────────────────────────────────────────────────────────────────
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-estimator}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-estimator_dev}
@@ -14,7 +14,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-estimator}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-estimator} -d ${POSTGRES_DB:-estimator}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -34,6 +34,43 @@ services:
     restart: unless-stopped
 
   # ─────────────────────────────────────────────────────────────────────────
+  # One-shot init — creates the langfuse DB inside postgres if absent.
+  # Works on both fresh and existing postgres volumes.
+  # ─────────────────────────────────────────────────────────────────────────
+  db-init:
+    image: pgvector/pgvector:pg16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-estimator_dev}
+    command: >
+      sh -c "psql -h postgres -U ${POSTGRES_USER:-estimator}
+      -d ${POSTGRES_DB:-estimator}
+      -c 'CREATE DATABASE langfuse'
+      || echo 'langfuse database already exists — skipping'"
+    restart: "no"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Observability  (LLM tracing, cost, latency — http://localhost:3000)
+  # ─────────────────────────────────────────────────────────────────────────
+  langfuse:
+    image: langfuse/langfuse:2
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-estimator}:${POSTGRES_PASSWORD:-estimator_dev}@postgres:5432/langfuse"
+      NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${LANGFUSE_SECRET:-langfuse_secret_dev_change_me}
+      SALT: ${LANGFUSE_SALT:-langfuse_salt_dev_change_me}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────────────
   # AI Engine  (ai-engine — internal, not exposed publicly)
   # ─────────────────────────────────────────────────────────────────────────
   ai-engine:
@@ -50,11 +87,14 @@ services:
     environment:
       UVICORN_HOST: "0.0.0.0"
       UVICORN_PORT: "8001"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-estimator}:${POSTGRES_PASSWORD:-estimator_dev}@postgres:5432/${POSTGRES_DB:-estimator}"
       REDIS_URL: "redis://redis:6379"
       CACHE_ENABLED: ${CACHE_ENABLED:-true}
       SEMANTIC_CACHE_ENABLED: ${SEMANTIC_CACHE_ENABLED:-false}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -63,18 +103,21 @@ services:
     build:
       context: ./ai-engine
       dockerfile: Dockerfile
-    command: python -m arq app.worker.WorkerSettings
+    command: arq app.worker.WorkerSettings
     env_file:
       - path: ./.env
         required: false
       - path: ./ai-engine/.env
         required: false
     environment:
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER:-estimator}:${POSTGRES_PASSWORD:-estimator_dev}@postgres:5432/${POSTGRES_DB:-estimator}"
       REDIS_URL: "redis://redis:6379"
       CACHE_ENABLED: ${CACHE_ENABLED:-true}
       SEMANTIC_CACHE_ENABLED: ${SEMANTIC_CACHE_ENABLED:-false}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -84,7 +127,7 @@ services:
   # ─────────────────────────────────────────────────────────────────────────
   backend:
     build:
-      context: ./backend
+      context: ./application-web/backend
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
@@ -112,7 +155,7 @@ services:
   # ─────────────────────────────────────────────────────────────────────────
   frontend:
     build:
-      context: ./frontend
+      context: ./application-web/frontend
       dockerfile: Dockerfile
     ports:
       - "4200:80"

@@ -14,10 +14,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.guardrails.input import InputGuardrailViolation
-from app.schemas.estimation import EstimationRequest
-from app.schemas.llm import LLMObservableResponse, LLMUsage
-from app.services.estimation_service import EstimationService
+from app.foundation.guardrails.input import InputGuardrailViolation
+from app.domain.schemas.estimation import EstimationRequest
+from app.domain.schemas.llm import LLMObservableResponse, LLMUsage
+from app.domain.estimation_service import EstimationService
 
 # Minimum-valid transcription (>= 50 chars)
 VALID_TRANSCRIPTION = "Build a web SaaS platform with user authentication and a reporting dashboard."
@@ -48,7 +48,7 @@ class TestEstimateGuardrails:
     async def test_violation_propagates(self):
         violation = InputGuardrailViolation("Email detected.", reason="pii")
         with patch(
-            "app.services.estimation_service.check_input",
+            "app.domain.estimation_service.check_input",
             side_effect=violation,
         ):
             svc = EstimationService()
@@ -60,12 +60,12 @@ class TestEstimateGuardrails:
         mock_check = MagicMock()
         mock_resp = _make_litellm_response()
         with (
-            patch("app.services.estimation_service.check_input", mock_check),
+            patch("app.domain.estimation_service.check_input", mock_check),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=mock_resp),
             ),
-            patch("app.services.estimation_service._get_moderation_client", return_value=None),
+            patch("app.domain.estimation_service._get_moderation_client", return_value=None),
         ):
             svc = EstimationService()
             await svc.estimate(_ESTIMATION_REQUEST)
@@ -77,9 +77,9 @@ class TestEstimateGuardrails:
     async def test_llm_not_called_when_guardrail_raises(self):
         violation = InputGuardrailViolation("Injection detected.", reason="prompt_injection")
         with (
-            patch("app.services.estimation_service.check_input", side_effect=violation),
+            patch("app.domain.estimation_service.check_input", side_effect=violation),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
             ) as mock_complete,
         ):
             svc = EstimationService()
@@ -97,7 +97,7 @@ class TestEstimateStreamGuardrails:
     async def test_violation_propagates(self):
         violation = InputGuardrailViolation("PII detected.", reason="pii")
         with patch(
-            "app.services.estimation_service.check_input",
+            "app.domain.estimation_service.check_input",
             side_effect=violation,
         ):
             svc = EstimationService()
@@ -115,12 +115,12 @@ class TestEstimateStreamGuardrails:
             yield " text"
 
         with (
-            patch("app.services.estimation_service.check_input", mock_check),
+            patch("app.domain.estimation_service.check_input", mock_check),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.stream",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.stream",
                 new=_fake_stream,
             ),
-            patch("app.services.estimation_service._get_moderation_client", return_value=None),
+            patch("app.domain.estimation_service._get_moderation_client", return_value=None),
         ):
             svc = EstimationService()
             async for _ in svc.estimate_stream(_ESTIMATION_REQUEST):
@@ -139,7 +139,7 @@ class TestEstimateStructuredGuardrails:
     async def test_violation_propagates(self):
         violation = InputGuardrailViolation("Moderation flagged.", reason="moderation")
         with patch(
-            "app.services.estimation_service.check_input",
+            "app.domain.estimation_service.check_input",
             side_effect=violation,
         ):
             svc = EstimationService()
@@ -148,7 +148,7 @@ class TestEstimateStructuredGuardrails:
         assert exc_info.value.reason == "moderation"
 
     async def test_check_input_called_with_transcription(self):
-        from app.schemas.estimation import EstimationResult
+        from app.domain.schemas.estimation import EstimationResult
 
         mock_check = MagicMock()
         fake_result = MagicMock(spec=EstimationResult)
@@ -172,12 +172,12 @@ class TestEstimateStructuredGuardrails:
         )
 
         with (
-            patch("app.services.estimation_service.check_input", mock_check),
+            patch("app.domain.estimation_service.check_input", mock_check),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(return_value=(fake_result, fake_completion)),
             ),
-            patch("app.services.estimation_service._get_moderation_client", return_value=None),
+            patch("app.domain.estimation_service._get_moderation_client", return_value=None),
         ):
             svc = EstimationService()
             await svc.estimate_structured(_ESTIMATION_REQUEST)
@@ -185,3 +185,6 @@ class TestEstimateStructuredGuardrails:
         mock_check.assert_called_once()
         args, _ = mock_check.call_args
         assert args[0] == VALID_TRANSCRIPTION
+
+
+

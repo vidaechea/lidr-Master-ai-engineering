@@ -1,7 +1,7 @@
 import pytest
 
-from app.schemas.estimation import ExampleFormat
-from app.schemas.estimation import OutputFormat
+from app.domain.schemas.estimation import ExampleFormat
+from app.domain.schemas.estimation import OutputFormat
 
 
 class TestOutputFormatEnum:
@@ -44,3 +44,4 @@ class TestExampleFormatEnum:
 
     def test_narrative_value(self):
         assert ExampleFormat.NARRATIVE.value == "narrative"
+

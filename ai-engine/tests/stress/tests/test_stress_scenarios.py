@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.slow, pytest.mark.llm_live]
 @pytest.fixture
 def reset_session_store():
     """Clear the in-memory store before/after to prevent state leakage."""
-    from app.services import sessions as sessions_module
+    from app.generation.conversation import sessions as sessions_module
     sessions_module.store._sessions.clear()
     yield
     sessions_module.store._sessions.clear()

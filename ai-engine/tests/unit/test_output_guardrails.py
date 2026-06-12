@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.guardrails.ouput import enforce_scope_response
-from app.schemas.estimation import (
+from app.foundation.guardrails.ouput import enforce_scope_response
+from app.domain.schemas.estimation import (
     LOW_CONFIDENCE_THRESHOLD,
     OUT_OF_SCOPE_PREFIX,
     EstimationResult,
@@ -139,3 +139,4 @@ class TestRewrite:
         result = _result(confidence_pct=5, summary=long_summary)
         out = enforce_scope_response(result)
         assert len(out.summary) <= 1200
+

@@ -250,11 +250,11 @@ Recommended commands to validate the environment in a new Codespace:
 
 ```bash
 # Frontend (Angular + Vitest + Playwright)
-cd frontend
+cd application-web/frontend
 npm test -- --watch=false --browsers=chromium
 
 # Backend (FastAPI)
-cd ../backend
+cd ../../application-web/backend
 uv run pytest tests/ -v
 
 # AI Engine (FastAPI + LiteLLM)
@@ -267,7 +267,7 @@ uv run pytest tests/ -v
 If frontend tests fail with Playwright/Chromium errors (e.g., `libatk-1.0.so.0: cannot open shared object file`):
 
 ```bash
-cd frontend
+cd application-web/frontend
 npx playwright install-deps chromium
 npx playwright install chromium
 npm test -- --watch=false --browsers=chromium
@@ -333,7 +333,7 @@ If you need to preserve data, change the Postgres user password inside Postgres 
 docker compose exec backend alembic upgrade head
 
 # Option 2: locally (outside Docker)
-cd backend
+cd application-web/backend
 uv run alembic upgrade head
 ```
 
@@ -344,7 +344,7 @@ uv run alembic upgrade head
 docker compose exec backend alembic revision --autogenerate -m "description_of_change"
 
 # Option 2: locally (outside Docker)
-cd backend
+cd application-web/backend
 uv run alembic revision --autogenerate -m "description_of_change"
 ```
 
@@ -378,7 +378,7 @@ docker compose up --build frontend
 ### Backend
 
 ```bash
-cd backend
+cd application-web/backend
 uv run pytest tests/ -v
 ```
 

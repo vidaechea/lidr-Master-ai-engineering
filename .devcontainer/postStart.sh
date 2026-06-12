@@ -27,15 +27,15 @@ sync_python_project() {
 }
 
 ensure_frontend_dependencies() {
-  if [[ ! -f frontend/package-lock.json ]]; then
+  if [[ ! -f application-web/frontend/package-lock.json ]]; then
     return
   fi
 
   echo "[devcontainer] Checking frontend dependencies..."
-  pushd frontend >/dev/null
+  pushd application-web/frontend >/dev/null
 
   if [[ ! -x node_modules/.bin/ng ]]; then
-    echo "[devcontainer] frontend/node_modules missing or incomplete; running npm ci..."
+    echo "[devcontainer] application-web/frontend/node_modules missing or incomplete; running npm ci..."
     npm ci
   else
     echo "[devcontainer] frontend dependencies already installed."
@@ -45,7 +45,7 @@ ensure_frontend_dependencies() {
 }
 
 ensure_uv
-sync_python_project backend "backend"
+sync_python_project application-web/backend "backend"
 sync_python_project ai-engine "ai-engine"
 ensure_frontend_dependencies
 

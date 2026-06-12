@@ -12,7 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.guardrails.input import (
+from app.foundation.guardrails.input import (
     InputGuardrailViolation,
     check_input,
     _check_pii,
@@ -198,3 +198,4 @@ class TestInputGuardrailViolation:
         for reason in ("moderation", "prompt_injection", "pii"):
             exc = InputGuardrailViolation("x", reason=reason)  # type: ignore[arg-type]
             assert exc.reason == reason
+

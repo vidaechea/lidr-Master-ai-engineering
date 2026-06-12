@@ -2,9 +2,9 @@ from pathlib import Path
 
 import pytest
 
-from app.schemas.estimation import EstimationRequest, _load_example_transcription
+from app.domain.schemas.estimation import EstimationRequest, _load_example_transcription
 
-_FIXTURES_DIR = Path(__file__).parent.parent.parent / "app" / "fixtures"
+_FIXTURES_DIR = Path(__file__).parent.parent.parent / "app" / "foundation" / "fixtures"
 
 
 class TestLoadExampleTranscription:
@@ -63,3 +63,4 @@ class TestEstimationRequestSwaggerExample:
         example_model = self._get_example().get("model")
         assert example_model is not None
         assert example_model in valid_models
+

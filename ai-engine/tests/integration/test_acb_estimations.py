@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.schemas.estimation import (
+from app.domain.schemas.estimation import (
     BossAction,
     BossDecision,
     CriticFeedback,
@@ -17,7 +17,7 @@ from app.schemas.estimation import (
     IssueCategory,
     IssueSeverity,
 )
-from app.schemas.llm import LLMObservableResponse, LLMUsage
+from app.domain.schemas.llm import LLMObservableResponse, LLMUsage
 
 VALID_TRANSCRIPTION = (
     "Build a multi-tenant SaaS billing platform with Stripe integration, "
@@ -90,14 +90,14 @@ def _patch_acb(
         (_accept_decision(), completion),
     ]
 
-    ctx_check = patch("app.services.acb_service.check_input")
-    ctx_moderation = patch("app.services.acb_service._get_moderation_client", return_value=None)
+    ctx_check = patch("app.generation.agentic.acb_service.check_input")
+    ctx_moderation = patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None)
     ctx_complete = patch(
-        "app.services.litellm_service.LiteLLMRouterService.complete",
+        "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
         AsyncMock(return_value=actor_response),
     )
     ctx_structured = patch(
-        "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+        "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
         AsyncMock(side_effect=critic_boss_side_effect),
     )
     return ctx_check, ctx_moderation, ctx_complete, ctx_structured
@@ -181,10 +181,10 @@ class TestAcbEstimationValidation:
 # --------------------------------------------------------------------------- #
 class TestAcbEstimationGuardrails:
     def test_pii_email_returns_422(self, client: TestClient):
-        from app.guardrails.input import InputGuardrailViolation
+        from app.foundation.guardrails.input import InputGuardrailViolation
 
         with patch(
-            "app.services.acb_service.check_input",
+            "app.generation.agentic.acb_service.check_input",
             side_effect=InputGuardrailViolation("PII detected.", reason="pii"),
         ):
             response = client.post("/api/v1/estimate/acb", json=VALID_PAYLOAD)
@@ -193,12 +193,14 @@ class TestAcbEstimationGuardrails:
         assert response.json()["detail"]["reason"] == "pii"
 
     def test_prompt_injection_returns_422(self, client: TestClient):
-        from app.guardrails.input import InputGuardrailViolation
+        from app.foundation.guardrails.input import InputGuardrailViolation
 
         with patch(
-            "app.services.acb_service.check_input",
+            "app.generation.agentic.acb_service.check_input",
             side_effect=InputGuardrailViolation("Injection.", reason="prompt_injection"),
         ):
             response = client.post("/api/v1/estimate/acb", json=VALID_PAYLOAD)
 
         assert response.status_code == 422
+
+

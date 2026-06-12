@@ -5,10 +5,10 @@ import importlib
 import pytest
 from fastapi import HTTPException
 
-from app.embedding_pipeline.router import build_chunks, build_embeddings
-from app.embedding_pipeline.schemas import ChunkRequest, EmbedRequest
+from app.api.embeddings import build_chunks, build_embeddings
+from app.domain.schemas.embeddings import ChunkRequest, EmbedRequest
 
-router_module = importlib.import_module("app.embedding_pipeline.router")
+router_module = importlib.import_module("app.api.embeddings")
 
 
 def test_build_chunks_returns_indexed_chunks() -> None:
@@ -86,3 +86,4 @@ def test_build_embeddings_returns_http_500_on_unexpected_error(monkeypatch: pyte
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.detail == "Internal processing error"
+

@@ -48,12 +48,12 @@ class ConsistentPseudonymizer:
             name_factory: Callable[[], str] = self._faker.name
             email_factory: Callable[[], str] = self._faker.ascii_company_email
             city_factory: Callable[[], str] = self._faker.city
-            fallback_factory: Callable[[], str] = lambda: f"REDACTED-{self._faker.uuid4()[:8]}"
+            fallback_factory: Callable[[], str] = lambda: f"REDACTED-{self._faker.uuid4()[:8]}"  # noqa: E731
         except Exception:  # pragma: no cover - fallback path when Faker is not installed
-            name_factory = lambda: f"Persona-{random.randint(1000, 9999)}"
-            email_factory = lambda: f"anon-{random.randint(1000, 9999)}@example.local"
-            city_factory = lambda: f"Ciudad-{random.randint(100, 999)}"
-            fallback_factory = lambda: f"REDACTED-{uuid.uuid4().hex[:8]}"
+            name_factory = lambda: f"Persona-{random.randint(1000, 9999)}"  # noqa: E731
+            email_factory = lambda: f"anon-{random.randint(1000, 9999)}@example.local"  # noqa: E731
+            city_factory = lambda: f"Ciudad-{random.randint(100, 999)}"  # noqa: E731
+            fallback_factory = lambda: f"REDACTED-{uuid.uuid4().hex[:8]}"  # noqa: E731
 
         self._fallback_factory = fallback_factory
         self._generators: dict[str, Callable[[], str]] = {

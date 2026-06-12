@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from app.embedding_pipeline.schemas import (
+from app.domain.schemas.embeddings import (
     BudgetComponent,
     Budget,
     Chunk,
@@ -403,3 +403,4 @@ class TestSerialization:
         assert len(restored.chunks) == 1
         assert restored.chunks[0].chunk_id == "chunk_001"
         assert restored.stats.total_tokens == 5
+
