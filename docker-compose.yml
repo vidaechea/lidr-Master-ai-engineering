@@ -34,6 +34,43 @@ services:
     restart: unless-stopped
 
   # ─────────────────────────────────────────────────────────────────────────
+  # One-shot init — creates the langfuse DB inside postgres if absent.
+  # Works on both fresh and existing postgres volumes.
+  # ─────────────────────────────────────────────────────────────────────────
+  db-init:
+    image: pgvector/pgvector:pg16
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-estimator_dev}
+    command: >
+      sh -c "psql -h postgres -U ${POSTGRES_USER:-estimator}
+      -d ${POSTGRES_DB:-estimator}
+      -c 'CREATE DATABASE langfuse'
+      || echo 'langfuse database already exists — skipping'"
+    restart: "no"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Observability  (LLM tracing, cost, latency — http://localhost:3000)
+  # ─────────────────────────────────────────────────────────────────────────
+  langfuse:
+    image: langfuse/langfuse:2
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-estimator}:${POSTGRES_PASSWORD:-estimator_dev}@postgres:5432/langfuse"
+      NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${LANGFUSE_SECRET:-langfuse_secret_dev_change_me}
+      SALT: ${LANGFUSE_SALT:-langfuse_salt_dev_change_me}
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────────────────────────────────────
   # AI Engine  (ai-engine — internal, not exposed publicly)
   # ─────────────────────────────────────────────────────────────────────────
   ai-engine:
