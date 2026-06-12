@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Async HTTP client that proxies requests to the AI Engine service."""
+
+from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
