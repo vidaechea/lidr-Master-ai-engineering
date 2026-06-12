@@ -7,7 +7,7 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: [main, develop]
+    branches: [main, development]
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
@@ -173,13 +173,13 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Push to ECR — only on pushes to main or develop
+  # Push to ECR — only on pushes to main or development
   # ──────────────────────────────────────────────────────────────────────────
   push-ecr:
     name: Push to ECR (${{ matrix.service }})
     runs-on: ubuntu-latest
     needs: [docker-build]
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'development')
     strategy:
       matrix:
         include:
