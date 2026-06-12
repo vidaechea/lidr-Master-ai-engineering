@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     branches: ["**"]
@@ -31,10 +34,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: ai-engine
-        run: uv pip install --system --no-cache -e ".[dev]" 2>/dev/null || uv pip install --system --no-cache -e .
+        run: uv sync --all-groups
 
       - name: Download spaCy model
-        run: python -m spacy download en_core_web_sm
+        working-directory: ai-engine
+        run: uv run python -m spacy download en_core_web_sm
 
       - name: Lint (ruff)
         working-directory: ai-engine
@@ -52,7 +56,7 @@ jobs:
           ANTHROPIC_API_KEY: test-placeholder
           INTERNAL_API_KEY: test-internal-key
         run: >
-          pytest tests/unit
+          uv run pytest tests/unit
           -m "not llm_live and not slow"
           --tb=short
           -q
@@ -84,7 +88,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: application-web/backend
-        run: uv pip install --system --no-cache -e ".[dev]" 2>/dev/null || uv pip install --system --no-cache -e .
+        run: uv sync --all-groups
 
       - name: Lint (ruff)
         working-directory: application-web/backend
@@ -101,7 +105,7 @@ jobs:
           SECRET_KEY: ci-test-secret-key
           INTERNAL_API_KEY: test-internal-key
         run: >
-          pytest tests/unit
+          uv run pytest tests/unit
           --tb=short
           -q
           --cov=app
