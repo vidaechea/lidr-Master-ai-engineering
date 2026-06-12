@@ -9,8 +9,8 @@ import structlog
 from arq.connections import RedisSettings
 
 from app.config import settings
-from app.schemas.estimation import EstimationRequest
-from app.services.estimation_service import EstimationService
+from app.domain.schemas.estimation import EstimationRequest
+from app.domain.estimation_service import EstimationService
 
 log = structlog.get_logger(__name__)
 
@@ -71,3 +71,5 @@ class WorkerSettings:
     queue_name = "arq:estimation"
     max_jobs = 4
     job_timeout = 300  # 5 minutes per estimation task
+
+

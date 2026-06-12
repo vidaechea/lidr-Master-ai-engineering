@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.schemas.estimation import EstimationRequest, EstimationResponse
-from app.services.cache_service import CachedEstimationService
-from app.services.sessions import ConversationHistory
+from app.domain.schemas.estimation import EstimationRequest, EstimationResponse
+from app.generation.cag.cache_service import CachedEstimationService
+from app.generation.conversation.sessions import ConversationHistory
 
 VALID_TX = "Build a multi-tenant SaaS analytics platform with reporting and user authentication."
 
@@ -387,3 +387,5 @@ class TestBuildSemanticCache:
         result = CachedEstimationService._build_semantic_cache()
 
         assert result is None
+
+

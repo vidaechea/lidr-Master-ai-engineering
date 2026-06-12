@@ -55,28 +55,28 @@ uv.lock
 .vitest-attachments/**
 
 # Frontend (Angular)
-frontend/dist/
-frontend/tmp/
-frontend/out-tsc/
-frontend/bazel-out/
-frontend/node_modules/
-frontend/npm-debug.log
-frontend/yarn-error.log
-frontend/.project
-frontend/.classpath
-frontend/.c9/
-frontend/*.launch
-frontend/.settings/
-frontend/*.sublime-workspace
-frontend/.history/
-frontend/.angular/cache/
-frontend/.sass-cache/
-frontend/connect.lock
-frontend/coverage/
-frontend/libpeerconnection.log
-frontend/testem.log
-frontend/typings/
-frontend/__screenshots__/
+application-web/frontend/dist/
+application-web/frontend/tmp/
+application-web/frontend/out-tsc/
+application-web/frontend/bazel-out/
+application-web/frontend/node_modules/
+application-web/frontend/npm-debug.log
+application-web/frontend/yarn-error.log
+application-web/frontend/.project
+application-web/frontend/.classpath
+application-web/frontend/.c9/
+application-web/frontend/*.launch
+application-web/frontend/.settings/
+application-web/frontend/*.sublime-workspace
+application-web/frontend/.history/
+application-web/frontend/.angular/cache/
+application-web/frontend/.sass-cache/
+application-web/frontend/connect.lock
+application-web/frontend/coverage/
+application-web/frontend/libpeerconnection.log
+application-web/frontend/testem.log
+application-web/frontend/typings/
+application-web/frontend/__screenshots__/
 Thumbs.db
 
 # Generated PDF fixtures - regenerate with build_pdfs.py

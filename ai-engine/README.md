@@ -229,6 +229,16 @@ python scripts/demo_pii_s06.py
 
 If `preflight_s06.py` fails on missing packages, install from `pyproject.toml` / `requirements.txt` first.
 
+## Semantic Search Demo
+
+Run representative semantic queries against the persisted corpus:
+
+```bash
+docker compose run --rm ai-engine python query_examples.py --base-url http://ai-engine:8001
+```
+
+The repository includes a root-level compatibility entrypoint (`query_examples.py`) that delegates to `scripts/query_examples.py`, so the command works without passing script subpaths.
+
 ---
 
 ## Text Similarity Tool
@@ -569,6 +579,18 @@ for tier in UserTier:
 ---
 
 ## Design Decisions
+
+### Persistence Schema Rationale
+
+The semantic retrieval baseline uses PostgreSQL + pgvector with a two-table relational design.
+
+- Two tables (`documents` and `chunks`) instead of one: one budget document produces N chunks. Splitting avoids duplicating document-level metadata per chunk and preserves referential integrity. `ON DELETE CASCADE` ensures deleting one document removes all dependent chunks automatically.
+- `metadata JSONB` in both tables: stable fields stay as typed columns (`document_type`, `chunk_type`, timestamps), while variable enrichment attributes live in JSONB (tags, scope, technologies). This reduces schema churn while keeping query flexibility.
+- GIN index on `chunks.metadata`: supports key-based JSONB filters efficiently when needed.
+- `vector(1536)` for embeddings: fixed dimension aligned with `text-embedding-3-small`. Changing dimensions implies re-embedding the full corpus, so this is intentionally explicit in schema.
+- `embedding` is nullable: allows future async ingestion flows where chunk rows are inserted first and vectors are backfilled later. In the current flow, chunk content and embedding are still ingested atomically.
+- `cosine_distance` for retrieval instead of L2 or inner product: embeddings from `text-embedding-3-small` are used as semantic direction vectors, so angular similarity is the most stable default across varying text lengths. L2 is more magnitude-sensitive, and raw inner product can bias toward high-norm vectors unless strict normalization guarantees are enforced end-to-end.
+- No vector index in this baseline: deliberate choice so sequential scan behavior is measurable before introducing HNSW/IVFFlat.
 
 ### Heuristic vs. LLM Metadata Extraction
 

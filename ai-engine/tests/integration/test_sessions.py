@@ -13,8 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 from structlog.testing import capture_logs
 
-from app.schemas.llm import LLMObservableResponse, LLMUsage
-from app.schemas.observation import TurnObservedEvent
+from app.domain.schemas.llm import LLMObservableResponse, LLMUsage
+from app.domain.schemas.observation import TurnObservedEvent
 
 UUID_V4_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -24,7 +24,7 @@ UUID_V4_RE = re.compile(
 @pytest.fixture(autouse=True)
 def reset_session_store():
     """Clear the in-memory store before every test to prevent state leakage."""
-    from app.services import sessions as sessions_module
+    from app.generation.conversation import sessions as sessions_module
     sessions_module.store._sessions.clear()
     yield
     sessions_module.store._sessions.clear()
@@ -55,17 +55,17 @@ class TestCreateSession:
         assert id_a != id_b
 
     def test_session_is_persisted_in_store(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
         session_id = client.post("/api/v1/sessions").json()["session_id"]
         assert store.get(session_id) is not None
 
     def test_session_history_starts_empty(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
         session_id = client.post("/api/v1/sessions").json()["session_id"]
         assert len(store.get(session_id).history) == 0
 
     def test_session_metadata_starts_with_defaults(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
         session_id = client.post("/api/v1/sessions").json()["session_id"]
         meta = store.get(session_id).metadata
         assert meta.project_name is None
@@ -82,7 +82,7 @@ class TestCreateSession:
         assert response.status_code == 201
 
     def test_multiple_sessions_stored_independently(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
         ids = [client.post("/api/v1/sessions").json()["session_id"] for _ in range(5)]
         assert len(set(ids)) == 5
         assert len(store) == 5
@@ -121,7 +121,7 @@ def _make_litellm_mock(text: str = FAKE_ESTIMATION) -> LLMObservableResponse:
 
 def _patch_litellm(mock_response: MagicMock | None = None):
     return patch(
-        "app.services.litellm_service.LiteLLMRouterService.complete",
+        "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
         AsyncMock(return_value=mock_response or _make_litellm_mock()),
     )
 
@@ -170,7 +170,7 @@ class TestSessionEstimate:
         assert resp.status_code == 422
 
     def test_metadata_populated_after_estimation(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
 
         sid = self._create_session(client)
         with _patch_litellm():
@@ -185,7 +185,7 @@ class TestSessionEstimate:
         assert "postgresql" in meta.mentioned_technologies
 
     def test_metadata_team_size_extracted(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
 
         sid = self._create_session(client)
         with _patch_litellm(
@@ -200,7 +200,7 @@ class TestSessionEstimate:
         assert meta.assumed_team_size == 3
 
     def test_metadata_project_name_extracted(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
 
         sid = self._create_session(client)
         with _patch_litellm():
@@ -214,7 +214,7 @@ class TestSessionEstimate:
         assert meta.project_name.endswith("ShopCore")
 
     def test_metadata_accumulates_across_turns(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
 
         sid = self._create_session(client)
 
@@ -235,7 +235,7 @@ class TestSessionEstimate:
         assert "postgresql" in meta.mentioned_technologies
 
     def test_metadata_scope_set_from_transcript(self, client: TestClient):
-        from app.services.sessions import store
+        from app.generation.conversation.sessions import store
 
         sid = self._create_session(client)
         with _patch_litellm():
@@ -567,4 +567,7 @@ class TestSessionEstimateTurnObservedEvent:
 
         event = self._single_turn_observed_event(logs)
         assert event["attachments_total_chars"] == 0
+
+
+
 

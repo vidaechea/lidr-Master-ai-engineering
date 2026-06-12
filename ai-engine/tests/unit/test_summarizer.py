@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.services.summarizer_service import (
+from app.generation.conversation.summarizer_service import (
     Anchor,
     AnchorType,
     SummarizerService,
@@ -226,3 +226,4 @@ class TestSummarizerService:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

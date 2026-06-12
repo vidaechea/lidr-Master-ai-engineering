@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.guardrails.input import InputGuardrailViolation
-from app.schemas.estimation import (
+from app.foundation.guardrails.input import InputGuardrailViolation
+from app.domain.schemas.estimation import (
     ActorCriticBossRequest,
     BossAction,
     BossDecision,
@@ -20,8 +20,8 @@ from app.schemas.estimation import (
     IssueCategory,
     IssueSeverity,
 )
-from app.schemas.llm import LLMObservableResponse, LLMUsage
-from app.services.acb_service import ActorCriticBossService
+from app.domain.schemas.llm import LLMObservableResponse, LLMUsage
+from app.generation.agentic.acb_service import ActorCriticBossService
 
 VALID_TRANSCRIPTION = (
     "Build a SaaS platform with user authentication, a reporting dashboard, "
@@ -135,14 +135,14 @@ class TestActorCriticBossServiceHappyPath:
         """Critic approves → boss accepts → 1 iteration, candidate returned unchanged."""
         completion = _make_completion()
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=_make_actor_response()),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_approved_critic(), completion),
                     (_accept_decision(), completion),
@@ -160,14 +160,14 @@ class TestActorCriticBossServiceHappyPath:
         """Boss accepts even when critic finds only minor issues."""
         completion = _make_completion()
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=_make_actor_response()),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_minor_critic(), completion),
                     (_accept_decision(), completion),
@@ -187,14 +187,14 @@ class TestActorCriticBossServiceHappyPath:
             _make_actor_response("## Revised v2 — corrected total"),
         ]
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(side_effect=actor_calls),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_major_critic(), completion),    # critic it=0
                     (_iterate_decision(), completion), # boss it=0
@@ -214,14 +214,14 @@ class TestActorCriticBossServiceHappyPath:
         completion = _make_completion()
         synth_text = "## Synthesized final estimate"
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=_make_actor_response()),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_major_critic(), completion),
                     (_synthesize_decision(synth_text), completion),
@@ -239,14 +239,14 @@ class TestActorCriticBossServiceBudget:
         """max_iterations=0 → loop executes once, boss cannot iterate."""
         completion = _make_completion()
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=_make_actor_response("## Single pass")),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_major_critic(), completion),
                     (_iterate_decision(), completion),  # boss says iterate but budget=0
@@ -267,14 +267,14 @@ class TestActorCriticBossServiceBudget:
             _make_actor_response("## Draft v2 still wrong"),
         ]
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(side_effect=actor_calls),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_major_critic(), completion),    # critic it=0
                     (_iterate_decision(), completion), # boss it=0  → iterate, budget now at limit
@@ -292,7 +292,7 @@ class TestActorCriticBossServiceBudget:
 class TestActorCriticBossServiceGuardrails:
     async def test_violation_propagates_before_llm(self):
         violation = InputGuardrailViolation("Email detected.", reason="pii")
-        with patch("app.services.acb_service.check_input", side_effect=violation):
+        with patch("app.generation.agentic.acb_service.check_input", side_effect=violation):
             with pytest.raises(InputGuardrailViolation) as exc_info:
                 await ActorCriticBossService().estimate(_REQUEST)
         assert exc_info.value.reason == "pii"
@@ -302,14 +302,14 @@ class TestActorCriticBossServiceGuardrails:
         mock_check = MagicMock()
         completion = _make_completion()
         with (
-            patch("app.services.acb_service.check_input", mock_check),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input", mock_check),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=_make_actor_response()),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_approved_critic(), completion),
                     (_accept_decision(), completion),
@@ -324,9 +324,9 @@ class TestActorCriticBossServiceGuardrails:
         violation = InputGuardrailViolation("Injection.", reason="prompt_injection")
         mock_complete = AsyncMock()
         with (
-            patch("app.services.acb_service.check_input", side_effect=violation),
+            patch("app.generation.agentic.acb_service.check_input", side_effect=violation),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete", mock_complete
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete", mock_complete
             ),
         ):
             with pytest.raises(InputGuardrailViolation):
@@ -345,14 +345,14 @@ class TestActorCriticBossServiceCosts:
         boss_completion = _make_completion(in_tok=150, out_tok=75)
 
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=actor_resp),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_approved_critic(), critic_completion),
                     (_accept_decision(), boss_completion),
@@ -371,14 +371,14 @@ class TestActorCriticBossServiceCosts:
         completion = _make_completion()
 
         with (
-            patch("app.services.acb_service.check_input"),
-            patch("app.services.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
                 AsyncMock(return_value=actor_resp),
             ),
             patch(
-                "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
                 AsyncMock(side_effect=[
                     (_approved_critic(), completion),
                     (_accept_decision(), completion),
@@ -390,3 +390,6 @@ class TestActorCriticBossServiceCosts:
         assert result.response_id == "actor-id-xyz"
         assert result.prompt_version == "v2"
         assert result.model is not None
+
+
+

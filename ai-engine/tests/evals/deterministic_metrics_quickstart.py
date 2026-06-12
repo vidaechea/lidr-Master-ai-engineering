@@ -4,8 +4,8 @@ This script demonstrates how to use LatencyBudgetMetric, CostBudgetMetric,
 and MemoryDriftMetric to evaluate multi-turn estimation sessions.
 """
 
-from app.schemas.observation import TurnObservedEvent, CacheHitKind
-from app.services.sessions import ProjectMetadata
+from app.domain.schemas.observation import TurnObservedEvent, CacheHitKind
+from app.generation.conversation.sessions import ProjectMetadata
 from tests.evals.deterministic_metrics import (
     LatencyBudgetMetric,
     CostBudgetMetric,
@@ -208,3 +208,5 @@ if __name__ == "__main__":
 
     print("\n" + "=" * 62)
     print("✓ Examples completed successfully\n")
+
+

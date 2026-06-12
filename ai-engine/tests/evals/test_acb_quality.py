@@ -44,8 +44,8 @@ _JUDGE_GOLDENS = GOLDEN_CASES[:3]
 
 def _run_acb_sync(transcript: str, max_iterations: int = 1) -> dict:
     """Run the ACB pipeline synchronously and return a dict with estimation and traces."""
-    from app.schemas.estimation import ActorCriticBossRequest
-    from app.services.acb_service import ActorCriticBossService
+    from app.domain.schemas.estimation import ActorCriticBossRequest
+    from app.generation.agentic.acb_service import ActorCriticBossService
 
     async def _run():
         req = ActorCriticBossRequest(
@@ -225,3 +225,5 @@ def test_acb_convergence_quality(golden: dict, acb_convergence_metric: GEval):
         actual_output=result["estimation"],
     )
     assert_test(test_case, [acb_convergence_metric])
+
+

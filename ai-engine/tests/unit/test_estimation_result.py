@@ -1,5 +1,5 @@
 import pytest
-from app.schemas.estimation import EstimationResult, Phase
+from app.domain.schemas.estimation import EstimationResult, Phase
 
 
 def test_estimation_result_total_cost_must_match_phases():
@@ -31,3 +31,4 @@ def test_estimation_result_total_cost_matches_phases():
     )
     assert result.total_cost_eur == 10000
     assert sum(phase.cost_eur for phase in result.phases) == 10000
+
