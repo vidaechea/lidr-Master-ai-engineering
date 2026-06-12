@@ -72,26 +72,26 @@ class LiteLLMRouterService:
 
     def _calculate_cost_usd(self, model: str, input_tokens: int, output_tokens: int) -> Decimal:
         """Calculate cost in USD from token counts and MODEL_REGISTRY pricing.
-        
+
         Formula: (input_tokens × input_price + output_tokens × output_price) / 1,000,000
-        
+
         Handles model name normalization:
           - Strips provider prefix (e.g., "anthropic/claude-haiku" → "claude-haiku")
           - Strips version suffix (e.g., "gpt-4o-mini-2024-07-18" → "gpt-4o-mini")
-        
+
         Args:
             model: Model name (e.g., 'gpt-4o-mini', 'gpt-4o-mini-2024-07-18', 'anthropic/claude-haiku-...')
             input_tokens: Number of input tokens consumed.
             output_tokens: Number of output tokens generated.
-        
+
         Returns:
             Cost in USD as Decimal. Returns Decimal('0') if model not in registry.
         """
         import re
-        
+
         # Normalize model name (strip provider prefix if present)
         normalized_model = model.split('/', 1)[1] if '/' in model else model
-        
+
         # Try exact match first
         if normalized_model in MODEL_REGISTRY:
             config = MODEL_REGISTRY[normalized_model]
@@ -100,7 +100,7 @@ class LiteLLMRouterService:
                 output_tokens * config.output_price
             ) / 1_000_000
             return Decimal(str(cost))
-        
+
         # Try to find base model by stripping version suffix (e.g., gpt-4o-mini-2024-07-18 → gpt-4o-mini)
         # Look for pattern like "-YYYY-MM-DD" or "-YYYYMMDD" at the end
         match = re.match(r'^(.+?)-(?:\d{4}-\d{2}-\d{2}|\d{8})$', normalized_model)
@@ -119,7 +119,7 @@ class LiteLLMRouterService:
                     cost=cost,
                 )
                 return Decimal(str(cost))
-        
+
         # Model not found in registry
         log.warning(
             "model_not_in_registry_cost_zero",
@@ -226,7 +226,7 @@ class LiteLLMRouterService:
                 input_tokens = getattr(last_usage, "prompt_tokens", 0)
                 output_tokens = getattr(last_usage, "completion_tokens", 0)
                 cost_usd = self._calculate_cost_usd(actual_model or LOGICAL_MODEL, input_tokens, output_tokens)
-                
+
                 observable_resp = self._observable_builder.build_from_timer(
                     model=actual_model or LOGICAL_MODEL,
                     usage=last_usage,

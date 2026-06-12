@@ -44,6 +44,7 @@ jobs:
         working-directory: ai-engine
         run: |
           pip install ruff
+          ruff check app/ --fix --unsafe-fixes --select E,F,W --ignore E501
           ruff check app/ --select E,F,W --ignore E501
 
       - name: Unit tests
@@ -94,6 +95,7 @@ jobs:
         working-directory: application-web/backend
         run: |
           pip install ruff
+          ruff check app/ --fix --unsafe-fixes --select E,F,W --ignore E501
           ruff check app/ --select E,F,W --ignore E501
 
       - name: Unit tests

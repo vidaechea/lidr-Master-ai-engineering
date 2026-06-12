@@ -381,7 +381,7 @@ class CachedEstimationService:
 
         Semantic cache is intentionally skipped for multi-turn because history and
         evolving metadata strongly affect the response.
-        
+
         Accepts optional context parameters for observation event emission.
         """
         from app.domain.schemas.observation import CacheHitKind

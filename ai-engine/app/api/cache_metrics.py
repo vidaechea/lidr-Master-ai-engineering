@@ -11,7 +11,7 @@ router = APIRouter(prefix="/cache", tags=["cache"])
 
 async def _read_stats() -> dict:
     """Read and compute cache metrics from Redis.
-    
+
     Delegates metric computation to CachedLLMService to avoid duplication.
     """
     r = aioredis.from_url(settings.redis_url, decode_responses=True)

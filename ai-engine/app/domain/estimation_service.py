@@ -18,10 +18,8 @@ from app.domain.schemas.estimation import (
     ExtractedRequirements,
     UserTier,
 )
-from app.domain.schemas.llm import LLMObservableResponse
 from app.domain.schemas.observation import CacheHitKind, TurnObservedEvent
 from app.domain.estimation_renderer import format_requirements_text, render_estimation_markdown
-from app.foundation.llm.error_mapper import LLMServiceError
 from app.domain.output_validator import evaluate_estimation_structure
 from app.foundation.prompts.prompt_builder import PromptBuilder
 from app.generation.conversation.sessions import ConversationHistory, ProjectMetadata
@@ -288,7 +286,7 @@ class EstimationService:
             and token metadata.
         """
         start_time = time.time()
-        
+
         await asyncio.to_thread(
             check_input,
             request.transcription,
@@ -318,11 +316,11 @@ class EstimationService:
         if session_id is not None:
             elapsed_ms = (time.time() - start_time) * 1000
             turn_index = history.turn_count
-            
+
             # Use provided values or compute from defaults
             transcript_chars = enriched_transcript_chars or len(request.transcription)
             msg_count = messages_in_window or len(history.messages())
-            
+
             turn_event = TurnObservedEvent(
                 turn_index=turn_index,
                 session_id=session_id,

@@ -241,7 +241,7 @@ class SummarizerService:
                             turn_number=turn_number,
                             anchor_type="metadata_extraction",
                             key_information=f"scope: {scope[:100]}",
-                            summary=f"Scope information extracted",
+                            summary="Scope information extracted",
                             message_indices=message_indices,
                         )
                     )

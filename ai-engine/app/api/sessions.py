@@ -96,7 +96,7 @@ async def list_sessions() -> list[SessionListItem]:
             if msg.role == "assistant":
                 last_message = msg.content[:200]
                 break
-        
+
         item = SessionListItem(
             session_id=session.session_id,
             project_name=session.metadata.project_name,
@@ -104,7 +104,7 @@ async def list_sessions() -> list[SessionListItem]:
             last_message_content=last_message,
         )
         result.append(item)
-    
+
     log.debug("sessions_listed", count=len(result))
     return result
 
