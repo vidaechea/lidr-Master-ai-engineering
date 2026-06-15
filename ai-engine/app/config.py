@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     # LiteLLM Router — primary and fallback model names (from LLM_MODEL / LLM_FALLBACK env vars)
     llm_fallback: str = "claude-haiku-4-5-20251001"
 
+    # Session 8 RAG pipeline model overrides (all optional, with built-in defaults)
+    propositional_chunker_model: Optional[str] = None
+    contextual_chunker_model: Optional[str] = None
+    metadata_extractor_model: Optional[str] = None
+    compression_model: Optional[str] = None
+    critic_model: Optional[str] = None
+    anchor_detection_mode: str = "basic"  # "basic" | "advanced" for future sessions
+    conversational_prompt_version: str = "v1"  # Prompt template version for conversation context
+
     # Internal service auth — set to require X-Internal-API-Key on all /api/* routes.
     # Leave empty in local development to allow open access.
     internal_api_key: Optional[str] = None

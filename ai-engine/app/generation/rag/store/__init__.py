@@ -3,6 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from app.generation.rag.store.models import ChunkRow, DocumentRow, EMBEDDING_DIMENSIONS
+from app.generation.rag.store.repository import ChunkStore
+
 
 @dataclass(slots=True)
 class StoredEmbedding:
@@ -33,4 +36,12 @@ class InMemoryVectorStore:
         return list(self._items.values())
 
 
-__all__ = ["StoredEmbedding", "VectorStore", "InMemoryVectorStore"]
+__all__ = [
+    "StoredEmbedding",
+    "VectorStore",
+    "InMemoryVectorStore",
+    "ChunkRow",
+    "DocumentRow",
+    "ChunkStore",
+    "EMBEDDING_DIMENSIONS",
+]

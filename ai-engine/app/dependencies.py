@@ -13,6 +13,15 @@ from app.ingestion.catalog import DataCatalog, load_catalog
 from app.ingestion.loaders import FileSystemLoader
 from app.ingestion.parsers import ParserRegistry, default_registry
 from app.domain.schemas.estimation import UserTier
+from openai import OpenAI
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from app.persistence.database import AsyncSessionLocal
+from app.generation.rag.chunking.structural import JSONStructuralChunker
+from app.generation.rag.embedding.embedder import OpenAIEmbedder
+from app.generation.rag.ingest_service import RagIngestService
+from app.generation.rag.retriever_service import SemanticRetriever
+from app.generation.rag.store.repository import ChunkStore
+from app.foundation.llm.runtime_config import RuntimeModelConfig
 
 log = structlog.get_logger(__name__)
 
@@ -74,4 +83,63 @@ def build_pseudonymizer(session):
         salt=settings.pseudonym_hash_salt,
         faker_locale=settings.pseudonym_faker_locale,
         language="es",
+    )
+
+
+# ============================================================================
+# Phase 2: RAG Pipeline Factories (Session 8)
+# ============================================================================
+
+
+@lru_cache
+def get_openai_client() -> OpenAI:
+    """Singleton OpenAI client for embeddings and LLM calls."""
+    return OpenAI(api_key=settings.openai_api_key)
+
+
+@lru_cache
+def get_embedder() -> OpenAIEmbedder:
+    """Embedder for Session 8 semantic search and ingest."""
+    return OpenAIEmbedder()
+
+
+@lru_cache
+def get_chunker() -> JSONStructuralChunker:
+    """Structural chunker (one chunk per budget component)."""
+    return JSONStructuralChunker()
+
+
+@lru_cache
+def get_session_factory() -> async_sessionmaker:
+    """Async session factory for database operations."""
+    return AsyncSessionLocal
+
+
+@lru_cache
+def get_runtime_config() -> RuntimeModelConfig:
+    """Redis-backed runtime overrides for model selection."""
+    return RuntimeModelConfig(settings.redis_url)
+
+
+def get_chunk_store() -> ChunkStore:
+    """Data-access layer for pgvector document/chunk storage."""
+    return ChunkStore()
+
+
+def get_rag_ingest_service() -> RagIngestService:
+    """Orchestrator: chunk → embed → persist in one transaction."""
+    return RagIngestService(
+        chunker=get_chunker(),
+        embedder=get_embedder(),
+        session_factory=get_session_factory(),
+        store=get_chunk_store(),
+    )
+
+
+def get_semantic_retriever() -> SemanticRetriever:
+    """Semantic search service over the pgvector store."""
+    return SemanticRetriever(
+        embedder=get_embedder(),
+        session_factory=get_session_factory(),
+        store=get_chunk_store(),
     )

@@ -5,9 +5,12 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.config import settings
+from app.dependencies import get_runtime_config
+from app.foundation.llm.litellm_service import create_litellm_router_service
 from app.logging import configure_logging
 from app.api import cache_metrics, config, estimations, ingestion, internal, sessions
-from app.api.embeddings import ingest_router, public_search_router
+from app.api.embeddings import ingest_router
+from app.api import search
 
 configure_logging()
 
@@ -48,8 +51,31 @@ app.include_router(internal.router, prefix=API_PREFIX)
 app.include_router(sessions.router, prefix=API_PREFIX)
 app.include_router(ingestion.router, prefix=API_PREFIX)
 app.include_router(ingest_router, prefix=API_PREFIX + "/embeddings")
-app.include_router(public_search_router, prefix=API_PREFIX)
 app.include_router(config.router, prefix=API_PREFIX)
+app.include_router(search.router, prefix=API_PREFIX)
+
+
+@app.on_event("startup")
+async def bootstrap_runtime_models() -> None:
+    """Align the in-memory LiteLLM router with persisted runtime overrides.
+
+    Runtime overrides live in Redis and survive process restarts. We reload them
+    at startup so the router does not fall back to .env defaults after reboot.
+    """
+    runtime_config = get_runtime_config()
+    snapshot = await runtime_config.snapshot()
+    primary_model = snapshot["LLM_MODEL"].effective
+    fallback_model = snapshot["LLM_FALLBACK"].effective
+
+    create_litellm_router_service(
+        primary_model=primary_model,
+        fallback_model=fallback_model,
+    )
+    log.info(
+        "runtime_models_bootstrapped",
+        primary_model=primary_model,
+        fallback_model=fallback_model,
+    )
 
 
 @app.get("/health")

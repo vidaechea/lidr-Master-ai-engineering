@@ -5,6 +5,7 @@ boss action dispatch, and cost accumulation without making any real LLM calls.
 """
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -390,6 +391,55 @@ class TestActorCriticBossServiceCosts:
         assert result.response_id == "actor-id-xyz"
         assert result.prompt_version == "v2"
         assert result.model is not None
+
+
+class TestActorCriticBossRuntimeModels:
+    async def test_critic_router_uses_runtime_critic_model(self):
+        completion = _make_completion()
+
+        class _StubRuntimeConfig:
+            async def effective(self, key: str) -> str:
+                await asyncio.sleep(0)
+                if key == "CRITIC_MODEL":
+                    return "gpt-5.4-mini"
+                if key == "LLM_FALLBACK":
+                    return "claude-haiku-4-5-20251001"
+                return "gpt-4o-mini"
+
+        created_routers: list[dict[str, str | None]] = []
+
+        def _capture_router_init(self, primary_model=None, fallback_model=None):
+            created_routers.append({"primary": primary_model, "fallback": fallback_model})
+            self._primary_model = primary_model or "gpt-4o-mini"
+            self._fallback_model = fallback_model or "claude-haiku-4-5-20251001"
+            self._router = MagicMock()
+            self._observable_builder = MagicMock()
+
+        with (
+            patch("app.generation.agentic.acb_service.check_input"),
+            patch("app.generation.agentic.acb_service._get_moderation_client", return_value=None),
+            patch("app.generation.agentic.acb_service.RuntimeModelConfig", return_value=_StubRuntimeConfig()),
+            patch("app.foundation.llm.litellm_service.LiteLLMRouterService.__init__", _capture_router_init),
+            patch(
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete",
+                AsyncMock(return_value=_make_actor_response()),
+            ),
+            patch(
+                "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
+                AsyncMock(side_effect=[
+                    (_approved_critic(), completion),
+                    (_accept_decision(), completion),
+                ]),
+            ),
+        ):
+            result = await ActorCriticBossService().estimate(_REQUEST)
+
+        assert result.final_decision is not None
+        assert result.final_decision.action == BossAction.ACCEPT
+        assert any(
+            cfg["primary"] == "gpt-5.4-mini" and cfg["fallback"] == "claude-haiku-4-5-20251001"
+            for cfg in created_routers
+        )
 
 
 

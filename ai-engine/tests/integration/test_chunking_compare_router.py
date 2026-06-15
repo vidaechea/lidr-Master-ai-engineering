@@ -1,8 +1,26 @@
 from __future__ import annotations
 
 import importlib
+import asyncio
+
+from app.dependencies import get_runtime_config
+from app.main import app
 
 comparison_module = importlib.import_module("app.generation.rag.analysis.comparison")
+
+
+class _StubRuntimeConfig:
+    async def effective(self, key: str) -> str:
+        await asyncio.sleep(0)
+        if key == "PROPOSITIONAL_CHUNKER_MODEL":
+            return "gpt-5.4-mini"
+        if key == "CONTEXTUAL_CHUNKER_MODEL":
+            return "claude-haiku-4-5-20251001"
+        if key == "LLM_MODEL":
+            return "gpt-4o-mini"
+        if key == "LLM_FALLBACK":
+            return "claude-haiku-4-5-20251001"
+        return "gpt-4o-mini"
 
 
 def _sample_payload() -> dict:
@@ -63,3 +81,30 @@ def test_compare_chunking_endpoint_rejects_unknown_strategy(client):
 
     assert response.status_code == 400
     assert "Unknown strategy" in response.json()["detail"]
+
+
+def test_compare_chunking_uses_runtime_chunker_models(client, monkeypatch):
+    def fake_embed_texts(*, texts: list[str], model: str) -> list[list[float]]:
+        return [[1.0, 0.0] for _ in texts]
+
+    app.dependency_overrides[get_runtime_config] = lambda: _StubRuntimeConfig()
+    monkeypatch.setattr(comparison_module, "embed_texts", fake_embed_texts)
+
+    payload = _sample_payload()
+    payload["strategies"] = ["propositional", "contextual_retrieval"]
+    payload["queries"] = ["backend auth"]
+    payload["top_k"] = 1
+
+    try:
+        response = client.post("/api/v1/embeddings/compare", json=payload)
+    finally:
+        app.dependency_overrides.pop(get_runtime_config, None)
+
+    assert response.status_code == 200
+    body = response.json()
+
+    prop_metadata = body["queries_per_strategy"]["propositional"][0]["results"][0]["metadata"]
+    ctx_metadata = body["queries_per_strategy"]["contextual_retrieval"][0]["results"][0]["metadata"]
+
+    assert prop_metadata["chunker_model"] == "gpt-5.4-mini"
+    assert ctx_metadata["chunker_model"] == "claude-haiku-4-5-20251001"
