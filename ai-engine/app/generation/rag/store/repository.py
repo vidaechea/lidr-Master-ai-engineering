@@ -61,7 +61,7 @@ class ChunkStore:
 
     async def search(
         self, session: AsyncSession, *, query_vector: list[float], k: int
-    ) -> list[Row]:
+    ) -> tuple[list[Row], int]:
         """k nearest chunks by cosine distance (``<=>``), sequential scan.
 
         Cosine over L2/inner product: OpenAI embeddings are normalized so the
@@ -69,8 +69,51 @@ class ChunkStore:
         literature AND with the ``vector_cosine_ops`` operator class of the
         HNSW index the live session adds — operator/index mismatch makes
         Postgres silently ignore the index.
+
+        Returns a tuple of (filtered_results, candidates_evaluated) where:
+        - filtered_results: k nearest matching chunks
+        - candidates_evaluated: total chunks evaluated before applying k limit
+        """
+        return await self.search_with_filters(
+            session,
+            query_vector=query_vector,
+            k=k,
+            sector=None,
+            year_from=None,
+            year_to=None,
+            chunk_types=None,
+        )
+
+    async def search_with_filters(
+        self,
+        session: AsyncSession,
+        *,
+        query_vector: list[float],
+        k: int,
+        sector: str | None = None,
+        year_from: int | None = None,
+        year_to: int | None = None,
+        chunk_types: list[str] | None = None,
+    ) -> tuple[list[Row], int]:
+        """k nearest chunks with optional metadata filters.
+
+        Filters are applied in SQL WHERE clause before ranking by distance.
+        Returns both the top-k results and total candidates evaluated (pre-k-limit).
         """
         distance = ChunkRow.embedding.cosine_distance(query_vector)
+        filters = []
+
+        if chunk_types:
+            filters.append(ChunkRow.chunk_type.in_(chunk_types))
+        if sector is not None:
+            filters.append(ChunkRow.metadata_["client_sector"].astext == sector)
+        if year_from is not None or year_to is not None:
+            year_str = ChunkRow.metadata_["year"].astext.cast(int)
+            if year_from is not None:
+                filters.append(year_str >= year_from)
+            if year_to is not None:
+                filters.append(year_str <= year_to)
+
         stmt = (
             select(
                 ChunkRow.id,
@@ -81,6 +124,15 @@ class ChunkStore:
                 distance.label("distance"),
             )
             .order_by(distance)
-            .limit(k)
         )
-        return list((await session.execute(stmt)).all())
+
+        if filters:
+            stmt = stmt.where(*filters)
+
+        # Get all matching candidates to report candidates_evaluated
+        all_matching = list((await session.execute(stmt)).all())
+        candidates_evaluated = len(all_matching)
+
+        # Apply k-limit for final results
+        filtered_results = all_matching[:k]
+        return (filtered_results, candidates_evaluated)

@@ -321,6 +321,129 @@ class CompareResponse(BaseModel):
     queries_per_strategy: dict[str, list[CompareQueryResult]]
 
 
+# ============================================================================
+# Session 09 Wizard and Full-Pipeline Schemas
+# ============================================================================
+
+
+class EstimationQuery(BaseModel):
+    """Structured query distilled from transcript content."""
+
+    search_text: str = Field(min_length=1)
+    sector: str | None = None
+    year_from: int | None = Field(default=None, ge=2000, le=2100)
+    year_to: int | None = Field(default=None, ge=2000, le=2100)
+    chunk_types: list[str] = Field(default_factory=list)
+    keywords: list[str] = Field(default_factory=list)
+
+
+class RetrievedChunk(BaseModel):
+    """Chunk returned by Session 09 retrieval with normalized source id."""
+
+    source_id: str
+    chunk_id: int = Field(ge=1)
+    document_id: int = Field(ge=1)
+    chunk_type: str
+    content: str
+    distance: float = Field(ge=0.0)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievalResult(BaseModel):
+    """Retrieval outcome for wizard and full pipeline steps."""
+
+    query: str
+    top_k: int = Field(ge=1)
+    candidates_evaluated: int = Field(ge=0)
+    low_confidence: bool
+    chunks: list[RetrievedChunk] = Field(default_factory=list)
+
+
+class EstimateTask(BaseModel):
+    """Task-level estimate in engineer-days."""
+
+    name: str
+    engineer_days: float = Field(ge=0.0)
+
+
+class EstimateModule(BaseModel):
+    """Module estimate with task decomposition."""
+
+    name: str
+    engineer_days: float = Field(ge=0.0)
+    tasks: list[EstimateTask] = Field(default_factory=list)
+
+
+class RagPipelineEstimate(BaseModel):
+    """Normalized RAG pipeline estimate output."""
+
+    summary: str
+    estimate_markdown: str | None = None
+    low_confidence: bool
+    modules: list[EstimateModule] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+
+
+class ReformulateStageRequest(BaseModel):
+    transcript: str = Field(min_length=20)
+
+
+class ReformulateStageResponse(BaseModel):
+    query: EstimationQuery
+    used_fallback: bool = False
+
+
+class RetrieveStageRequest(BaseModel):
+    query: EstimationQuery
+    top_k: int | None = Field(default=None, ge=1, le=50)
+    distance_threshold: float | None = Field(default=None, ge=0.0)
+
+
+class RetrieveStageResponse(BaseModel):
+    retrieval: RetrievalResult
+
+
+class AssembleStageRequest(BaseModel):
+    transcript: str = Field(min_length=20)
+    query: EstimationQuery
+    retrieval: RetrievalResult
+    max_context_tokens: int | None = Field(default=None, ge=256)
+
+
+class AssembleStageResponse(BaseModel):
+    context_block: str
+    included_source_ids: list[str] = Field(default_factory=list)
+    token_count_estimate: int = Field(ge=0)
+    truncated: bool = False
+
+
+class GenerateStageRequest(BaseModel):
+    transcript: str = Field(min_length=20)
+    context_block: str = Field(min_length=1)
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class GenerateStageResponse(BaseModel):
+    estimate: RagPipelineEstimate
+
+
+class FullEstimateRequest(BaseModel):
+    transcript: str = Field(min_length=20)
+    idempotency_key: str | None = None
+    top_k: int | None = Field(default=None, ge=1, le=50)
+    distance_threshold: float | None = Field(default=None, ge=0.0)
+
+
+class FullEstimateResponse(BaseModel):
+    request_id: str | None = None
+    reformulation: ReformulateStageResponse
+    retrieval: RetrieveStageResponse
+    assembly: AssembleStageResponse
+    generation: GenerateStageResponse
+    idempotency_hit: bool = False
+
+
 __all__ = [
     "Budget",
     "BudgetComponent",
@@ -347,4 +470,20 @@ __all__ = [
     "SearchResponse",
     "SearchResultItem",
     "StrategyStats",
+    "AssembleStageRequest",
+    "AssembleStageResponse",
+    "EstimationQuery",
+    "EstimateModule",
+    "EstimateTask",
+    "FullEstimateRequest",
+    "FullEstimateResponse",
+    "GenerateStageRequest",
+    "GenerateStageResponse",
+    "ReformulateStageRequest",
+    "ReformulateStageResponse",
+    "RetrievedChunk",
+    "RetrievalResult",
+    "RetrieveStageRequest",
+    "RetrieveStageResponse",
+    "RagPipelineEstimate",
 ]

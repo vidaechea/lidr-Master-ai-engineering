@@ -8,6 +8,11 @@ from app.schemas.estimation import (
     AsyncEstimationOut,
     EstimationCallbackPayload,
 )
+from app.schemas.rag_estimation import (
+    RagEstimationRequest,
+    FullRagEstimationOut,
+    RagEstimationListItem,
+)
 
 __all__ = [
     "RegisterRequest", "LoginRequest", "TokenResponse", "RefreshRequest",
@@ -15,4 +20,5 @@ __all__ = [
     "ProjectCreate", "ProjectUpdate", "ProjectOut",
     "EstimationCreate", "EstimationOut", "EstimationListItem",
     "AsyncEstimationOut", "EstimationCallbackPayload",
+    "RagEstimationRequest", "FullRagEstimationOut", "RagEstimationListItem",
 ]

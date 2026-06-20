@@ -118,6 +118,20 @@ class Settings(BaseSettings):
     pseudonym_faker_locale: str = "es_ES"
     pseudonym_hash_salt: str = "change-me-in-prod"
 
+    # RAG pipeline runtime knobs
+    request_id_header: str = "X-Request-ID"
+    rag_pipeline_reformulation_model: str | None = None
+    rag_pipeline_generation_model: str | None = None
+    rag_pipeline_generation_reasoning_effort: Literal["low", "medium", "high"] = "medium"
+    rag_pipeline_generation_max_tokens: int = 2_048
+    rag_pipeline_retrieval_top_k: int = 5
+    rag_pipeline_retrieval_distance_threshold: float = 0.35
+    rag_pipeline_max_context_tokens: int = 6_000
+    rag_pipeline_idempotency_ttl_seconds: int = 900
+    rag_pipeline_retrieval_api_key: str | None = None
+    rag_pipeline_estimate_api_key: str | None = None
+    rag_pipeline_rate_limit_per_minute: int = 60
+
 
 settings = Settings()
 

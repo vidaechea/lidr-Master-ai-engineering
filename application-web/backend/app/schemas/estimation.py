@@ -216,6 +216,19 @@ class SemanticSearchOut(BaseModel):
     results: list[SemanticSearchResultOut] = Field(default_factory=list)
 
 
+class RagDocumentIngestIn(BaseModel):
+    source_path: str = Field(min_length=1)
+    document_type: str = Field(min_length=1, max_length=50)
+    content: dict[str, Any]
+
+
+class RagDocumentIngestOut(BaseModel):
+    document_id: int
+    chunks_created: int
+    embedding_dimension: int
+    ingestion_time_ms: int
+
+
 # ── Callback payload (ai-engine worker → business backend) ────────────────────
 
 

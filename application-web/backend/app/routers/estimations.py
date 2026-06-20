@@ -16,6 +16,8 @@ from app.schemas.estimation import (
     EstimationListItem,
     EstimationOut,
     OutputFormat,
+    RagDocumentIngestIn,
+    RagDocumentIngestOut,
     SemanticSearchIn,
     SemanticSearchOut,
     RuntimeModelsOut,
@@ -67,6 +69,14 @@ async def compare_chunking(body: ChunkingComparisonIn, current_user: CurrentUser
         }
     )
     return ChunkingComparisonOut(**payload)
+
+
+@router.post("/embeddings/ingest", response_model=RagDocumentIngestOut)
+async def ingest_rag_document(body: RagDocumentIngestIn, current_user: CurrentUser):
+    """Proxy persistent RAG document ingestion to the AI Engine."""
+    _ = current_user
+    payload = await ai_client.ingest_rag_document(body.model_dump())
+    return RagDocumentIngestOut(**payload)
 
 
 @router.post("/search", response_model=SemanticSearchOut)

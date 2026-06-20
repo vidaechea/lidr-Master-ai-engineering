@@ -1,0 +1,164 @@
+<div class="rag-estimation-container">
+  <div class="rag-estimation-header">
+    <h1>RAG Pipeline Estimation</h1>
+    <p class="subtitle">
+      Extract structured estimates from budget transcripts using AI with retrieval-augmented generation
+    </p>
+  </div>
+
+  <mat-card class="form-card">
+    <mat-card-header>
+      <mat-card-title>Transcript Input</mat-card-title>
+      <mat-card-subtitle>Provide a detailed budget transcript (20-50,000 characters)</mat-card-subtitle>
+    </mat-card-header>
+
+    <mat-card-content>
+      <form [formGroup]="form" (ngSubmit)="onSubmit()">
+        <!-- Error Alert -->
+        @if (error()) {
+          <div class="error-alert">
+            <mat-icon>error</mat-icon>
+            <span>{{ error() }}</span>
+            <button mat-icon-button (click)="error.set(null)">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        }
+
+        <!-- Transcript Input -->
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Budget Transcript</mat-label>
+          <textarea
+            matInput
+            formControlName="transcript"
+            placeholder="Paste your budget transcript here... Describe project scope, timeline, team, budget breakdown, etc."
+            rows="10"
+            [disabled]="isLoading()">
+          </textarea>
+          <mat-hint align="end">
+            {{ characterCount() }} / {{ maxCharacters }} characters
+          </mat-hint>
+
+          @if (transcript?.hasError('required') && transcript?.touched) {
+            <mat-error>Transcript is required</mat-error>
+          }
+          @if (transcript?.hasError('minlength') && transcript?.touched) {
+            <mat-error>Minimum {{ minCharacters }} characters required</mat-error>
+          }
+          @if (transcript?.hasError('maxlength')) {
+            <mat-error>Maximum {{ maxCharacters }} characters allowed</mat-error>
+          }
+        </mat-form-field>
+
+        <!-- Status Indicator -->
+        <div class="transcript-status" [class]="'status-' + getTranscriptStatus().status">
+          <mat-icon>
+            @switch (getTranscriptStatus().status) {
+              @case ('empty') { pending }
+              @case ('short') { info }
+              @case ('valid') { check_circle }
+              @case ('long') { warning }
+            }
+          </mat-icon>
+          <span>{{ getTranscriptStatus().message }}</span>
+        </div>
+
+        <!-- Advanced Options -->
+        <div class="advanced-options">
+          <h3>Advanced Options</h3>
+
+          <div class="option-row">
+            <mat-form-field appearance="outline">
+              <mat-label>Top-K Results</mat-label>
+              <input
+                matInput
+                type="number"
+                formControlName="top_k"
+                min="1"
+                max="50"
+                [disabled]="isLoading()" />
+              <mat-hint>Number of top retrieved chunks (1-50)</mat-hint>
+            </mat-form-field>
+
+            <div class="slider-container">
+              <label>Distance Threshold</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                formControlName="distance_threshold"
+                class="slider"
+                [disabled]="isLoading()" />
+              <span class="slider-value">{{ (distance_threshold?.value || 0.35).toFixed(2) }}</span>
+              <mat-hint>Lower = stricter matching (0.0-1.0)</mat-hint>
+            </div>
+          </div>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Idempotency Key (Optional)</mat-label>
+            <input
+              matInput
+              formControlName="idempotency_key"
+              placeholder="Unique identifier for caching results"
+              [disabled]="isLoading()" />
+            <mat-hint>Leave empty for non-cached estimation</mat-hint>
+          </mat-form-field>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="form-actions">
+          <button
+            mat-raised-button
+            color="primary"
+            type="submit"
+            [disabled]="!canSubmit()">
+            @if (isLoading()) {
+              <mat-icon class="spinner">hourglass_empty</mat-icon>
+              Estimating...
+            } @else {
+              <mat-icon>send</mat-icon>
+              Generate Estimation
+            }
+          </button>
+
+          <button mat-stroked-button type="button" (click)="onReset()" [disabled]="isLoading()">
+            <mat-icon>refresh</mat-icon>
+            Reset
+          </button>
+        </div>
+      </form>
+    </mat-card-content>
+  </mat-card>
+
+  <!-- Info Panel -->
+  <mat-card class="info-card">
+    <mat-card-header>
+      <mat-card-title>
+        <mat-icon>info</mat-icon>
+        How RAG Pipeline Works
+      </mat-card-title>
+    </mat-card-header>
+
+    <mat-card-content>
+      <div class="info-grid">
+        <div class="info-step">
+          <h4>1. Reformulation</h4>
+          <p>Extract keywords, sector, and year range from transcript</p>
+        </div>
+        <div class="info-step">
+          <h4>2. Retrieval</h4>
+          <p>Semantic search with metadata filtering across budget corpus</p>
+        </div>
+        <div class="info-step">
+          <h4>3. Assembly</h4>
+          <p>Assemble context block respecting token budget</p>
+        </div>
+        <div class="info-step">
+          <h4>4. Generation</h4>
+          <p>LLM generates structured estimate with citations</p>
+        </div>
+      </div>
+    </mat-card-content>
+  </mat-card>
+</div>
