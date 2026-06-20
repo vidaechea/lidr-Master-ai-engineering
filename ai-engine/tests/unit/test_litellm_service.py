@@ -15,8 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import litellm
 import pytest
 
-from app.services.helpers.error_mapper import LLMServiceError
-from app.services.litellm_service import LOGICAL_MODEL, LiteLLMRouterService, litellm_router_service
+from app.foundation.llm.error_mapper import LLMServiceError
+from app.foundation.llm.litellm_service import LOGICAL_MODEL, LiteLLMRouterService, litellm_router_service
 
 
 # --------------------------------------------------------------------------- #
@@ -52,7 +52,7 @@ _MESSAGES = [
 @pytest.fixture
 def svc() -> LiteLLMRouterService:
     """LiteLLMRouterService whose internal Router is fully mocked."""
-    with patch("app.services.litellm_service.Router"):
+    with patch("app.foundation.llm.litellm_service.Router"):
         service = LiteLLMRouterService()
     # Replace the router created during __init__ with a fresh mock for each test
     service._router = MagicMock()
@@ -233,3 +233,5 @@ class TestSingleton:
     def test_singleton_has_router(self):
         assert hasattr(litellm_router_service, "_router")
         assert litellm_router_service._router is not None
+
+

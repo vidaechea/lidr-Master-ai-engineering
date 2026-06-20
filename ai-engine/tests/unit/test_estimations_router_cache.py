@@ -1,6 +1,6 @@
-from app.routers.estimations import get_cached_estimation_service
-from app.services.cache_service import CachedEstimationService
-from app.services.estimation_service import EstimationService
+from app.api.estimations import get_cached_estimation_service
+from app.generation.cag.cache_service import CachedEstimationService
+from app.domain.estimation_service import EstimationService
 
 
 def test_get_cached_estimation_service_returns_base_service_when_cache_disabled(monkeypatch):
@@ -20,3 +20,4 @@ def test_get_cached_estimation_service_returns_cached_service_when_cache_enabled
     service = get_cached_estimation_service()
 
     assert isinstance(service, CachedEstimationService)
+

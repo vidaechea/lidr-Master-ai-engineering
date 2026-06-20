@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from app.schemas.llm import LLMObservableResponse, LLMUsage
+from app.domain.schemas.llm import LLMObservableResponse, LLMUsage
 
 VALID_TRANSCRIPTION = "Build an e-commerce platform with user auth and product catalog."
 
@@ -64,7 +64,7 @@ def _patch_litellm_router(mock_response: MagicMock):
     Replaces the already-instantiated singleton's _router so that any
     acompletion call returns mock_response without hitting real APIs.
     """
-    import app.services.litellm_service as _svc
+    import app.foundation.llm.litellm_service as _svc
 
     mock_router = MagicMock()
     mock_router.acompletion = AsyncMock(return_value=mock_response)
@@ -192,7 +192,7 @@ class TestCreateEstimationLiteLLMPreCall:
         )
 
     def _patch_two_calls(self, litellm_client: TestClient):
-        import app.services.litellm_service as _svc
+        import app.foundation.llm.litellm_service as _svc
 
         pre = self._pre_call_mock()
         est = self._estimation_mock()
@@ -266,8 +266,8 @@ class TestCreateEstimationLiteLLMPreCall:
 
 class TestCreateEstimationLiteLLMErrors:
     def test_returns_413_on_context_overflow(self, litellm_client: TestClient):
-        from app.services.helpers.prompt_builder import PromptBuilder
-        from app.services.helpers.error_mapper import LLMServiceError
+        from app.foundation.prompts.prompt_builder import PromptBuilder
+        from app.foundation.llm.error_mapper import LLMServiceError
 
         # Patch validate_context_window to raise context overflow error
         def raise_overflow(*args, **kwargs):
@@ -288,7 +288,7 @@ class TestCreateEstimationLiteLLMErrors:
 
     def test_returns_401_on_auth_error(self, litellm_client: TestClient):
         import litellm as _litellm
-        import app.services.litellm_service as _svc
+        import app.foundation.llm.litellm_service as _svc
 
         mock_router = MagicMock()
         mock_router.acompletion = AsyncMock(
@@ -305,7 +305,7 @@ class TestCreateEstimationLiteLLMErrors:
 
     def test_returns_429_on_rate_limit(self, litellm_client: TestClient):
         import litellm as _litellm
-        import app.services.litellm_service as _svc
+        import app.foundation.llm.litellm_service as _svc
 
         mock_router = MagicMock()
         mock_router.acompletion = AsyncMock(
@@ -343,7 +343,7 @@ def _make_struct_completion(finish_reason: str = "stop") -> LLMObservableRespons
 
 def _patch_complete_structured(mock_result, mock_completion):
     return patch(
-        "app.services.litellm_service.LiteLLMRouterService.complete_structured",
+        "app.foundation.llm.litellm_service.LiteLLMRouterService.complete_structured",
         AsyncMock(return_value=(mock_result, mock_completion)),
     )
 
@@ -352,7 +352,7 @@ class TestStructuredOutputGuardrail:
     """Verify that both output guardrail layers run on POST /estimate/structured."""
 
     def _normal_result(self):
-        from app.schemas.estimation import EstimationResult, Phase
+        from app.domain.schemas.estimation import EstimationResult, Phase
         phase = Phase(name="Backend", duration_weeks=2, cost_eur=5_000, confidence_pct=80)
         return EstimationResult(
             summary="E-commerce platform",
@@ -363,7 +363,7 @@ class TestStructuredOutputGuardrail:
         )
 
     def _low_confidence_result(self):
-        from app.schemas.estimation import EstimationResult, Phase
+        from app.domain.schemas.estimation import EstimationResult, Phase
         phase = Phase(name="Unknown scope", duration_weeks=1, cost_eur=0, confidence_pct=10)
         return EstimationResult(
             summary="I cannot estimate this without more information",
@@ -425,3 +425,6 @@ class TestStructuredOutputGuardrail:
         data = response.json()
         assert not data["estimation"].startswith("## Out of scope:")
         assert data["structured_result"]["total_cost_eur"] == 5_000
+
+
+

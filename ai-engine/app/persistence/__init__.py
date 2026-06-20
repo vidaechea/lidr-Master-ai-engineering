@@ -1,1 +1,1 @@
-__all__: list[str] = []
+"""Compatibility layer for legacy app.persistence imports."""

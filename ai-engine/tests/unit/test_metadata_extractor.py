@@ -12,8 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.services.metadata_extractor import MetadataExtractor
-from app.services.sessions import ProjectMetadata
+from app.generation.conversation.metadata_extractor import MetadataExtractor
+from app.generation.conversation.sessions import ProjectMetadata
 
 
 @pytest.fixture
@@ -209,3 +209,4 @@ class TestIncrementalUpdate:
     def test_update_returns_new_instance(self, extractor, empty_meta):
         result = extractor.update("Some project.", "", empty_meta)
         assert result is not empty_meta
+

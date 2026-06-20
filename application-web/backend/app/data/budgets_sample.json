@@ -1,0 +1,188 @@
+[
+  {
+    "budget_id": "BUD-2024-001",
+    "client_metadata": { "name": "Acme España S.L.", "sector": "saas", "country": "ES" },
+    "project_summary": "B2B SaaS platform with Workday integration",
+    "main_technology": "nodejs",
+    "year": 2024,
+    "total_estimated_hours": 320,
+    "components": [
+      {
+        "component_id": "DISC-001",
+        "name": "Discovery phase",
+        "description": "Requirements gathering and analysis",
+        "tech_stack": ["nodejs", "react", "postgresql"],
+        "estimated_hours": 40,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "UX-001",
+        "name": "UX Design",
+        "description": "User interface and experience design",
+        "tech_stack": ["figma", "react"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["DISC-001"]
+      },
+      {
+        "component_id": "IMPL-001",
+        "name": "MVP Implementation",
+        "description": "Core functionality implementation",
+        "tech_stack": ["nodejs", "express", "postgresql", "react"],
+        "estimated_hours": 160,
+        "complexity": "high",
+        "dependencies": ["UX-001"]
+      },
+      {
+        "component_id": "QA-001",
+        "name": "QA and Testing",
+        "description": "Testing and quality assurance",
+        "tech_stack": ["jest", "cypress"],
+        "estimated_hours": 60,
+        "complexity": "medium",
+        "dependencies": ["IMPL-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-002",
+    "client_metadata": { "name": "BetaNorte Distribución", "sector": "distribution", "country": "ES" },
+    "project_summary": "ERP migration from legacy system with three warehouse management",
+    "main_technology": "java",
+    "year": 2024,
+    "total_estimated_hours": 240,
+    "components": [
+      {
+        "component_id": "AUDIT-001",
+        "name": "Process Audit",
+        "description": "Audit of current business processes",
+        "tech_stack": ["java", "postgresql"],
+        "estimated_hours": 40,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "INTEG-001",
+        "name": "Backend Integrations",
+        "description": "Integration with legacy ERP systems",
+        "tech_stack": ["java", "spring", "postgresql"],
+        "estimated_hours": 160,
+        "complexity": "high",
+        "dependencies": ["AUDIT-001"]
+      },
+      {
+        "component_id": "DASH-001",
+        "name": "Analytics Dashboards",
+        "description": "Business dashboards and reporting",
+        "tech_stack": ["java", "react", "postgresql"],
+        "estimated_hours": 40,
+        "complexity": "medium",
+        "dependencies": ["INTEG-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-003",
+    "client_metadata": { "name": "TechStart Ventures", "sector": "fintech", "country": "ES" },
+    "project_summary": "Payment gateway integration prototype and implementation",
+    "main_technology": "python",
+    "year": 2024,
+    "total_estimated_hours": 160,
+    "components": [
+      {
+        "component_id": "PROTO-001",
+        "name": "Prototype Development",
+        "description": "MVP prototype for payment gateway integration",
+        "tech_stack": ["python", "fastapi", "sqlite"],
+        "estimated_hours": 80,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "GATEWAY-001",
+        "name": "Payment Gateway Integration",
+        "description": "Integration with payment processing gateway",
+        "tech_stack": ["python", "fastapi", "postgresql"],
+        "estimated_hours": 80,
+        "complexity": "high",
+        "dependencies": ["PROTO-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-004",
+    "client_metadata": { "name": "Cooperativa Levante", "sector": "finance", "country": "ES" },
+    "project_summary": "Legacy credit system refactoring and regulatory reporting implementation",
+    "main_technology": "scala",
+    "year": 2024,
+    "total_estimated_hours": 300,
+    "components": [
+      {
+        "component_id": "REFACTOR-001",
+        "name": "Credit System Refactoring",
+        "description": "Refactor legacy credit processing system",
+        "tech_stack": ["scala", "akka", "postgresql"],
+        "estimated_hours": 180,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "REPORT-001",
+        "name": "Regulatory Reporting",
+        "description": "Implement regulatory compliance reporting",
+        "tech_stack": ["scala", "spark", "postgresql"],
+        "estimated_hours": 120,
+        "complexity": "high",
+        "dependencies": ["REFACTOR-001"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-005",
+    "client_metadata": { "name": "Industrias Toledo", "sector": "manufacturing", "country": "ES" },
+    "project_summary": "Manufacturing management system implementation",
+    "main_technology": "dotnet",
+    "year": 2024,
+    "total_estimated_hours": 240,
+    "components": [
+      {
+        "component_id": "DISC-005",
+        "name": "Discovery Phase",
+        "description": "Requirements gathering and system analysis",
+        "tech_stack": [".net", "sqlserver"],
+        "estimated_hours": 40,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "IMPL-005",
+        "name": "System Implementation",
+        "description": "Full manufacturing management system development",
+        "tech_stack": [".net", "aspnet", "angular", "sqlserver"],
+        "estimated_hours": 200,
+        "complexity": "high",
+        "dependencies": ["DISC-005"]
+      }
+    ]
+  },
+  {
+    "budget_id": "BUD-2024-014",
+    "client_metadata": { "name": "FintechCorp", "sector": "finance", "country": "ES" },
+    "project_summary": "Mobile banking API with OAuth 2.0 authentication and PSD2 compliance",
+    "main_technology": "ruby_on_rails",
+    "year": 2024,
+    "total_estimated_hours": 480,
+    "components": [
+      {
+        "component_id": "AUTH-001",
+        "name": "OAuth 2.0 authentication backend",
+        "description": "Implementation of OAuth 2.0 flows (authorization code, refresh token) with JWT-based session management, multi-tenant token isolation, and rate limiting per client.",
+        "tech_stack": ["ruby_on_rails", "postgresql", "redis"],
+        "estimated_hours": 120,
+        "complexity": "high",
+        "dependencies": []
+      }
+    ]
+  }
+]

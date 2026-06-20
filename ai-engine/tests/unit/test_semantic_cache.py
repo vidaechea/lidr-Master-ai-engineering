@@ -15,7 +15,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.schemas.estimation import (
+from app.domain.schemas.estimation import (
     DetailLevel,
     EstimationRequest,
     EstimationResponse,
@@ -94,7 +94,7 @@ def vectorizer_mock() -> MagicMock:
 
 @pytest.fixture
 def cache(index_mock, vectorizer_mock):
-    from app.cache.semantic import EstimationSemanticCache
+    from app.generation.cag.semantic import EstimationSemanticCache
 
     c = EstimationSemanticCache(
         redis_client=MagicMock(),
@@ -109,7 +109,7 @@ def cache(index_mock, vectorizer_mock):
 
 @pytest.fixture
 def log_only_cache(index_mock, vectorizer_mock):
-    from app.cache.semantic import EstimationSemanticCache
+    from app.generation.cag.semantic import EstimationSemanticCache
 
     c = EstimationSemanticCache(
         redis_client=MagicMock(),
@@ -129,7 +129,7 @@ def log_only_cache(index_mock, vectorizer_mock):
 
 class TestBucketFor:
     def test_all_optional_fields_set_uses_their_values(self):
-        from app.cache.semantic import EstimationSemanticCache
+        from app.generation.cag.semantic import EstimationSemanticCache
 
         req = _req(
             project_type=ProjectType.WEB_SAAS,
@@ -139,21 +139,21 @@ class TestBucketFor:
         assert EstimationSemanticCache.bucket_for(req, "v2") == "v2:web_saas:detailed:line_items"
 
     def test_project_type_none_defaults_to_any(self):
-        from app.cache.semantic import EstimationSemanticCache
+        from app.generation.cag.semantic import EstimationSemanticCache
 
         req = _req(project_type=None, detail_level=DetailLevel.SUMMARY)
         bucket = EstimationSemanticCache.bucket_for(req, "v1")
         assert bucket == "v1:any:summary:phases_table"
 
     def test_detail_level_none_defaults_to_any(self):
-        from app.cache.semantic import EstimationSemanticCache
+        from app.generation.cag.semantic import EstimationSemanticCache
 
         req = _req(project_type=ProjectType.MOBILE_APP, detail_level=None)
         bucket = EstimationSemanticCache.bucket_for(req, "v1")
         assert bucket == "v1:mobile_app:any:phases_table"
 
     def test_both_optional_none_produces_any_any(self):
-        from app.cache.semantic import EstimationSemanticCache
+        from app.generation.cag.semantic import EstimationSemanticCache
 
         req = _req(project_type=None, detail_level=None)
         assert EstimationSemanticCache.bucket_for(req, "v1") == "v1:any:any:phases_table"
@@ -221,3 +221,4 @@ class TestStore:
         index_mock.load.side_effect = RuntimeError("Redis Stack unavailable")
         # Must not raise — store failures are non-fatal
         cache.store(_req(), _resp(), "v1")
+
