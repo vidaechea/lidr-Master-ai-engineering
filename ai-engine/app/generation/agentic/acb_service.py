@@ -19,6 +19,8 @@ import structlog
 
 from app.config import settings
 from app.foundation.guardrails.input import check_input
+from app.foundation.llm.runtime_config import RuntimeModelConfig
+from app.foundation.llm.litellm_service import LiteLLMRouterService
 from app.foundation.prompts.loader import render_boss_prompt, render_critic_prompt, render_estimation_prompt
 from app.domain.schemas.estimation import (
     ActorCriticBossRequest,
@@ -76,6 +78,20 @@ class ActorCriticBossService:
 
         from app.foundation.llm.litellm_service import litellm_router_service
 
+        runtime_config = RuntimeModelConfig(settings.redis_url)
+        critic_model = await runtime_config.effective("CRITIC_MODEL")
+        critic_fallback = await runtime_config.effective("LLM_FALLBACK")
+        critic_router_service = LiteLLMRouterService(
+            primary_model=critic_model,
+            fallback_model=critic_fallback,
+        )
+        log.info(
+            "acb_runtime_models_selected",
+            actor_model=request.model or settings.llm_model,
+            critic_model=critic_model,
+            critic_fallback=critic_fallback,
+        )
+
         model_name = request.model or settings.llm_model
         base_sys, base_user = render_estimation_prompt(
             request, version=prompt_version, tier=tier, project_metadata=project_metadata
@@ -90,10 +106,10 @@ class ActorCriticBossService:
                 litellm_router_service, iteration,
             )
             await self._run_critic(
-                state, request, project_metadata, litellm_router_service,
+                state, request, project_metadata, critic_router_service,
             )
             boss_decision = await self._run_boss(
-                state, request, project_metadata, litellm_router_service, iteration,
+                state, request, project_metadata, critic_router_service, iteration,
             )
 
             log.info(

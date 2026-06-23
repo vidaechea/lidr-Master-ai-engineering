@@ -2,12 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install uv
-RUN pip install --no-cache-dir uv
-
-# Install dependencies from pyproject.toml (no dev extras)
-COPY pyproject.toml .
-RUN uv pip install --system --no-cache -e .
+# Install runtime dependencies only (keeps image lean and rebuilds faster)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 

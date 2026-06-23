@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import engine
 from app.logging import configure_logging
 from app.models.base import Base
-from app.routers import auth, estimations, internal, projects
+from app.routers import auth, estimations, internal, projects, rag_pipeline
 
 configure_logging()
 log = structlog.get_logger(__name__)
@@ -47,6 +47,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/v1")
 app.include_router(projects.router, prefix="/v1")
 app.include_router(estimations.router, prefix="/v1")
+app.include_router(rag_pipeline.router, prefix="/v1")
 app.include_router(internal.router, prefix="/v1")
 
 

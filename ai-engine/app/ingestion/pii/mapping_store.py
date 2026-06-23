@@ -4,7 +4,7 @@ from typing import Callable, Protocol, runtime_checkable
 
 from sqlalchemy.orm import Session
 
-from app.persistence.repositories.mappings import MappingsRepository
+from app.foundation.persistence.repositories.mappings import MappingsRepository
 
 
 @runtime_checkable

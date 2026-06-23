@@ -13,9 +13,14 @@ import { EstimationService, SessionListItem } from '../estimation.service';
   template: `
     <div class="page-header">
       <h1>Estimation Sessions</h1>
-      <button mat-raised-button color="primary" (click)="createNewSession()">
-        <mat-icon>add</mat-icon> New Estimation
-      </button>
+      <div class="header-actions">
+        <button mat-stroked-button color="primary" (click)="goToRagForm()">
+          <mat-icon>psychology</mat-icon> RAG Form
+        </button>
+        <button mat-raised-button color="primary" (click)="createNewSession()">
+          <mat-icon>add</mat-icon> New Estimation
+        </button>
+      </div>
     </div>
 
     @if (loading()) {
@@ -50,6 +55,7 @@ import { EstimationService, SessionListItem } from '../estimation.service';
   `,
   styles: [`
     .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
+    .header-actions { display:flex; gap:12px; align-items:center; }
     .sessions-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:16px; }
     .session-card { cursor:default; }
     .empty-state { padding:32px; text-align:center; }
@@ -84,6 +90,10 @@ export class SessionsListComponent implements OnInit {
 
   createNewSession() {
     this.router.navigate(['/estimations/new']);
+  }
+
+  goToRagForm() {
+    this.router.navigate(['/estimations/rag-form']);
   }
 
   openSession(sessionId: string) {

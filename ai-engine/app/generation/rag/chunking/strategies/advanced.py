@@ -161,6 +161,10 @@ class SemanticBudgetChunker(_BaseStrategyChunker):
 class PropositionalBudgetChunker(_BaseStrategyChunker):
     """Builds proposition-style facts per component."""
 
+    def __init__(self, *, model_name: str | None = None) -> None:
+        super().__init__()
+        self._model_name = model_name
+
     def chunk(self, budgets: list[Budget]) -> list[Chunk]:
         chunks: list[Chunk] = []
         for budget in budgets:
@@ -186,6 +190,7 @@ class PropositionalBudgetChunker(_BaseStrategyChunker):
                             "budget_id": budget.budget_id,
                             "component_id": component.component_id,
                             "strategy": "propositional",
+                            "chunker_model": self._model_name,
                         },
                         token_count=self._tokens(text),
                     )
@@ -196,10 +201,17 @@ class PropositionalBudgetChunker(_BaseStrategyChunker):
 class ContextualRetrievalBudgetChunker(_BaseStrategyChunker):
     """Adds rich global context prefix to each local chunk."""
 
-    def __init__(self, *, chunk_size: int = 520, chunk_overlap: int = 100) -> None:
+    def __init__(
+        self,
+        *,
+        chunk_size: int = 520,
+        chunk_overlap: int = 100,
+        model_name: str | None = None,
+    ) -> None:
         super().__init__()
         self._chunk_size = chunk_size
         self._chunk_overlap = chunk_overlap
+        self._model_name = model_name
 
     def chunk(self, budgets: list[Budget]) -> list[Chunk]:
         chunks: list[Chunk] = []
@@ -228,6 +240,7 @@ class ContextualRetrievalBudgetChunker(_BaseStrategyChunker):
                                 "component_id": component.component_id,
                                 "strategy": "contextual_retrieval",
                                 "window_index": index,
+                                "chunker_model": self._model_name,
                             },
                             token_count=self._tokens(text),
                         )

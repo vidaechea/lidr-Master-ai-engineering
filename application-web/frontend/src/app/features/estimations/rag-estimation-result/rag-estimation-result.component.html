@@ -1,0 +1,331 @@
+<div class="rag-result-container">
+  @if (error()) {
+    <mat-card class="error-card">
+      <mat-card-header>
+        <mat-icon color="warn">error</mat-icon>
+        <mat-card-title>Error</mat-card-title>
+      </mat-card-header>
+      <mat-card-content>
+        <p>{{ error() }}</p>
+        <button mat-raised-button color="primary" (click)="goBack()">
+          <mat-icon>arrow_back</mat-icon>
+          Back to Estimations
+        </button>
+      </mat-card-content>
+    </mat-card>
+  } @else if (result()) {
+    <div class="result-header">
+      <button mat-icon-button (click)="goBack()">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <div class="header-content">
+        <h1>RAG Estimation Result</h1>
+        <p class="processing-time">
+          @if (result()?.processing_time_ms) {
+            Completed in {{ result()?.processing_time_ms }}ms
+          }
+        </p>
+      </div>
+      <div class="header-actions">
+        <button mat-icon-button (click)="exportAsJSON()" matTooltip="Export as JSON">
+          <mat-icon>download</mat-icon>
+        </button>
+      </div>
+    </div>
+
+    <!-- Summary Card -->
+    <mat-card class="summary-card" [class]="confidenceClass()">
+      <mat-card-header>
+        <div class="summary-title">
+          <mat-card-title>Executive Summary</mat-card-title>
+          <mat-chip-set>
+            <mat-chip
+              [class]="
+                result()?.generation?.estimate?.low_confidence
+                  ? 'chip-low-confidence'
+                  : 'chip-high-confidence'
+              ">
+              <mat-icon>
+                {{
+                  result()?.generation?.estimate?.low_confidence
+                    ? 'warning'
+                    : 'check_circle'
+                }}
+              </mat-icon>
+              {{ result()?.generation?.estimate?.low_confidence ? 'Low Confidence' : 'High Confidence' }}
+            </mat-chip>
+          </mat-chip-set>
+        </div>
+      </mat-card-header>
+
+      <mat-card-content>
+        <p class="summary-text">{{ result()?.generation?.estimate?.summary }}</p>
+
+        <div class="metrics-grid">
+          <div class="metric">
+            <span class="metric-label">Total Engineer Days</span>
+            <span class="metric-value">{{ totalEngineerDays() | number: '1.1-2' }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Modules</span>
+            <span class="metric-value">{{ result()?.generation?.estimate?.modules?.length || 0 }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Sources</span>
+            <span class="metric-value">{{ result()?.generation?.estimate?.sources?.length || 0 }}</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Retrieval Candidates</span>
+            <span class="metric-value">{{ result()?.retrieval?.retrieval?.candidates_evaluated || 0 }}</span>
+          </div>
+        </div>
+      </mat-card-content>
+    </mat-card>
+
+    <!-- Tabs Section -->
+    <mat-tab-group [selectedIndex]="selectedTabIndex()">
+      <!-- Generated Estimate Tab -->
+      <mat-tab label="Generated Estimate">
+        <ng-template mat-tab-label>
+          <mat-icon>article</mat-icon>
+          <span>Estimate</span>
+        </ng-template>
+
+        <div class="tab-content">
+          @if (result()?.generation?.estimate?.estimate_markdown) {
+            <div
+              class="md-render rag-estimate-markdown"
+              [innerHTML]="renderMarkdown(result()?.generation?.estimate?.estimate_markdown)">
+            </div>
+          } @else {
+            <p class="empty-state">No generated estimate text was returned.</p>
+          }
+        </div>
+      </mat-tab>
+
+      <!-- Modules Tab -->
+      <mat-tab label="Modules & Tasks">
+        <ng-template mat-tab-label>
+          <mat-icon>account_tree</mat-icon>
+          <span>Modules</span>
+        </ng-template>
+
+        <div class="tab-content">
+          @for (module of result()?.generation?.estimate?.modules; track module.name) {
+            <mat-expansion-panel class="module-panel">
+              <mat-expansion-panel-header>
+                <mat-panel-title>
+                  {{ module.name }}
+                </mat-panel-title>
+                <mat-panel-description>
+                  {{ formatEngineerDays(calculateModuleDays(module)) }}
+                </mat-panel-description>
+              </mat-expansion-panel-header>
+
+              <div class="module-content">
+                <p class="module-total">
+                  <strong>Module Effort:</strong>
+                  {{ formatEngineerDays(module.engineer_days) }}
+                </p>
+
+                @if (module.tasks && module.tasks.length > 0) {
+                  <div class="tasks-list">
+                    <h4>Tasks</h4>
+                    @for (task of module.tasks; track task.name) {
+                      <div class="task-item">
+                        <span class="task-name">{{ task.name }}</span>
+                        <span class="task-days">{{ formatEngineerDays(task.engineer_days) }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </mat-expansion-panel>
+          }
+        </div>
+      </mat-tab>
+
+      <!-- Assumptions Tab -->
+      <mat-tab label="Assumptions">
+        <ng-template mat-tab-label>
+          <mat-icon>lightbulb</mat-icon>
+          <span>Assumptions</span>
+        </ng-template>
+
+        <div class="tab-content">
+          <div class="assumptions-list">
+            @for (assumption of result()?.generation?.estimate?.assumptions; track $index) {
+              <div class="assumption-item">
+                <mat-icon>check</mat-icon>
+                <p>{{ assumption }}</p>
+              </div>
+            }
+          </div>
+        </div>
+      </mat-tab>
+
+      <!-- Retrieval Tab -->
+      <mat-tab label="Retrieved Chunks">
+        <ng-template mat-tab-label>
+          <mat-icon>search</mat-icon>
+          <span>Retrieved ({{ result()?.retrieval?.retrieval?.chunks?.length || 0 }})</span>
+        </ng-template>
+
+        <div class="tab-content">
+          <div class="retrieval-header">
+            <p>
+              <strong>Query:</strong>
+              {{ result()?.retrieval?.retrieval?.query }}
+            </p>
+            <p>
+              <strong>Top-K:</strong>
+              {{ result()?.retrieval?.retrieval?.top_k }}
+            </p>
+            <p>
+              <strong>Candidates Evaluated:</strong>
+              {{ result()?.retrieval?.retrieval?.candidates_evaluated }}
+            </p>
+            @if (result()?.retrieval?.retrieval?.low_confidence) {
+              <p class="low-confidence-warning">
+                <mat-icon>warning</mat-icon>
+                Low confidence retrieval result
+              </p>
+            }
+          </div>
+
+          <div class="chunks-list">
+            @for (chunk of result()?.retrieval?.retrieval?.chunks; track chunk.chunk_id) {
+              <mat-expansion-panel class="chunk-panel">
+                <mat-expansion-panel-header>
+                  <mat-panel-title>
+                    {{ chunk.source_id }}
+                  </mat-panel-title>
+                  <mat-panel-description>
+                    Distance: {{ formatDistance(chunk.distance) }}
+                  </mat-panel-description>
+                </mat-expansion-panel-header>
+
+                <div class="chunk-content">
+                  <div class="chunk-metadata">
+                    <span><strong>Chunk ID:</strong> {{ chunk.chunk_id }}</span>
+                    <span><strong>Document ID:</strong> {{ chunk.document_id }}</span>
+                    <span><strong>Type:</strong> {{ chunk.chunk_type }}</span>
+                    <span><strong>Distance:</strong> {{ chunk.distance.toFixed(4) }}</span>
+                  </div>
+
+                  <div class="chunk-text">
+                    <p>{{ chunk.content }}</p>
+                  </div>
+
+                  @if (chunk.metadata && (chunk.metadata | keyvalue).length > 0) {
+                    <div class="chunk-metadata-tags">
+                      @for (meta of chunk.metadata | keyvalue; track meta.key) {
+                        <mat-chip>
+                          <strong>{{ meta.key }}:</strong>
+                          {{ meta.value }}
+                        </mat-chip>
+                      }
+                    </div>
+                  }
+
+                  <button
+                    mat-icon-button
+                    (click)="copySourceIdToClipboard(chunk.source_id)"
+                    matTooltip="Copy Source ID">
+                    <mat-icon>content_copy</mat-icon>
+                  </button>
+                </div>
+              </mat-expansion-panel>
+            }
+          </div>
+        </div>
+      </mat-tab>
+
+      <!-- Pipeline Stages Tab -->
+      <mat-tab label="Pipeline Stages">
+        <ng-template mat-tab-label>
+          <mat-icon>build</mat-icon>
+          <span>Stages</span>
+        </ng-template>
+
+        <div class="tab-content">
+          <div class="stages-container">
+            <!-- Reformulation Stage -->
+            <mat-expansion-panel class="stage-panel">
+              <mat-expansion-panel-header>
+                <mat-panel-title>
+                  <mat-icon>tune</mat-icon>
+                  Reformulation
+                </mat-panel-title>
+              </mat-expansion-panel-header>
+
+              <div class="stage-content">
+                <p>
+                  <strong>Search Text:</strong>
+                  {{ result()?.reformulation?.search_text }}
+                </p>
+                <p>
+                  <strong>Keywords:</strong>
+                  @for (keyword of result()?.reformulation?.keywords; track keyword) {
+                    <mat-chip size="small">{{ keyword }}</mat-chip>
+                  }
+                </p>
+                @if (result()?.reformulation?.sector) {
+                  <p><strong>Detected Sector:</strong> {{ result()?.reformulation?.sector }}</p>
+                }
+                @if (result()?.reformulation?.year_from) {
+                  <p>
+                    <strong>Year Range:</strong>
+                    {{ result()?.reformulation?.year_from }} -
+                    {{ result()?.reformulation?.year_to }}
+                  </p>
+                }
+              </div>
+            </mat-expansion-panel>
+
+            <!-- Assembly Stage -->
+            <mat-expansion-panel class="stage-panel">
+              <mat-expansion-panel-header>
+                <mat-panel-title>
+                  <mat-icon>folder_special</mat-icon>
+                  Assembly
+                </mat-panel-title>
+              </mat-expansion-panel-header>
+
+              <div class="stage-content">
+                <p>
+                  <strong>Token Estimate:</strong>
+                  {{ result()?.assembly?.token_count_estimate }}
+                </p>
+                <p>
+                  <strong>Included Sources:</strong>
+                  @for (src of result()?.assembly?.included_source_ids; track src) {
+                    <mat-chip size="small">{{ src }}</mat-chip>
+                  }
+                </p>
+                @if (result()?.assembly?.truncated) {
+                  <p class="truncated-warning">
+                    <mat-icon>info</mat-icon>
+                    Context block was truncated due to token budget
+                  </p>
+                }
+              </div>
+            </mat-expansion-panel>
+          </div>
+        </div>
+      </mat-tab>
+    </mat-tab-group>
+
+    <!-- Action Buttons -->
+    <div class="result-actions">
+      <button mat-raised-button color="primary" (click)="goBack()">
+        <mat-icon>arrow_back</mat-icon>
+        New Estimation
+      </button>
+      <button mat-stroked-button (click)="exportAsJSON()">
+        <mat-icon>download</mat-icon>
+        Download JSON
+      </button>
+    </div>
+  }
+</div>

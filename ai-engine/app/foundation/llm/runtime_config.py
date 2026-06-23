@@ -12,6 +12,18 @@ log = structlog.get_logger(__name__)
 MODEL_KEYS: tuple[str, ...] = ("LLM_MODEL", "LLM_FALLBACK")
 HASH_KEY = "ai_engine:runtime_models"
 
+RUNTIME_KEY_TO_SETTINGS_ATTR: dict[str, str] = {
+    "LLM_MODEL": "llm_model",
+    "LLM_FALLBACK": "llm_fallback",
+    "CRITIC_MODEL": "critic_model",
+    "METADATA_EXTRACTOR_MODEL": "metadata_extractor_model",
+    "COMPRESSION_MODEL": "compression_model",
+    "PROPOSITIONAL_CHUNKER_MODEL": "propositional_chunker_model",
+    "CONTEXTUAL_CHUNKER_MODEL": "contextual_chunker_model",
+}
+
+MODEL_KEYS = tuple(RUNTIME_KEY_TO_SETTINGS_ATTR.keys())
+
 
 @dataclass(frozen=True)
 class RuntimeModelEntry:
@@ -35,11 +47,17 @@ class RuntimeModelConfig:
 
     @staticmethod
     def _default_for(key: str) -> str:
-        if key == "LLM_MODEL":
-            return settings.llm_model
-        if key == "LLM_FALLBACK":
-            return settings.llm_fallback
-        raise ValueError(f"Unknown runtime model key: {key}")
+        attr = RUNTIME_KEY_TO_SETTINGS_ATTR.get(key)
+        if attr is None:
+            raise ValueError(f"Unknown runtime model key: {key}")
+
+        value = getattr(settings, attr, None)
+        if isinstance(value, str) and value:
+            return value
+
+        # Secondary model knobs are optional in settings; when unset, we
+        # inherit the primary model to keep runtime config always concrete.
+        return settings.llm_model
 
     @staticmethod
     def _validate_key(key: str) -> None:
@@ -84,6 +102,23 @@ class RuntimeModelConfig:
         finally:
             await redis.aclose()
 
+    async def get(self, key: str) -> str | None:
+        """Return override for a single key, or None when unset/unavailable."""
+        self._validate_key(key)
+        overrides = await self.get_overrides()
+        return overrides.get(key)
+
+    async def set(self, key: str, value: str | None) -> None:
+        """Set (or clear) one runtime override key."""
+        self._validate_key(key)
+        await self.set_overrides({key: value})
+
+    async def effective(self, key: str) -> str:
+        """Resolved value for one key: override if present, else default."""
+        self._validate_key(key)
+        override = await self.get(key)
+        return override or self._default_for(key)
+
     async def snapshot(self) -> dict[str, RuntimeModelEntry]:
         overrides = await self.get_overrides()
         return {
@@ -94,6 +129,16 @@ class RuntimeModelConfig:
             )
             for key in MODEL_KEYS
         }
+
+    async def reset_all(self) -> None:
+        """Clear all runtime model overrides at once."""
+        redis = self._get_redis()
+        try:
+            await redis.delete(HASH_KEY)
+        except Exception as exc:
+            raise RuntimeConfigUnavailable(str(exc)) from exc
+        finally:
+            await redis.aclose()
 
     def available_models(self) -> list[str]:
         models: list[str] = []

@@ -11,7 +11,7 @@ from app.ingestion.documents.models import Document
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.protocol import ParseContext
 from app.ingestion.parsers.registry import ParserRegistry
-from app.persistence.repositories.jobs import JobsRepository
+from app.foundation.persistence.repositories.jobs import JobsRepository
 
 log = structlog.get_logger(__name__)
 

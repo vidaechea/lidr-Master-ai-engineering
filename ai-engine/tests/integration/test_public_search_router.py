@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
-
-from app.generation.rag.schemas import SearchResponse
-from app.persistence.database import get_async_session
-
+import asyncio
+from app.dependencies import get_semantic_retriever
+from app.main import app
 
 SEARCH_PAYLOAD = {
     "query": "oauth backend",
@@ -23,29 +21,29 @@ SEARCH_PAYLOAD = {
 }
 
 
-async def _fake_session_override():
-    yield object()
+class _StubRetriever:
+    async def search(self, *, query: str, k: int):
+        await asyncio.sleep(0)
+        payload = dict(SEARCH_PAYLOAD)
+        payload["query"] = query
+        payload["k"] = k
+        from app.generation.rag.schemas import SearchResponse
+
+        return SearchResponse(**payload)
 
 
 def test_public_search_matches_legacy_route(client) -> None:
-    from app.main import app
-
-    app.dependency_overrides[get_async_session] = _fake_session_override
+    app.dependency_overrides[get_semantic_retriever] = lambda: _StubRetriever()
     try:
-        with patch(
-            "app.api.embeddings._execute_semantic_search",
-            AsyncMock(return_value=SearchResponse(**SEARCH_PAYLOAD)),
-        ) as mock_search:
-            public_response = client.post("/api/v1/search", json={"query": "oauth backend", "k": 2})
-            legacy_response = client.post(
-                "/api/v1/embeddings/search",
-                json={"query": "oauth backend", "k": 2},
-            )
+        public_response = client.post("/api/v1/search", json={"query": "oauth backend", "k": 2})
+        legacy_response = client.post(
+            "/api/v1/embeddings/search",
+            json={"query": "oauth backend", "k": 2},
+        )
 
         assert public_response.status_code == 200
         assert legacy_response.status_code == 200
         assert public_response.json() == legacy_response.json()
         assert public_response.json() == SEARCH_PAYLOAD
-        assert mock_search.await_count == 2
     finally:
-        app.dependency_overrides.pop(get_async_session, None)
+        app.dependency_overrides.pop(get_semantic_retriever, None)
