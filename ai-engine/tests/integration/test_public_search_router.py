@@ -22,7 +22,7 @@ SEARCH_PAYLOAD = {
 
 
 class _StubRetriever:
-    async def search(self, *, query: str, k: int):
+    async def search(self, *, query: str, k: int, mode: str = "vector", rerank: bool = False):
         await asyncio.sleep(0)
         payload = dict(SEARCH_PAYLOAD)
         payload["query"] = query

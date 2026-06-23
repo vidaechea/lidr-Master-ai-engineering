@@ -253,6 +253,14 @@ class SearchRequest(BaseModel):
 
     query: str = Field(min_length=1, description="Natural language semantic query")
     k: int = Field(ge=1, le=50, description="Top-k nearest chunks to return")
+    mode: Literal["vector", "hybrid"] = Field(
+        default="vector",
+        description="Retrieval mode: vector-only or hybrid vector + lexical (RRF).",
+    )
+    rerank: bool = Field(
+        default=False,
+        description="Enable cross-encoder reranking over a larger recall set.",
+    )
 
 
 class SearchResultItem(BaseModel):
