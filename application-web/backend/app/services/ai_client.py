@@ -87,6 +87,20 @@ def _cache_metrics_http_error_strategy(exc: HTTPStatusError) -> tuple[HTTPExcept
     )
 
 
+def _rag_ingest_http_error_strategy(exc: HTTPStatusError) -> tuple[HTTPException, bool, Any]:
+    status_code = exc.response.status_code
+    detail = _extract_error_detail(exc)
+
+    if status_code in {400, 409, 422}:
+        return HTTPException(status_code=status_code, detail=detail), False, None
+
+    return (
+        HTTPException(status_code=502, detail=f"AI Engine returned {status_code}"),
+        True,
+        detail,
+    )
+
+
 def _enqueue_http_error_strategy(exc: HTTPStatusError) -> tuple[HTTPException, bool, Any]:
     return HTTPException(status_code=503, detail="Failed to enqueue estimation"), True, str(exc)
 
@@ -277,6 +291,18 @@ async def compare_chunking(request_payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+async def ingest_rag_document(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/embeddings/ingest`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/embeddings/ingest",
+        request_timeout=180.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_ingest_http_error",
+        http_error_strategy=_rag_ingest_http_error_strategy,
+    )
+
+
 def _semantic_search_path(use_public_contract: bool | None = None) -> str:
     if use_public_contract is None:
         use_public_contract = settings.ai_engine_public_search_enabled
@@ -295,4 +321,73 @@ async def search_semantic(
         request_timeout=60.0,
         json_body=request_payload,
         http_error_event="ai_engine_search_http_error",
+    )
+
+
+async def rag_estimate(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/estimate`` on the AI Engine.
+    
+    Full orchestration: reformulation → retrieval → assembly → generation.
+    """
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/estimate",
+        request_timeout=120.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_estimate_http_error",
+    )
+
+
+async def rag_retrieval_only(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/retrieval`` on the AI Engine (retrieval-only, no orchestration)."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/retrieval",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_retrieval_http_error",
+    )
+
+
+async def rag_stage_reformulate(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/stages/reformulate`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/stages/reformulate",
+        request_timeout=10.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_stage_reformulate_error",
+    )
+
+
+async def rag_stage_retrieve(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/stages/retrieve`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/stages/retrieve",
+        request_timeout=30.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_stage_retrieve_error",
+    )
+
+
+async def rag_stage_assemble(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/stages/assemble`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/stages/assemble",
+        request_timeout=10.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_stage_assemble_error",
+    )
+
+
+async def rag_stage_generate(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/stages/generate`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/stages/generate",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_stage_generate_error",
     )

@@ -92,6 +92,15 @@ class Settings(BaseSettings):
     # LiteLLM Router — primary and fallback model names (from LLM_MODEL / LLM_FALLBACK env vars)
     llm_fallback: str = "claude-haiku-4-5-20251001"
 
+    # Session 8 RAG pipeline model overrides (all optional, with built-in defaults)
+    propositional_chunker_model: Optional[str] = None
+    contextual_chunker_model: Optional[str] = None
+    metadata_extractor_model: Optional[str] = None
+    compression_model: Optional[str] = None
+    critic_model: Optional[str] = None
+    anchor_detection_mode: str = "basic"  # "basic" | "advanced" for future sessions
+    conversational_prompt_version: str = "v1"  # Prompt template version for conversation context
+
     # Internal service auth — set to require X-Internal-API-Key on all /api/* routes.
     # Leave empty in local development to allow open access.
     internal_api_key: Optional[str] = None
@@ -108,6 +117,20 @@ class Settings(BaseSettings):
     presidio_spacy_model: str = "es_core_news_md"
     pseudonym_faker_locale: str = "es_ES"
     pseudonym_hash_salt: str = "change-me-in-prod"
+
+    # RAG pipeline runtime knobs
+    request_id_header: str = "X-Request-ID"
+    rag_pipeline_reformulation_model: str | None = None
+    rag_pipeline_generation_model: str | None = None
+    rag_pipeline_generation_reasoning_effort: Literal["low", "medium", "high"] = "medium"
+    rag_pipeline_generation_max_tokens: int = 2_048
+    rag_pipeline_retrieval_top_k: int = 5
+    rag_pipeline_retrieval_distance_threshold: float = 0.35
+    rag_pipeline_max_context_tokens: int = 6_000
+    rag_pipeline_idempotency_ttl_seconds: int = 900
+    rag_pipeline_retrieval_api_key: str | None = None
+    rag_pipeline_estimate_api_key: str | None = None
+    rag_pipeline_rate_limit_per_minute: int = 60
 
 
 settings = Settings()

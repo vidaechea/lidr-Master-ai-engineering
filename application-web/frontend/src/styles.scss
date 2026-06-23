@@ -37,3 +37,28 @@ body {
   height: 100%;
 }
 /* You can add global styles to this file, and also import other style files */
+
+.md-render {
+  overflow-x: auto;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 1rem;
+  line-height: 1.6;
+}
+
+.md-render :where(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+}
+
+.md-render :where(th, td) {
+  border: 1px solid #d9dee7;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+}
+
+.md-render :where(th) {
+  background: #f5f7fb;
+  font-weight: 600;
+}

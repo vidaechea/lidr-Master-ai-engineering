@@ -15,9 +15,11 @@ from app.foundation.attachments.attachment_service import (
 from app.generation.cag.cache_service import CachedEstimationService
 from app.domain.estimation_service import EstimationService
 from app.foundation.llm.error_mapper import LLMServiceError
+from app.foundation.llm.runtime_config import RuntimeModelConfig
 from app.generation.conversation.metadata_extractor import MetadataExtractor
 from app.generation.conversation.session_estimation_service import AttachmentPayload, SessionEstimationService
 from app.generation.conversation.sessions import store
+from app.dependencies import get_runtime_config
 
 log = structlog.get_logger(__name__)
 
@@ -53,22 +55,33 @@ def _get_attachment_service() -> AttachmentService:
     return AttachmentService()
 
 
-def _get_metadata_extractor() -> MetadataExtractor:
-    return MetadataExtractor()
+async def _get_metadata_extractor(
+    runtime_config: Annotated[RuntimeModelConfig, Depends(get_runtime_config)],
+) -> MetadataExtractor:
+    metadata_model = await runtime_config.effective("METADATA_EXTRACTOR_MODEL")
+    log.info(
+        "metadata_extractor_runtime_model_selected",
+        model=metadata_model,
+        mode="heuristic_only",
+    )
+    return MetadataExtractor(model_name=metadata_model)
 
 
-def _get_session_estimation_service(
+async def _get_session_estimation_service(
     estimation_service: Annotated[
         EstimationService | CachedEstimationService,
         Depends(_get_cached_estimation_service),
     ],
     attachment_svc: Annotated[AttachmentService, Depends(_get_attachment_service)],
     metadata_extractor: Annotated[MetadataExtractor, Depends(_get_metadata_extractor)],
+    runtime_config: Annotated[RuntimeModelConfig, Depends(get_runtime_config)],
 ) -> SessionEstimationService:
+    compression_model = await runtime_config.effective("COMPRESSION_MODEL")
     return SessionEstimationService(
         estimation_service=estimation_service,
         attachment_service=attachment_svc,
         metadata_extractor=metadata_extractor,
+        compression_model=compression_model,
     )
 
 

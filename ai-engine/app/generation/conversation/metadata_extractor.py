@@ -161,6 +161,11 @@ class MetadataExtractor:
         session.metadata = extractor.update(transcript, llm_response, session.metadata)
     """
 
+    def __init__(self, model_name: str | None = None) -> None:
+        # Runtime knob for future LLM-backed extractor implementation.
+        # Current extractor is heuristic-only and does not call a model.
+        self.model_name = model_name
+
     def update(
         self,
         transcript: str,

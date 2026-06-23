@@ -66,3 +66,57 @@ class Estimation(Base):
     # ── Relationships ─────────────────────────────────────────────────────────
     user: Mapped["User"] = relationship(back_populates="estimations")  # noqa: F821
     project: Mapped["Project | None"] = relationship(back_populates="estimations")  # noqa: F821
+
+
+class RagEstimation(Base):
+    """RAG pipeline-based estimation (Session 09 parity)."""
+
+    __tablename__ = "rag_estimations"
+
+    # ── Ownership ─────────────────────────────────────────────────────────────
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    # ── Input ─────────────────────────────────────────────────────────────────
+    transcript: Mapped[str] = mapped_column(Text, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Full RagEstimationRequest dict serialised as JSONB
+    request_params: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # ── Processing ────────────────────────────────────────────────────────────
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="pending", index=True
+    )
+    processing_time_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # ── Stage outputs (serialised as JSONB) ────────────────────────────────────
+    # Full FullRagEstimationOut response serialised as JSONB for audit
+    pipeline_result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Extracted final estimate (RagPipelineEstimateOut)
+    final_estimate: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    # Retrieval metadata (candidates_evaluated, low_confidence)
+    retrieval_metadata: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # ── Confidence & sources ───────────────────────────────────────────────────
+    low_confidence: Mapped[bool] = mapped_column(default=False)
+    source_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+
+    # ── Completion ────────────────────────────────────────────────────────────
+    error_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # ── Relationships ─────────────────────────────────────────────────────────
+    user: Mapped["User"] = relationship()  # noqa: F821
+    project: Mapped["Project | None"] = relationship()  # noqa: F821

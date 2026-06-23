@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { environment } from '../../../environments/environment';
-import { Observable, Subject } from 'rxjs';
+import { Observable } from 'rxjs';
 
 export type EstimationStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -211,6 +211,19 @@ export interface SemanticSearchResponse {
   results: SemanticSearchHit[];
 }
 
+export interface RagDocumentIngestRequest {
+  source_path: string;
+  document_type: string;
+  content: Record<string, unknown>;
+}
+
+export interface RagDocumentIngestResponse {
+  document_id: number;
+  chunks_created: number;
+  embedding_dimension: number;
+  ingestion_time_ms: number;
+}
+
 export type IssueSeverity = 'critical' | 'major' | 'minor';
 export type IssueCategory =
   | 'arithmetic_error'
@@ -275,6 +288,7 @@ export class EstimationService {
   private readonly sessionsBase = `${environment.apiUrl}/v1/estimations/sessions`;
   private readonly configBase = `${this.base}/config/models`;
   private readonly ragLabBase = `${this.base}/rag/chunking-comparison`;
+  private readonly ragIngestBase = `${this.base}/embeddings/ingest`;
   private readonly semanticSearchBase = environment.usePublicSearchContract
     ? `${this.base}/search`
     : `${this.base}/embeddings/search`;
@@ -387,6 +401,10 @@ export class EstimationService {
 
   searchSemantic(payload: SemanticSearchRequest) {
     return this.http.post<SemanticSearchResponse>(this.semanticSearchBase, payload);
+  }
+
+  ingestRagDocument(payload: RagDocumentIngestRequest) {
+    return this.http.post<RagDocumentIngestResponse>(this.ragIngestBase, payload);
   }
 
   listSessions() {

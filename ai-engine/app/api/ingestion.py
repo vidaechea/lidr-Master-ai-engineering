@@ -12,8 +12,8 @@ from app.ingestion.catalog.models import CatalogDecision, DataCatalog
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.orchestrator import ingest_source
 from app.ingestion.parsers.registry import ParserRegistry
-from app.persistence.database import SessionLocal, get_session
-from app.persistence.repositories.jobs import JobsRepository
+from app.foundation.persistence.database import SessionLocal, get_session
+from app.foundation.persistence.repositories.jobs import JobsRepository
 from app.domain.schemas.ingestion import IngestionJobView, IngestionRunRequest, IngestionRunResponse
 
 log = structlog.get_logger(__name__)

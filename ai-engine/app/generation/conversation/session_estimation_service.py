@@ -36,10 +36,12 @@ class SessionEstimationService:
         estimation_service: EstimationService | CachedEstimationService,
         attachment_service: AttachmentService,
         metadata_extractor: MetadataExtractor,
+        compression_model: str | None = None,
     ) -> None:
         self._estimation_service = estimation_service
         self._attachment_service = attachment_service
         self._metadata_extractor = metadata_extractor
+        self._compression_model = compression_model
 
     async def estimate(
         self,
@@ -98,6 +100,11 @@ class SessionEstimationService:
         )
 
         summarizer = session.get_summarizer()
+        log.debug(
+            "conversation_compression_runtime_model_selected",
+            model=self._compression_model,
+            mode="summarizer_heuristic",
+        )
         summarizer.process_turn(
             turn_number=session.history.turn_count,
             user_message=combined_transcript,
