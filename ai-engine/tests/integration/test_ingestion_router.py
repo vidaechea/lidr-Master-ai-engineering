@@ -22,8 +22,8 @@ from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import default_registry
 
 from app.main import app
-from app.persistence.database import get_session
-from app.persistence.models import Base
+from app.foundation.persistence.database import get_session
+from app.foundation.persistence.models import IngestionJobRow
 
 
 def _client_with_overrides(tmp_path: Path) -> TestClient:
@@ -33,7 +33,7 @@ def _client_with_overrides(tmp_path: Path) -> TestClient:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine)
+    IngestionJobRow.__table__.create(engine)
     local = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
     def _get_session_override():

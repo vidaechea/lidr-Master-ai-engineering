@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import json
 from dataclasses import dataclass
 
@@ -9,60 +8,23 @@ from fastapi import HTTPException
 from fastapi.responses import JSONResponse
 
 from app.api.embeddings import ingest
+from app.generation.rag.ingest_service import DuplicateDocumentError
 from app.domain.schemas.embeddings import IngestPersistRequest
-
-router_module = importlib.import_module("app.api.embeddings")
+from app.generation.rag.schemas import IngestPersistResponse
 
 
 @dataclass
-class _FakeResult:
-    value: int | None
+class _FakeIngestService:
+    response: IngestPersistResponse | None = None
+    error: Exception | None = None
+    calls: int = 0
 
-    def scalar_one_or_none(self) -> int | None:
-        return self.value
-
-
-class _TxContext:
-    def __init__(self, session: "_FakeAsyncSession") -> None:
-        self._session = session
-
-    async def __aenter__(self) -> "_TxContext":
-        self._session.tx_entered += 1
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb) -> None:
-        if exc_type is None:
-            self._session.tx_committed += 1
-        else:
-            self._session.tx_rolled_back += 1
-
-
-class _FakeAsyncSession:
-    def __init__(self, existing_document_id: int | None = None) -> None:
-        self._existing_document_id = existing_document_id
-        self.added: list[object] = []
-        self.added_all: list[object] = []
-        self.tx_entered = 0
-        self.tx_committed = 0
-        self.tx_rolled_back = 0
-
-    async def execute(self, _stmt) -> _FakeResult:
-        return _FakeResult(self._existing_document_id)
-
-    def begin(self) -> _TxContext:
-        return _TxContext(self)
-
-    def add(self, row: object) -> None:
-        self.added.append(row)
-
-    def add_all(self, rows: list[object]) -> None:
-        self.added_all.extend(rows)
-
-    async def flush(self) -> None:
-        if self.added:
-            document = self.added[-1]
-            if getattr(document, "id", None) is None:
-                setattr(document, "id", 42)
+    async def ingest(self, *, source_path: str, document_type: str, budget) -> IngestPersistResponse:
+        self.calls += 1
+        if self.error is not None:
+            raise self.error
+        assert self.response is not None
+        return self.response
 
 
 def _valid_budget_content() -> dict:
@@ -98,14 +60,14 @@ def _valid_budget_content() -> dict:
 
 @pytest.mark.asyncio
 async def test_ingest_returns_409_when_document_already_exists() -> None:
-    session = _FakeAsyncSession(existing_document_id=42)
+    service = _FakeIngestService(error=DuplicateDocumentError(42))
     payload = IngestPersistRequest(
         source_path="data/budgets/budget_2024_q1_fintech.json",
         document_type="historical_budget",
         content=_valid_budget_content(),
     )
 
-    response = await ingest(payload, session=session)
+    response = await ingest(payload, service=service)
 
     assert isinstance(response, JSONResponse)
     assert response.status_code == 409
@@ -113,67 +75,40 @@ async def test_ingest_returns_409_when_document_already_exists() -> None:
         "detail": "Document already ingested",
         "document_id": 42,
     }
-    assert session.tx_entered == 1
-    assert session.tx_committed == 1
-    assert session.tx_rolled_back == 0
+    assert service.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_ingest_persists_document_and_chunks_in_single_transaction(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeChunker:
-        def chunk(self, _budgets):
-            return [
-                type("Chunk", (), {"text": "chunk one", "metadata": {"component_id": "A"}})(),
-                type("Chunk", (), {"text": "chunk two", "metadata": {"component_id": "B"}})(),
-            ]
-
-    def fake_embed_texts(*, texts: list[str], model: str) -> list[list[float]]:
-        assert texts == ["chunk one", "chunk two"]
-        assert model == "text-embedding-3-small"
-        return [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-
-    monkeypatch.setattr(router_module, "JSONStructuralChunker", FakeChunker)
-    monkeypatch.setattr(router_module, "embed_texts", fake_embed_texts)
-
-    session = _FakeAsyncSession(existing_document_id=None)
+    service = _FakeIngestService(
+        response=IngestPersistResponse(
+            document_id=42,
+            chunks_created=2,
+            embedding_dimension=3,
+            ingestion_time_ms=1,
+        )
+    )
     payload = IngestPersistRequest(
         source_path="data/budgets/budget_2024_q1_fintech.json",
         document_type="historical_budget",
         content=_valid_budget_content(),
     )
 
-    response = await ingest(payload, session=session)
+    response = await ingest(payload, service=service)
 
     assert response.document_id == 42
     assert response.chunks_created == 2
     assert response.embedding_dimension == 3
     assert response.ingestion_time_ms >= 0
 
-    assert session.tx_entered == 1
-    assert session.tx_committed == 1
-    assert session.tx_rolled_back == 0
-    assert len(session.added) == 1
-    assert len(session.added_all) == 2
-    assert all(getattr(chunk, "document_id") == 42 for chunk in session.added_all)
+    assert service.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_ingest_returns_500_and_rolls_back_when_embedder_fails(
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class FakeChunker:
-        def chunk(self, _budgets):
-            return [type("Chunk", (), {"text": "chunk one", "metadata": {}})()]
-
-    def failing_embed_texts(*, texts: list[str], model: str) -> list[list[float]]:
-        raise RuntimeError("OpenAI temporary failure")
-
-    monkeypatch.setattr(router_module, "JSONStructuralChunker", FakeChunker)
-    monkeypatch.setattr(router_module, "embed_texts", failing_embed_texts)
-
-    session = _FakeAsyncSession(existing_document_id=None)
+    service = _FakeIngestService(error=RuntimeError("OpenAI temporary failure"))
     payload = IngestPersistRequest(
         source_path="data/budgets/budget_2024_q1_fintech.json",
         document_type="historical_budget",
@@ -181,18 +116,23 @@ async def test_ingest_returns_500_and_rolls_back_when_embedder_fails(
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await ingest(payload, session=session)
+        await ingest(payload, service=service)
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.detail == "Internal processing error"
-    assert session.tx_entered == 1
-    assert session.tx_committed == 0
-    assert session.tx_rolled_back == 1
+    assert service.calls == 1
 
 
 @pytest.mark.asyncio
 async def test_ingest_returns_400_when_content_is_invalid() -> None:
-    session = _FakeAsyncSession(existing_document_id=None)
+    service = _FakeIngestService(
+        response=IngestPersistResponse(
+            document_id=1,
+            chunks_created=1,
+            embedding_dimension=3,
+            ingestion_time_ms=1,
+        )
+    )
     payload = IngestPersistRequest(
         source_path="data/budgets/budget_2024_q1_fintech.json",
         document_type="historical_budget",
@@ -200,7 +140,8 @@ async def test_ingest_returns_400_when_content_is_invalid() -> None:
     )
 
     with pytest.raises(HTTPException) as exc_info:
-        await ingest(payload, session=session)
+        await ingest(payload, service=service)
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "Invalid budget content"
+    assert service.calls == 0

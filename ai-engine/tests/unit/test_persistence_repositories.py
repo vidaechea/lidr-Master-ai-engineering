@@ -5,14 +5,15 @@ import uuid
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.persistence.models import Base
-from app.persistence.repositories.jobs import JobsRepository
-from app.persistence.repositories.mappings import MappingsRepository
+from app.foundation.persistence.models import IngestionJobRow, PseudonymMappingRow
+from app.foundation.persistence.repositories.jobs import JobsRepository
+from app.foundation.persistence.repositories.mappings import MappingsRepository
 
 
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:", future=True)
-    Base.metadata.create_all(engine)
+    IngestionJobRow.__table__.create(engine)
+    PseudonymMappingRow.__table__.create(engine)
     local = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
     return local()
 
