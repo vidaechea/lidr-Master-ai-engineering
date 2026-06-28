@@ -5,6 +5,9 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+RETRIEVAL_MODE_OVERRIDE_DESC = "Optional retrieval mode override. None = runtime/.env default."
+RERANK_OVERRIDE_DESC = "Optional reranking override. None = runtime/.env default."
+
 
 # ============================================================================
 # Generic Chunking & Embedding Schemas (backward compatible)
@@ -253,6 +256,14 @@ class SearchRequest(BaseModel):
 
     query: str = Field(min_length=1, description="Natural language semantic query")
     k: int = Field(ge=1, le=50, description="Top-k nearest chunks to return")
+    mode: Literal["vector", "hybrid"] | None = Field(
+        default=None,
+        description=RETRIEVAL_MODE_OVERRIDE_DESC,
+    )
+    rerank: bool | None = Field(
+        default=None,
+        description=RERANK_OVERRIDE_DESC,
+    )
 
 
 class SearchResultItem(BaseModel):
@@ -398,6 +409,14 @@ class RetrieveStageRequest(BaseModel):
     query: EstimationQuery
     top_k: int | None = Field(default=None, ge=1, le=50)
     distance_threshold: float | None = Field(default=None, ge=0.0)
+    mode: Literal["vector", "hybrid"] | None = Field(
+        default=None,
+        description=RETRIEVAL_MODE_OVERRIDE_DESC,
+    )
+    rerank: bool | None = Field(
+        default=None,
+        description=RERANK_OVERRIDE_DESC,
+    )
 
 
 class RetrieveStageResponse(BaseModel):
@@ -433,6 +452,14 @@ class FullEstimateRequest(BaseModel):
     idempotency_key: str | None = None
     top_k: int | None = Field(default=None, ge=1, le=50)
     distance_threshold: float | None = Field(default=None, ge=0.0)
+    mode: Literal["vector", "hybrid"] | None = Field(
+        default=None,
+        description=RETRIEVAL_MODE_OVERRIDE_DESC,
+    )
+    rerank: bool | None = Field(
+        default=None,
+        description=RERANK_OVERRIDE_DESC,
+    )
 
 
 class FullEstimateResponse(BaseModel):

@@ -126,6 +126,12 @@ class Settings(BaseSettings):
     rag_pipeline_generation_max_tokens: int = 2_048
     rag_pipeline_retrieval_top_k: int = 5
     rag_pipeline_retrieval_distance_threshold: float = 0.35
+    rag_pipeline_search_mode: Literal["vector", "hybrid"] = "vector"
+    rag_pipeline_rrf_k: int = 60
+    rag_pipeline_rerank_enabled: bool = False
+    rag_pipeline_rerank_recall_top_k: int = 50
+    rag_pipeline_rerank_final_top_k: int = 5
+    rag_pipeline_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rag_pipeline_max_context_tokens: int = 6_000
     rag_pipeline_idempotency_ttl_seconds: int = 900
     rag_pipeline_retrieval_api_key: str | None = None

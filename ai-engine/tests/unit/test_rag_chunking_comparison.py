@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib
 
+import pytest
+
 from app.api.embeddings import compare_chunking
 from app.generation.rag.schemas import Budget, CompareRequest
 
@@ -32,7 +34,17 @@ def _sample_budget() -> Budget:
     )
 
 
-def test_compare_chunking_returns_stats_and_query_results(monkeypatch):
+class _FakeRuntimeConfig:
+    async def effective(self, key: str) -> str:
+        if key == "PROPOSITIONAL_CHUNKER_MODEL":
+            return "gpt-5.4-mini"
+        if key == "CONTEXTUAL_CHUNKER_MODEL":
+            return "gpt-5.4-mini"
+        return "gpt-5.4-mini"
+
+
+@pytest.mark.asyncio
+async def test_compare_chunking_returns_stats_and_query_results(monkeypatch):
     def fake_embed_texts(*, texts: list[str], model: str) -> list[list[float]]:
         vectors: list[list[float]] = []
         for text in texts:
@@ -45,13 +57,14 @@ def test_compare_chunking_returns_stats_and_query_results(monkeypatch):
 
     monkeypatch.setattr(comparison_module, "embed_texts", fake_embed_texts)
 
-    response = compare_chunking(
+    response = await compare_chunking(
         CompareRequest(
             budgets=[_sample_budget()],
             queries=["OAuth authentication backend"],
             strategies=["structural", "fixed_size"],
             top_k=2,
-        )
+        ),
+        runtime_config=_FakeRuntimeConfig(),
     )
 
     assert set(response.stats_per_strategy) == {"structural", "fixed_size"}

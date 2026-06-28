@@ -141,10 +141,16 @@ class TestRagPipelineIntegration:
     def test_estimate_end_to_end_flow(self):
         """Test end-to-end estimate flow structure."""
         from app.generation.rag.schemas import (
+            AssembleStageResponse,
             EstimateModule,
             EstimateTask,
+            EstimationQuery,
+            GenerateStageResponse,
+            RetrievalResult,
+            ReformulateStageResponse,
             RagPipelineEstimate,
             FullEstimateResponse,
+            RetrieveStageResponse,
         )
 
         # Build estimate response
@@ -168,10 +174,33 @@ class TestRagPipelineIntegration:
         # Build full response
         response = FullEstimateResponse(
             request_id="req-123",
-            reformulation=MagicMock(),
-            retrieval=MagicMock(),
-            assembly=MagicMock(),
-            generation=MagicMock(estimate=estimate),
+            reformulation=ReformulateStageResponse(
+                query=EstimationQuery(
+                    search_text="estimate summary",
+                    sector="fintech",
+                    year_from=2024,
+                    year_to=2024,
+                    chunk_types=["budget_component"],
+                    keywords=["oauth", "backend"],
+                ),
+                used_fallback=False,
+            ),
+            retrieval=RetrieveStageResponse(
+                retrieval=RetrievalResult(
+                    query="estimate summary",
+                    top_k=5,
+                    candidates_evaluated=2,
+                    low_confidence=False,
+                    chunks=[],
+                )
+            ),
+            assembly=AssembleStageResponse(
+                context_block="[src-1] backend context",
+                included_source_ids=["src-1", "src-2"],
+                token_count_estimate=64,
+                truncated=False,
+            ),
+            generation=GenerateStageResponse(estimate=estimate),
             idempotency_hit=False,
         )
 
