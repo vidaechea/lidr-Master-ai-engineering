@@ -1,13 +1,16 @@
 """Tests for CitationValidatorService."""
 
 import pytest
+from pydantic import ValidationError
 
 from app.generation.rag.citation_validator_service import CitationValidatorService
 from app.generation.rag.schemas import (
+    EstimateLineItem,
     EstimateModule,
     EstimateTask,
     RagPipelineEstimate,
     RetrievedChunk,
+    SourceReference,
 )
 
 
@@ -55,6 +58,21 @@ def sample_estimate():
                 tasks=[EstimateTask(name="Task 1", engineer_days=5.0)],
             )
         ],
+        line_items=[
+            EstimateLineItem(
+                component="Authentication",
+                hours=40.0,
+                rationale="Derived from retrieved historical budget evidence.",
+                grounded=True,
+                sources=[
+                    SourceReference(
+                        chunk_id="1",
+                        document_id="1",
+                        evidence="Authentication module estimated at 40 hours",
+                    )
+                ],
+            )
+        ],
         assumptions=["Based on src-1 and src-2"],
         sources=["src-1", "src-2"],
     )
@@ -93,6 +111,21 @@ class TestCitationValidator:
                     tasks=[EstimateTask(name="Task", engineer_days=1.0)],
                 )
             ],
+            line_items=[
+                EstimateLineItem(
+                    component="Payments",
+                    hours=8.0,
+                    rationale="Derived from retrieved historical budget evidence.",
+                    grounded=True,
+                    sources=[
+                        SourceReference(
+                            chunk_id="1",
+                            document_id="1",
+                            evidence="Payments work estimated at 8 hours",
+                        )
+                    ],
+                )
+            ],
             assumptions=["Uses src-1"],
             sources=["src-1", "src-invalid"],
         )
@@ -101,6 +134,54 @@ class TestCitationValidator:
 
         assert "src-invalid" not in repaired.sources
         assert "src-1" in repaired.sources
+
+    def test_validate_citations_downgrades_line_item_with_missing_chunk(self, service, sample_chunks):
+        estimate = RagPipelineEstimate(
+            summary="Grounded estimate",
+            low_confidence=False,
+            modules=[
+                EstimateModule(
+                    name="Module",
+                    engineer_days=1.0,
+                    tasks=[EstimateTask(name="Task", engineer_days=1.0)],
+                )
+            ],
+            line_items=[
+                EstimateLineItem(
+                    component="Payments",
+                    hours=12.0,
+                    rationale="Derived from retrieved historical budget evidence.",
+                    grounded=True,
+                    sources=[
+                        SourceReference(
+                            chunk_id="999",
+                            document_id="1",
+                            evidence="Payments work estimated at 12 hours",
+                        )
+                    ],
+                )
+            ],
+            assumptions=["Uses src-1"],
+            sources=["src-1"],
+        )
+
+        repaired, warnings = service.validate_citations(estimate, sample_chunks)
+
+        assert repaired.low_confidence is True
+        assert repaired.line_items[0].grounded is False
+        assert repaired.line_items[0].hours == 0.0
+        assert repaired.line_items[0].sources == []
+        assert any("Downgraded line item 'Payments'" in warning for warning in warnings)
+
+    def test_line_item_requires_insufficient_context_when_ungrounded(self):
+        with pytest.raises(ValidationError):
+            EstimateLineItem(
+                component="Authentication",
+                hours=4.0,
+                rationale="No supporting data was found.",
+                grounded=False,
+                sources=[],
+            )
 
     def test_extract_source_references_bracket_format(self, service):
         """Test extracting source references in bracket format."""

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 RETRIEVAL_MODE_OVERRIDE_DESC = "Optional retrieval mode override. None = runtime/.env default."
 RERANK_OVERRIDE_DESC = "Optional reranking override. None = runtime/.env default."
@@ -385,6 +385,39 @@ class EstimateModule(BaseModel):
     tasks: list[EstimateTask] = Field(default_factory=list)
 
 
+class SourceReference(BaseModel):
+    """Verifiable source reference supporting one estimation line item."""
+
+    chunk_id: str = Field(min_length=1)
+    document_id: str = Field(min_length=1)
+    evidence: str = Field(min_length=1)
+
+
+class EstimateLineItem(BaseModel):
+    """Line-level estimate that can be grounded against retrieved context."""
+
+    component: str = Field(min_length=1)
+    hours: float = Field(ge=0.0)
+    rationale: str = Field(min_length=1)
+    grounded: bool
+    sources: list[SourceReference] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_grounding_integrity(self) -> "EstimateLineItem":
+        if self.grounded and not self.sources:
+            raise ValueError("Grounded line items must include at least one source reference")
+        if not self.grounded:
+            if self.sources:
+                raise ValueError("Ungrounded line items cannot include source references")
+            if self.hours != 0:
+                raise ValueError("Ungrounded line items must report 0 hours")
+            if "insufficient context" not in self.rationale.lower():
+                raise ValueError(
+                    "Ungrounded line items must explicitly mention insufficient context"
+                )
+        return self
+
+
 class RagPipelineEstimate(BaseModel):
     """Normalized RAG pipeline estimate output."""
 
@@ -392,8 +425,27 @@ class RagPipelineEstimate(BaseModel):
     estimate_markdown: str | None = None
     low_confidence: bool
     modules: list[EstimateModule] = Field(default_factory=list)
+    line_items: list[EstimateLineItem] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+
+
+class CitationLineReport(BaseModel):
+    """Verification status for one estimate line item citation set."""
+
+    component: str
+    status: Literal["grounded", "dangling", "insufficient_context"]
+    cited_chunk_ids: list[str] = Field(default_factory=list)
+    dangling_chunk_ids: list[str] = Field(default_factory=list)
+
+
+class CitationReport(BaseModel):
+    """Post-generation citation verification report for all line items."""
+
+    grounded_lines: int = Field(ge=0)
+    dangling_lines: int = Field(ge=0)
+    insufficient_context_lines: int = Field(ge=0)
+    lines: list[CitationLineReport] = Field(default_factory=list)
 
 
 class ReformulateStageRequest(BaseModel):
@@ -478,6 +530,8 @@ __all__ = [
     "ChunkItem",
     "ChunkRequest",
     "ChunkResponse",
+    "CitationLineReport",
+    "CitationReport",
     "ClientMetadata",
     "EmbeddedChunk",
     "EmbedRequest",
@@ -500,6 +554,7 @@ __all__ = [
     "AssembleStageRequest",
     "AssembleStageResponse",
     "EstimationQuery",
+    "EstimateLineItem",
     "EstimateModule",
     "EstimateTask",
     "FullEstimateRequest",
@@ -513,4 +568,5 @@ __all__ = [
     "RetrieveStageRequest",
     "RetrieveStageResponse",
     "RagPipelineEstimate",
+    "SourceReference",
 ]

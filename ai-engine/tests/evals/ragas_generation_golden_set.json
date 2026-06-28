@@ -1,0 +1,29 @@
+{
+  "queries": [
+    {
+      "id": "q1",
+      "transcript": "Necesitamos estimar un MVP fintech con autenticacion, panel de administracion y un modulo de pagos integrado con una pasarela existente. El backend sera FastAPI y queremos una primera version web responsive.",
+      "reference_answer": "La estimacion de referencia debe incluir autenticacion, integracion de pagos, backend FastAPI, frontend responsive, pruebas y riesgos de integracion con la pasarela. Debe explicitar supuestos si faltan detalles de seguridad o volumen."
+    },
+    {
+      "id": "q2",
+      "transcript": "Proyecto de migracion de un ERP legado con integraciones de almacen, cuadros de mando y limpieza de datos historicos. Se espera una propuesta por fases con riesgos tecnicos claros.",
+      "reference_answer": "La respuesta de referencia debe cubrir migracion por fases, integraciones con almacen, reporting o dashboards, saneamiento de datos, pruebas de regresion y riesgos de calidad de datos e integraciones heredadas."
+    },
+    {
+      "id": "q3",
+      "transcript": "Hay que refactorizar un sistema de creditos y ademas generar reporting regulatorio para una cooperativa financiera. El cliente menciona deuda tecnica y procesos manuales actuales.",
+      "reference_answer": "La estimacion de referencia debe contemplar refactor del core de creditos, reporting regulatorio, validaciones de datos, posible auditoria o trazabilidad, pruebas y riesgos de cumplimiento normativo y deuda tecnica."
+    },
+    {
+      "id": "q4",
+      "transcript": "Queremos lanzar un SaaS B2B con una fase inicial de discovery, UX, implementacion MVP y QA. Habra panel de clientes y flujos principales de alta y gestion interna.",
+      "reference_answer": "La respuesta de referencia debe incluir discovery, UX o diseno, desarrollo del MVP, QA, panel de clientes, gestion interna, supuestos sobre alcance y riesgos de cambios de producto durante discovery."
+    },
+    {
+      "id": "q5",
+      "transcript": "Sistema de gestion para manufactura con backend .NET y frontend Angular. Debe contemplar operativa interna, integraciones basicas y despliegue inicial corporativo.",
+      "reference_answer": "La estimacion de referencia debe mencionar backend .NET, frontend Angular, modulos operativos internos, integraciones basicas, despliegue inicial, pruebas y riesgos de integracion y complejidad del dominio industrial."
+    }
+  ]
+}

@@ -55,7 +55,20 @@ uv run -m tests.evals.eval_runner all
 
 # Show cost and coverage info
 uv run -m tests.evals.eval_runner info
+
+# Evaluate full RAG generation with the four RAGAS metrics
+uv sync --extra evals
+uv run python scripts/eval_ragas_generation.py --base-url http://localhost:8001 --rerank
 ```
+
+The RAGAS runner uses the golden set in `tests/evals/ragas_generation_golden_set.json` and reports:
+
+- answer relevancy
+- faithfulness
+- contextual precision
+- contextual recall
+- grounded vs. ungrounded line items
+- dangling line-level citation references
 
 ## Command Reference
 

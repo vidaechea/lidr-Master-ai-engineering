@@ -81,8 +81,10 @@ class CoherenceRepairService:
 
         return RagPipelineEstimate(
             summary=estimate.summary,
+            estimate_markdown=estimate.estimate_markdown,
             low_confidence=estimate.low_confidence,
             modules=repaired_modules,
+            line_items=estimate.line_items,
             assumptions=estimate.assumptions,
             sources=estimate.sources,
         )
@@ -96,8 +98,10 @@ class CoherenceRepairService:
 
         return RagPipelineEstimate(
             summary=estimate.summary,
+            estimate_markdown=estimate.estimate_markdown,
             low_confidence=True,  # Mark as low confidence since we added defaults
             modules=estimate.modules,
+            line_items=estimate.line_items,
             assumptions=default_assumptions,
             sources=estimate.sources,
         )
@@ -115,8 +119,10 @@ class CoherenceRepairService:
 
         return RagPipelineEstimate(
             summary=estimate.summary,
+            estimate_markdown=estimate.estimate_markdown,
             low_confidence=True,  # Mark as low confidence
             modules=[default_module],
+            line_items=estimate.line_items,
             assumptions=estimate.assumptions,
             sources=estimate.sources,
         )

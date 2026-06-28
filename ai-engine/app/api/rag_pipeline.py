@@ -23,6 +23,9 @@ from app.generation.rag.retriever_service import SemanticRetriever
 from app.generation.rag.schemas import (
     AssembleStageRequest,
     AssembleStageResponse,
+    CitationLineReport,
+    CitationReport,
+    EstimateLineItem,
     EstimateModule,
     EstimateTask,
     FullEstimateRequest,
@@ -31,9 +34,11 @@ from app.generation.rag.schemas import (
     GenerateStageResponse,
     ReformulateStageRequest,
     ReformulateStageResponse,
+    RagPipelineEstimate,
+    RetrievedChunk,
     RetrieveStageRequest,
     RetrieveStageResponse,
-    RagPipelineEstimate,
+    SourceReference,
 )
 
 log = structlog.get_logger(__name__)
@@ -71,6 +76,16 @@ _idempotency_store = _IdempotencyStore()
 _reformulation_service = QueryReformulationService()
 _citation_validator = CitationValidatorService()
 _coherence_repair = CoherenceRepairService()
+_DEFAULT_COMPONENT_NAME = "Core delivery"
+_GENERATION_GROUNDING_INSTRUCTIONS = (
+    "Use only the retrieved context below as grounding. "
+    "Each context entry includes chunk_id, document_id, and source_id metadata. "
+    "For every estimate line item you derive, attribute it only to one or more chunk_id values that "
+    "appear in the provided context. Never cite or imply a chunk that is not present in the context. "
+    "When citing support, copy the exact fragment, number, or figure from the source as verbatim evidence; "
+    "do not paraphrase the evidence. If you cannot find support for a line item, mark it as grounded=False "
+    "and explicitly state insufficient context instead of guessing hours."
+)
 
 
 def _reformulate(transcript: str) -> ReformulateStageResponse:
@@ -116,7 +131,7 @@ def _assemble(payload: AssembleStageRequest) -> AssembleStageResponse:
         if running_tokens + token_estimate > max_context_tokens:
             truncated = True
             break
-        selected_texts.append(f"[{chunk.source_id}] {chunk.content}")
+        selected_texts.append(_format_chunk_for_context(chunk))
         selected_source_ids.append(chunk.source_id)
         running_tokens += token_estimate
 
@@ -129,11 +144,19 @@ def _assemble(payload: AssembleStageRequest) -> AssembleStageResponse:
     )
 
 
+def _format_chunk_for_context(chunk: RetrievedChunk) -> str:
+    return (
+        f"[chunk_id={chunk.chunk_id} document_id={chunk.document_id} source_id={chunk.source_id}]\n"
+        f"{chunk.content}"
+    )
+
+
 def _to_rag_pipeline_estimate(
     *,
     llm_text: str,
     source_ids: list[str],
     low_confidence: bool,
+    retrieved_chunks: list[RetrievedChunk] | None = None,
 ) -> RagPipelineEstimate:
     tasks = [
         EstimateTask(name="Implementation", engineer_days=5.0),
@@ -141,7 +164,7 @@ def _to_rag_pipeline_estimate(
     ]
     modules = [
         EstimateModule(
-            name="Core delivery",
+            name=_DEFAULT_COMPONENT_NAME,
             engineer_days=sum(task.engineer_days for task in tasks),
             tasks=tasks,
         )
@@ -151,14 +174,52 @@ def _to_rag_pipeline_estimate(
         "Human verification is required before commitment.",
     ]
     summary = _extract_clean_summary(llm_text)
+    line_items = _build_default_line_items(tasks=tasks, retrieved_chunks=retrieved_chunks)
 
     return RagPipelineEstimate(
         summary=summary,
         estimate_markdown=llm_text or None,
         low_confidence=low_confidence,
         modules=modules,
+        line_items=line_items,
         assumptions=assumptions,
         sources=source_ids,
+    )
+
+
+def _build_default_line_items(
+    *,
+    tasks: list[EstimateTask],
+    retrieved_chunks: list[RetrievedChunk] | None,
+) -> list[EstimateLineItem]:
+    if not retrieved_chunks:
+        return [_build_insufficient_context_line_item()]
+
+    return [
+        EstimateLineItem(
+            component=_DEFAULT_COMPONENT_NAME,
+            hours=sum(task.engineer_days for task in tasks) * 8,
+            rationale="Derived from retrieved historical budget evidence.",
+            grounded=True,
+            sources=[
+                SourceReference(
+                    chunk_id=str(chunk.chunk_id),
+                    document_id=str(chunk.document_id),
+                    evidence=chunk.content.strip()[:200],
+                )
+                for chunk in retrieved_chunks
+            ],
+        )
+    ]
+
+
+def _build_insufficient_context_line_item() -> EstimateLineItem:
+    return EstimateLineItem(
+        component=_DEFAULT_COMPONENT_NAME,
+        hours=0.0,
+        rationale="Insufficient context to ground this line item with retrieved historical data.",
+        grounded=False,
+        sources=[],
     )
 
 
@@ -190,6 +251,7 @@ async def _generate_with_validation(
     payload: GenerateStageRequest,
     low_confidence: bool,
     retrieved_chunks: list | None = None,
+    request_id: str | None = None,
 ) -> RagPipelineEstimate:
     """Generate and validate estimate in a single attempt."""
     result = await service.estimate(
@@ -201,7 +263,16 @@ async def _generate_with_validation(
         llm_text=result.estimation,
         source_ids=payload.source_ids,
         low_confidence=low_confidence,
+        retrieved_chunks=retrieved_chunks,
     )
+
+    retrieved_chunk_ids = set()
+    if retrieved_chunks:
+        retrieved_chunk_ids = {str(chunk.chunk_id) for chunk in retrieved_chunks}
+    citation_report = verify_citations(estimate, retrieved_chunk_ids)
+    _log_citation_report(citation_report, request_id=request_id)
+    if citation_report.dangling_lines > 0:
+        estimate = estimate.model_copy(update={"low_confidence": True})
 
     # Validate coherence
     if not _citation_validator.is_coherent(estimate):
@@ -228,6 +299,7 @@ async def _generate(
     low_confidence: bool,
     retrieved_chunks: list | None = None,
     max_retries: int = 2,
+    request_id: str | None = None,
 ) -> GenerateStageResponse:
     """Generate estimate with citation validation, coherence repair, and retry logic."""
     service = EstimationService()
@@ -237,11 +309,7 @@ async def _generate(
     for attempt in range(max_retries + 1):
         try:
             llm_request = EstimationRequest(
-                transcription=(
-                    "Use retrieved context as grounding. If context is insufficient, explicitly say it.\n\n"
-                    f"Transcript:\n{payload.transcript}\n\n"
-                    f"Retrieved context:\n{payload.context_block}"
-                ),
+                transcription=_build_generation_transcription(payload),
                 model=model,
                 reasoning_effort=settings.rag_pipeline_generation_reasoning_effort,
                 max_output_tokens=settings.rag_pipeline_generation_max_tokens,
@@ -255,6 +323,7 @@ async def _generate(
                 payload=payload,
                 low_confidence=low_confidence,
                 retrieved_chunks=retrieved_chunks,
+                request_id=request_id,
             )
 
             log.info("estimate_generated", attempt=attempt, low_confidence=low_confidence)
@@ -279,6 +348,89 @@ async def _generate(
         low_confidence=True,
     )
     return GenerateStageResponse(estimate=estimate)
+
+
+def _build_generation_transcription(payload: GenerateStageRequest) -> str:
+    return (
+        f"{_GENERATION_GROUNDING_INSTRUCTIONS}\n\n"
+        "Transcript:\n"
+        f"{payload.transcript}\n\n"
+        "Retrieved context:\n"
+        f"{payload.context_block}"
+    )
+
+
+def verify_citations(
+    estimate: RagPipelineEstimate,
+    retrieved_chunk_ids: set[str],
+) -> CitationReport:
+    """Flag line items with chunk ids not present in retrieved context."""
+    line_reports: list[CitationLineReport] = []
+    grounded_lines = 0
+    dangling_lines = 0
+    insufficient_context_lines = 0
+
+    for line_item in estimate.line_items:
+        cited_chunk_ids = sorted({source.chunk_id for source in line_item.sources})
+
+        if not line_item.grounded:
+            insufficient_context_lines += 1
+            line_reports.append(
+                CitationLineReport(
+                    component=line_item.component,
+                    status="insufficient_context",
+                    cited_chunk_ids=cited_chunk_ids,
+                    dangling_chunk_ids=[],
+                )
+            )
+            continue
+
+        dangling_chunk_ids = sorted(
+            chunk_id for chunk_id in cited_chunk_ids if chunk_id not in retrieved_chunk_ids
+        )
+        if dangling_chunk_ids:
+            dangling_lines += 1
+            line_reports.append(
+                CitationLineReport(
+                    component=line_item.component,
+                    status="dangling",
+                    cited_chunk_ids=cited_chunk_ids,
+                    dangling_chunk_ids=dangling_chunk_ids,
+                )
+            )
+            continue
+
+        grounded_lines += 1
+        line_reports.append(
+            CitationLineReport(
+                component=line_item.component,
+                status="grounded",
+                cited_chunk_ids=cited_chunk_ids,
+                dangling_chunk_ids=[],
+            )
+        )
+
+    return CitationReport(
+        grounded_lines=grounded_lines,
+        dangling_lines=dangling_lines,
+        insufficient_context_lines=insufficient_context_lines,
+        lines=line_reports,
+    )
+
+
+def _log_citation_report(report: CitationReport, request_id: str | None) -> None:
+    event = "estimate_citation_verification"
+    payload = {
+        "request_id": request_id,
+        "grounded_lines": report.grounded_lines,
+        "dangling_lines": report.dangling_lines,
+        "insufficient_context_lines": report.insufficient_context_lines,
+        "line_reports": [line.model_dump() for line in report.lines],
+    }
+    if report.dangling_lines > 0:
+        log.warning(event, **payload)
+        return
+    log.info(event, **payload)
 
 
 @retrieval_router.post("")
@@ -338,6 +490,8 @@ async def estimate_from_transcript(
     _: Annotated[str, Depends(enforce_rag_pipeline_estimate_security)],
 ) -> FullEstimateResponse:
     """RAG full orchestration endpoint (stateless request, idempotent key optional)."""
+    request_id = getattr(request.state, "request_id", None)
+
     if payload.idempotency_key:
         cached = _idempotency_store.get(payload.idempotency_key)
         if cached is not None:
@@ -385,10 +539,11 @@ async def estimate_from_transcript(
         tier=tier,
         low_confidence=low_confidence,
         retrieved_chunks=retrieval.retrieval.chunks,
+        request_id=request_id,
     )
 
     response = FullEstimateResponse(
-        request_id=getattr(request.state, "request_id", None),
+        request_id=request_id,
         reformulation=reformulation,
         retrieval=retrieval,
         assembly=assembly,
