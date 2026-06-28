@@ -97,6 +97,8 @@ async def _retrieve(
         query=payload.query,
         k=top_k,
         distance_threshold=distance_threshold,
+        mode=payload.mode,
+        rerank=payload.rerank,
     )
 
     return RetrieveStageResponse(retrieval=retrieval)
@@ -348,6 +350,8 @@ async def estimate_from_transcript(
             query=reformulation.query,
             top_k=payload.top_k,
             distance_threshold=payload.distance_threshold,
+            mode=payload.mode,
+            rerank=payload.rerank,
         ),
         retriever=retriever,
     )

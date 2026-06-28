@@ -50,11 +50,17 @@ class SemanticRetriever:
         *,
         query: str,
         k: int,
-        mode: Literal["vector", "hybrid"] = "vector",
-        rerank: bool = False,
+        mode: Literal["vector", "hybrid"] | None = None,
+        rerank: bool | None = None,
     ) -> SearchResponse:
         """Search using vector-only or hybrid retrieval, with optional reranking."""
         started = time.perf_counter()
+
+        from app.dependencies import get_runtime_retrieval_config
+
+        runtime_retrieval = get_runtime_retrieval_config()
+        resolved_mode: Literal["vector", "hybrid"] = mode or await runtime_retrieval.effective_search_mode()
+        resolved_rerank = await runtime_retrieval.effective_rerank() if rerank is None else rerank
 
         # Sync OpenAI client → thread, same reasoning as in the ingest path.
         query_vector = await asyncio.to_thread(self._embedder.embed_one, query)
@@ -63,11 +69,11 @@ class SemanticRetriever:
         rows: list
         candidates_evaluated: int
 
-        if rerank and self._reranker is None:
+        if resolved_rerank and self._reranker is None:
             raise RuntimeError("Reranking requested but CrossEncoder reranker is not available")
 
         async with self._session_factory() as session:
-            if mode == "hybrid":
+            if resolved_mode == "hybrid":
                 rows, candidates_evaluated = await self._store.search_hybrid(
                     session,
                     query_text=query,
@@ -83,7 +89,7 @@ class SemanticRetriever:
                     k=per_branch_k,
                 )
 
-        if rerank and self._reranker is not None and rows:
+        if resolved_rerank and self._reranker is not None and rows:
             top_k = min(k, settings.rag_pipeline_rerank_final_top_k)
             rows = self._rerank_rows(query=query, rows=rows, top_k=top_k)
         else:
@@ -110,8 +116,8 @@ class SemanticRetriever:
             "rag_search_done",
             query=query[:80],
             k=k,
-            mode=mode,
-            rerank=rerank,
+            mode=resolved_mode,
+            rerank=resolved_rerank,
             results=len(response.results),
             candidates_evaluated=candidates_evaluated,
             search_time_ms=elapsed_ms,
@@ -169,8 +175,11 @@ class SemanticRetriever:
         Returns RetrievalResult with candidates_evaluated and low_confidence flag.
         """
         started = time.perf_counter()
-        resolved_mode: Literal["vector", "hybrid"] = mode or settings.rag_pipeline_search_mode
-        resolved_rerank = settings.rag_pipeline_rerank_enabled if rerank is None else rerank
+        from app.dependencies import get_runtime_retrieval_config
+
+        runtime_retrieval = get_runtime_retrieval_config()
+        resolved_mode: Literal["vector", "hybrid"] = mode or await runtime_retrieval.effective_search_mode()
+        resolved_rerank = await runtime_retrieval.effective_rerank() if rerank is None else rerank
         recall_top_k = max(k, settings.rag_pipeline_rerank_recall_top_k) if resolved_rerank else k
 
         if resolved_rerank and self._reranker is None:

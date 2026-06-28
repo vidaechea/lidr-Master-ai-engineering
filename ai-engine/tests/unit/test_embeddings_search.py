@@ -14,7 +14,7 @@ class _FakeRetriever:
         self.calls = 0
         self.last_kwargs: dict[str, object] = {}
 
-    async def search(self, *, query: str, k: int, mode: str, rerank: bool) -> SearchResponse:
+    async def search(self, *, query: str, k: int, mode: str | None, rerank: bool | None) -> SearchResponse:
         self.calls += 1
         self.last_kwargs = {
             "query": query,
@@ -46,8 +46,8 @@ async def test_search_returns_top_k_results() -> None:
     assert retriever.last_kwargs == {
         "query": payload.query,
         "k": 5,
-        "mode": "vector",
-        "rerank": False,
+        "mode": None,
+        "rerank": None,
     }
     assert response.query == payload.query
     assert response.k == 5

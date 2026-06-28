@@ -23,7 +23,7 @@ from app.generation.rag.ingest_service import RagIngestService
 from app.generation.rag.reranker import CrossEncoderReranker
 from app.generation.rag.retriever_service import SemanticRetriever
 from app.generation.rag.store.repository import ChunkStore
-from app.foundation.llm.runtime_config import RuntimeModelConfig
+from app.foundation.llm.runtime_config import RuntimeModelConfig, RuntimeRetrievalConfig
 
 log = structlog.get_logger(__name__)
 
@@ -203,6 +203,12 @@ def get_session_factory() -> async_sessionmaker:
 def get_runtime_config() -> RuntimeModelConfig:
     """Redis-backed runtime overrides for model selection."""
     return RuntimeModelConfig(settings.redis_url)
+
+
+@lru_cache
+def get_runtime_retrieval_config() -> RuntimeRetrievalConfig:
+    """Redis-backed runtime overrides for retrieval mode and reranking toggles."""
+    return RuntimeRetrievalConfig(settings.redis_url)
 
 
 @lru_cache

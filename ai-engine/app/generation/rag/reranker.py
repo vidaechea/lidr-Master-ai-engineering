@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import threading
+import time
 
 import structlog
 
@@ -31,17 +33,43 @@ class CrossEncoderReranker:
     """
 
     def __init__(self, *, model_name: str) -> None:
-        try:
-            from sentence_transformers import CrossEncoder
-        except ImportError as exc:
-            raise RuntimeError(
-                "sentence-transformers is required for reranking. "
-                "Install it with: uv add sentence-transformers"
-            ) from exc
-
         self._model_name = model_name
-        self._model = CrossEncoder(model_name)
-        log.info("reranker_initialized", model_name=model_name)
+        self._model = None
+        self._load_lock = threading.Lock()
+        log.info("reranker_initialized", model_name=model_name, lazy_load=True)
+
+    @property
+    def model_name(self) -> str:
+        return self._model_name
+
+    def _ensure_loaded(self):
+        if self._model is not None:
+            return self._model
+
+        with self._load_lock:
+            if self._model is not None:
+                return self._model
+
+            try:
+                from sentence_transformers import CrossEncoder
+            except ImportError as exc:
+                raise RuntimeError(
+                    "sentence-transformers is required for reranking. "
+                    "Install it with: uv add sentence-transformers"
+                ) from exc
+
+            started = time.perf_counter()
+            self._model = CrossEncoder(self._model_name)
+            log.info(
+                "reranker_loaded",
+                model_name=self._model_name,
+                load_ms=int((time.perf_counter() - started) * 1000),
+            )
+            return self._model
+
+    def load(self) -> None:
+        """Eagerly load model weights (useful for startup warmup/preflight checks)."""
+        _ = self._ensure_loaded()
 
     def rerank(
         self,
@@ -56,8 +84,16 @@ class CrossEncoderReranker:
         if not candidates:
             return []
 
+        model = self._ensure_loaded()
         pairs = [(query, candidate.text) for candidate in candidates]
-        scores = self._model.predict(pairs)
+        started = time.perf_counter()
+        scores = model.predict(pairs)
+        log.info(
+            "reranker_scored",
+            model_name=self._model_name,
+            pairs=len(pairs),
+            elapsed_ms=int((time.perf_counter() - started) * 1000),
+        )
 
         scored = [
             RerankResult(item_id=candidate.item_id, score=float(score))

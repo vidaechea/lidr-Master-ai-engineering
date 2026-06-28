@@ -255,7 +255,13 @@ alembic upgrade head
 uv add sentence-transformers
 ```
 
-3. Start the services and ingest the budgets. From the repository root:
+3. Verify the reranker can load and score before running reranked evaluations:
+
+```bash
+uv run python -m app.generation.rag.verify_reranker
+```
+
+4. Start the services and ingest the budgets. From the repository root:
 
 ```bash
 docker compose up -d postgres redis ai-engine
@@ -263,11 +269,16 @@ docker compose exec ai-engine alembic upgrade head
 docker compose exec ai-engine python scripts/ingest_budgets_batch.py --base-url http://ai-engine:8001
 ```
 
-4. Run the evaluation script from the ai-engine directory to compare the four required configurations:
+5. Run the evaluation script from the ai-engine directory to compare the four required configurations:
 
 ```bash
 python scripts/eval_hybrid_rerank.py --base-url http://ai-engine:8001
 ```
+
+Runtime retrieval defaults can be changed without restart via:
+
+- `GET /api/v1/config/retrieval`
+- `PUT /api/v1/config/retrieval`
 
 The script evaluates these configurations over the 5-query golden set:
 
