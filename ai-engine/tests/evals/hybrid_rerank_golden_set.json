@@ -1,0 +1,29 @@
+{
+  "queries": [
+    {
+      "id": "q1",
+      "text": "Fintech payment gateway integration with FastAPI backend prototype",
+      "relevant_budget_ids": ["BUD-2024-003"]
+    },
+    {
+      "id": "q2",
+      "text": "Legacy ERP migration with warehouse integrations and analytics dashboards",
+      "relevant_budget_ids": ["BUD-2024-002"]
+    },
+    {
+      "id": "q3",
+      "text": "Credit system refactoring plus regulatory reporting for finance cooperative",
+      "relevant_budget_ids": ["BUD-2024-004"]
+    },
+    {
+      "id": "q4",
+      "text": "B2B SaaS implementation with discovery UX design MVP and QA",
+      "relevant_budget_ids": ["BUD-2024-001"]
+    },
+    {
+      "id": "q5",
+      "text": "Manufacturing management system in .NET with Angular frontend",
+      "relevant_budget_ids": ["BUD-2024-005"]
+    }
+  ]
+}

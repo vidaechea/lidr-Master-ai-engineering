@@ -115,11 +115,10 @@
             [disabled]="!canSubmit()">
             @if (isLoading()) {
               <mat-icon class="spinner">hourglass_empty</mat-icon>
-              Estimating...
             } @else {
               <mat-icon>send</mat-icon>
-              Generate Estimation
             }
+            <span>{{ isLoading() ? 'Estimating...' : 'Generate Estimation' }}</span>
           </button>
 
           <button mat-stroked-button type="button" (click)="onReset()" [disabled]="isLoading()">

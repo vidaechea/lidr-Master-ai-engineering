@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import redis.asyncio as aioredis
 import structlog
@@ -23,12 +24,23 @@ RUNTIME_KEY_TO_SETTINGS_ATTR: dict[str, str] = {
 }
 
 MODEL_KEYS = tuple(RUNTIME_KEY_TO_SETTINGS_ATTR.keys())
+RETRIEVAL_HASH_KEY = "ai_engine:runtime_retrieval"
+RETRIEVAL_SEARCH_MODE_KEY = "RAG_PIPELINE_SEARCH_MODE"
+RETRIEVAL_RERANK_ENABLED_KEY = "RAG_PIPELINE_RERANK_ENABLED"
+_VALID_SEARCH_MODES: tuple[str, ...] = ("vector", "hybrid")
 
 
 @dataclass(frozen=True)
 class RuntimeModelEntry:
     effective: str
     default: str
+    overridden: bool
+
+
+@dataclass(frozen=True)
+class RuntimeRetrievalEntry:
+    effective: object
+    default: object
     overridden: bool
 
 
@@ -153,6 +165,104 @@ class RuntimeModelConfig:
                 models.append(model_name)
 
         return sorted(models)
+
+
+class RuntimeRetrievalConfig:
+    """Redis-backed runtime overrides for retrieval mode and reranking toggles."""
+
+    def __init__(self, redis_url: str) -> None:
+        self._redis_url = redis_url
+
+    def _get_redis(self) -> aioredis.Redis:
+        return aioredis.from_url(self._redis_url, decode_responses=True)
+
+    @staticmethod
+    def _to_bool(raw: str | None, default: bool) -> bool:
+        if raw is None:
+            return default
+        normalized = raw.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    @staticmethod
+    def _validate_search_mode(mode: str) -> None:
+        if mode not in _VALID_SEARCH_MODES:
+            joined = ", ".join(_VALID_SEARCH_MODES)
+            raise ValueError(f"Invalid retrieval mode '{mode}'. Expected one of: {joined}")
+
+    async def _get_raw(self, key: str) -> str | None:
+        redis = self._get_redis()
+        try:
+            return await redis.hget(RETRIEVAL_HASH_KEY, key)
+        except Exception as exc:
+            log.warning("runtime_retrieval_read_failed", key=key, error=str(exc)[:200])
+            return None
+        finally:
+            await redis.aclose()
+
+    async def _set_raw(self, key: str, value: str | None) -> None:
+        redis = self._get_redis()
+        try:
+            if value is None:
+                await redis.hdel(RETRIEVAL_HASH_KEY, key)
+            else:
+                await redis.hset(RETRIEVAL_HASH_KEY, key, value)
+        except Exception as exc:
+            raise RuntimeConfigUnavailable(str(exc)) from exc
+        finally:
+            await redis.aclose()
+
+    async def set_search_mode(self, mode: Literal["vector", "hybrid"] | None) -> None:
+        if mode is None:
+            await self._set_raw(RETRIEVAL_SEARCH_MODE_KEY, None)
+            return
+        self._validate_search_mode(mode)
+        await self._set_raw(RETRIEVAL_SEARCH_MODE_KEY, mode)
+
+    async def set_rerank(self, enabled: bool | None) -> None:
+        if enabled is None:
+            await self._set_raw(RETRIEVAL_RERANK_ENABLED_KEY, None)
+            return
+        await self._set_raw(RETRIEVAL_RERANK_ENABLED_KEY, "true" if enabled else "false")
+
+    async def effective_search_mode(self) -> Literal["vector", "hybrid"]:
+        raw = await self._get_raw(RETRIEVAL_SEARCH_MODE_KEY)
+        if raw is None:
+            return settings.rag_pipeline_search_mode
+        if raw not in _VALID_SEARCH_MODES:
+            log.warning("runtime_retrieval_invalid_mode", value=raw)
+            return settings.rag_pipeline_search_mode
+        return raw  # type: ignore[return-value]
+
+    async def effective_rerank(self) -> bool:
+        raw = await self._get_raw(RETRIEVAL_RERANK_ENABLED_KEY)
+        return self._to_bool(raw, settings.rag_pipeline_rerank_enabled)
+
+    async def snapshot(self) -> dict[str, RuntimeRetrievalEntry]:
+        redis = self._get_redis()
+        try:
+            overrides = await redis.hgetall(RETRIEVAL_HASH_KEY)
+        except Exception as exc:
+            log.warning("runtime_retrieval_read_failed", key="*", error=str(exc)[:200])
+            overrides = {}
+        finally:
+            await redis.aclose()
+
+        return {
+            RETRIEVAL_SEARCH_MODE_KEY: RuntimeRetrievalEntry(
+                effective=await self.effective_search_mode(),
+                default=settings.rag_pipeline_search_mode,
+                overridden=RETRIEVAL_SEARCH_MODE_KEY in overrides,
+            ),
+            RETRIEVAL_RERANK_ENABLED_KEY: RuntimeRetrievalEntry(
+                effective=await self.effective_rerank(),
+                default=settings.rag_pipeline_rerank_enabled,
+                overridden=RETRIEVAL_RERANK_ENABLED_KEY in overrides,
+            ),
+        }
 
 
 runtime_model_config = RuntimeModelConfig(settings.redis_url)

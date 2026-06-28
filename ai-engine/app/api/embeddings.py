@@ -204,7 +204,12 @@ async def search(
     This route stays for backward compatibility and delegates to the same retriever.
     """
     try:
-        return await retriever.search(query=payload.query, k=payload.k)
+        return await retriever.search(
+            query=payload.query,
+            k=payload.k,
+            mode=payload.mode,
+            rerank=payload.rerank,
+        )
     except Exception as exc:
         log.error("search_failed", error=str(exc)[:400], query=payload.query[:80])
         raise HTTPException(status_code=500, detail=_INTERNAL_ERROR_MSG) from exc

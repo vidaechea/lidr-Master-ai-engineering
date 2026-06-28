@@ -38,7 +38,12 @@ async def search(
     measures the speedup.
     """
     try:
-        response = await retriever.search(query=payload.query, k=payload.k)
+        response = await retriever.search(
+            query=payload.query,
+            k=payload.k,
+            mode=payload.mode,
+            rerank=payload.rerank,
+        )
         return response
     except Exception as exc:
         log.error("search_failed", error=str(exc)[:400], query=payload.query[:80])

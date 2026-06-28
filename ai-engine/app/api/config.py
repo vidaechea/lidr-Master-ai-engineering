@@ -7,13 +7,14 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.config import MODEL_REGISTRY
-from app.dependencies import get_runtime_config
+from app.config import MODEL_REGISTRY, settings
+from app.dependencies import get_runtime_config, get_runtime_retrieval_config
 from app.foundation.llm.litellm_service import create_litellm_router_service
 from app.foundation.llm.runtime_config import (
     MODEL_KEYS,
     RuntimeConfigUnavailable,
     RuntimeModelConfig,
+    RuntimeRetrievalConfig,
 )
 
 log = structlog.get_logger(__name__)
@@ -23,6 +24,18 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 class RuntimeModelsUpdateRequest(BaseModel):
     models: dict[str, str | None] = Field(default_factory=dict)
+
+
+class RuntimeRetrievalUpdateRequest(BaseModel):
+    """Partial update of retrieval runtime toggles.
+
+    Only keys present in the payload are touched.
+    - null resets to .env default
+    - missing key leaves current runtime value unchanged
+    """
+
+    search_mode: str | None = Field(default=None, description="'vector' or 'hybrid'.")
+    rerank: bool | None = Field(default=None, description="Enable/disable cross-encoder reranking.")
 
 
 def _assert_valid_update(changes: dict[str, str | None], available_models: list[str]) -> None:
@@ -109,6 +122,66 @@ async def get_runtime_status(
 ) -> dict[str, Any]:
     """Runtime diagnostics for model overrides and current component behavior."""
     return await _runtime_status_payload(runtime_config)
+
+
+@router.get("/retrieval")
+async def get_runtime_retrieval(
+    runtime_retrieval: Annotated[RuntimeRetrievalConfig, Depends(get_runtime_retrieval_config)],
+) -> dict[str, Any]:
+    snapshot = await runtime_retrieval.snapshot()
+    return {
+        "retrieval": {
+            key: {
+                "effective": value.effective,
+                "default": value.default,
+                "overridden": value.overridden,
+            }
+            for key, value in snapshot.items()
+        },
+        "reranker_model": settings.rag_pipeline_reranker_model,
+    }
+
+
+@router.put(
+    "/retrieval",
+    responses={
+        422: {"description": "Unknown retrieval mode"},
+        503: {"description": "Runtime config store unavailable"},
+    },
+)
+async def update_runtime_retrieval(
+    body: RuntimeRetrievalUpdateRequest,
+    runtime_retrieval: Annotated[RuntimeRetrievalConfig, Depends(get_runtime_retrieval_config)],
+) -> dict[str, Any]:
+    sent = body.model_fields_set
+    try:
+        if "search_mode" in sent:
+            try:
+                await runtime_retrieval.set_search_mode(body.search_mode)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            log.info("runtime_retrieval_changed", key="search_mode", new_value=body.search_mode)
+
+        if "rerank" in sent:
+            await runtime_retrieval.set_rerank(body.rerank)
+            log.info("runtime_retrieval_changed", key="rerank", new_value=body.rerank)
+
+    except RuntimeConfigUnavailable as exc:
+        log.error("runtime_retrieval_write_failed", error=str(exc)[:200])
+        raise HTTPException(status_code=503, detail="Runtime retrieval config unavailable") from exc
+
+    snapshot = await runtime_retrieval.snapshot()
+    return {
+        "retrieval": {
+            key: {
+                "effective": value.effective,
+                "default": value.default,
+                "overridden": value.overridden,
+            }
+            for key, value in snapshot.items()
+        },
+        "reranker_model": settings.rag_pipeline_reranker_model,
+    }
 
 
 @router.put(

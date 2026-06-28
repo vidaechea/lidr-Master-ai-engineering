@@ -20,9 +20,10 @@ from app.foundation.persistence.database import AsyncSessionLocal
 from app.generation.rag.chunking.structural import JSONStructuralChunker
 from app.generation.rag.embedding.embedder import OpenAIEmbedder
 from app.generation.rag.ingest_service import RagIngestService
+from app.generation.rag.reranker import CrossEncoderReranker
 from app.generation.rag.retriever_service import SemanticRetriever
 from app.generation.rag.store.repository import ChunkStore
-from app.foundation.llm.runtime_config import RuntimeModelConfig
+from app.foundation.llm.runtime_config import RuntimeModelConfig, RuntimeRetrievalConfig
 
 log = structlog.get_logger(__name__)
 
@@ -204,6 +205,22 @@ def get_runtime_config() -> RuntimeModelConfig:
     return RuntimeModelConfig(settings.redis_url)
 
 
+@lru_cache
+def get_runtime_retrieval_config() -> RuntimeRetrievalConfig:
+    """Redis-backed runtime overrides for retrieval mode and reranking toggles."""
+    return RuntimeRetrievalConfig(settings.redis_url)
+
+
+@lru_cache
+def get_reranker() -> CrossEncoderReranker | None:
+    """Optional cross-encoder reranker for recall-then-rerank retrieval."""
+    try:
+        return CrossEncoderReranker(model_name=settings.rag_pipeline_reranker_model)
+    except Exception as exc:
+        log.warning("reranker_init_failed", error=str(exc)[:400])
+        return None
+
+
 def get_chunk_store() -> ChunkStore:
     """Data-access layer for pgvector document/chunk storage."""
     return ChunkStore()
@@ -225,4 +242,5 @@ def get_semantic_retriever() -> SemanticRetriever:
         embedder=get_embedder(),
         session_factory=get_session_factory(),
         store=get_chunk_store(),
+        reranker=get_reranker(),
     )

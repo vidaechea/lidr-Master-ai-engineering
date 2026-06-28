@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from app.api import config as config_api
-from app.dependencies import get_runtime_config
+from app.dependencies import get_runtime_config, get_runtime_retrieval_config
 from app.main import app
 
 
@@ -68,6 +68,44 @@ class _StubRuntimeConfig:
                 self._overrides.pop(key, None)
             else:
                 self._overrides[key] = value
+
+
+@dataclass(frozen=True)
+class _RetrievalEntry:
+    effective: object
+    default: object
+    overridden: bool
+
+
+class _StubRuntimeRetrievalConfig:
+    def __init__(self) -> None:
+        self._search_mode: str | None = None
+        self._rerank: bool | None = None
+
+    async def set_search_mode(self, value: str | None) -> None:
+        await asyncio.sleep(0)
+        if value is not None and value not in {"vector", "hybrid"}:
+            raise ValueError("invalid mode")
+        self._search_mode = value
+
+    async def set_rerank(self, value: bool | None) -> None:
+        await asyncio.sleep(0)
+        self._rerank = value
+
+    async def snapshot(self):
+        await asyncio.sleep(0)
+        return {
+            "RAG_PIPELINE_SEARCH_MODE": _RetrievalEntry(
+                effective=self._search_mode if self._search_mode is not None else "vector",
+                default="vector",
+                overridden=self._search_mode is not None,
+            ),
+            "RAG_PIPELINE_RERANK_ENABLED": _RetrievalEntry(
+                effective=self._rerank if self._rerank is not None else False,
+                default=False,
+                overridden=self._rerank is not None,
+            ),
+        }
 
 
 def test_get_runtime_models(client, monkeypatch):
@@ -143,3 +181,36 @@ def test_get_runtime_status(client):
     assert "llm_routing" in body
     assert body["conversation"]["metadata_extractor"]["mode"] == "heuristic_only"
     assert body["conversation"]["compression"]["mode"] == "summarizer_heuristic"
+
+
+def test_get_runtime_retrieval(client):
+    stub = _StubRuntimeRetrievalConfig()
+    app.dependency_overrides[get_runtime_retrieval_config] = lambda: stub
+
+    try:
+        response = client.get("/api/v1/config/retrieval")
+    finally:
+        app.dependency_overrides.pop(get_runtime_retrieval_config, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["retrieval"]["RAG_PIPELINE_SEARCH_MODE"]["effective"] == "vector"
+    assert body["retrieval"]["RAG_PIPELINE_RERANK_ENABLED"]["effective"] is False
+
+
+def test_update_runtime_retrieval(client):
+    stub = _StubRuntimeRetrievalConfig()
+    app.dependency_overrides[get_runtime_retrieval_config] = lambda: stub
+
+    try:
+        response = client.put(
+            "/api/v1/config/retrieval",
+            json={"search_mode": "hybrid", "rerank": True},
+        )
+    finally:
+        app.dependency_overrides.pop(get_runtime_retrieval_config, None)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["retrieval"]["RAG_PIPELINE_SEARCH_MODE"]["effective"] == "hybrid"
+    assert body["retrieval"]["RAG_PIPELINE_RERANK_ENABLED"]["effective"] is True

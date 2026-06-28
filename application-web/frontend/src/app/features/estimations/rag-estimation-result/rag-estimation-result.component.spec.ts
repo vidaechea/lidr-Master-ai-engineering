@@ -1,15 +1,19 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { vi } from 'vitest';
 
 import { RagEstimationResultComponent } from './rag-estimation-result.component';
-import { RagEstimationService } from '../rag-estimation.service';
+import { RagEstimateModule, RagEstimationService } from '../rag-estimation.service';
 
 describe('RagEstimationResultComponent', () => {
   let component: RagEstimationResultComponent;
   let fixture: ComponentFixture<RagEstimationResultComponent>;
-  let router: jasmine.SpyObj<Router>;
-  let ragService: jasmine.SpyObj<RagEstimationService>;
+  let router: { navigate: ReturnType<typeof vi.fn>; currentNavigation: ReturnType<typeof vi.fn> };
+  let ragService: {
+    formatEngineerDays: ReturnType<typeof vi.fn>;
+    calculateTotalDays: ReturnType<typeof vi.fn>;
+  };
 
   const mockResult = {
     request_id: 'req-123',
@@ -74,22 +78,32 @@ describe('RagEstimationResultComponent', () => {
     },
   };
 
-  beforeEach(async () => {
-    const routerSpy = jasmine.createSpyObj('Router', ['navigate', 'getCurrentNavigation']);
-    const ragServiceSpy = jasmine.createSpyObj('RagEstimationService', [
-      'formatEngineerDays',
-      'calculateTotalDays',
-    ]);
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
-    routerSpy.getCurrentNavigation.and.returnValue(null);
-    ragServiceSpy.formatEngineerDays.and.callFake((days: number) => {
+  beforeEach(async () => {
+    const routerSpy = {
+      navigate: vi.fn().mockResolvedValue(true),
+      currentNavigation: vi.fn().mockReturnValue(null),
+    };
+    const ragServiceSpy = {
+      formatEngineerDays: vi.fn((days: number) => {
+        return days < 1 ? `${Math.round(days * 8)}h` : `${days.toFixed(1)} days`;
+      }),
+      calculateTotalDays: vi.fn((modules: RagEstimateModule[]) => {
+        return modules.reduce(
+          (total: number, m: RagEstimateModule) =>
+            total +
+            m.engineer_days +
+            m.tasks.reduce((sum: number, t) => sum + t.engineer_days, 0),
+          0
+        );
+      }),
+    };
+
+    ragServiceSpy.formatEngineerDays.mockImplementation((days: number) => {
       return days < 1 ? `${Math.round(days * 8)}h` : `${days.toFixed(1)} days`;
-    });
-    ragServiceSpy.calculateTotalDays.and.callFake((modules) => {
-      return modules.reduce(
-        (total, m) => total + m.engineer_days + m.tasks.reduce((sum, t) => sum + t.engineer_days, 0),
-        0
-      );
     });
 
     await TestBed.configureTestingModule({
@@ -100,8 +114,14 @@ describe('RagEstimationResultComponent', () => {
       ],
     }).compileComponents();
 
-    router = TestBed.inject(Router) as jasmine.SpyObj<Router>;
-    ragService = TestBed.inject(RagEstimationService) as jasmine.SpyObj<RagEstimationService>;
+    router = TestBed.inject(Router) as unknown as {
+      navigate: ReturnType<typeof vi.fn>;
+      currentNavigation: ReturnType<typeof vi.fn>;
+    };
+    ragService = TestBed.inject(RagEstimationService) as unknown as {
+      formatEngineerDays: ReturnType<typeof vi.fn>;
+      calculateTotalDays: ReturnType<typeof vi.fn>;
+    };
 
     fixture = TestBed.createComponent(RagEstimationResultComponent);
     component = fixture.componentInstance;
@@ -129,7 +149,7 @@ describe('RagEstimationResultComponent', () => {
 
       const total = component.totalEngineerDays();
 
-      expect(total).toBe(15); // 5 + 3 + 2 + 10 + 10 (but calculated via service)
+      expect(total).toBe(30); // 5 + 3 + 2 + 10 + 10
     });
 
     it('should return 0 if no result', () => {
@@ -142,7 +162,7 @@ describe('RagEstimationResultComponent', () => {
       const module = mockResult.generation.estimate.modules[0];
       const total = component.calculateModuleDays(module);
 
-      expect(total).toBe(5); // 5 + 3 + 2
+      expect(total).toBe(10); // 5 + 3 + 2
     });
   });
 
@@ -196,10 +216,10 @@ describe('RagEstimationResultComponent', () => {
     it('should export result as JSON file', () => {
       component.result.set(mockResult as any);
 
-      spyOn(URL, 'createObjectURL').and.returnValue('blob:mock-url');
-      spyOn(URL, 'revokeObjectURL');
-      const linkSpy = spyOn(document, 'createElement').and.returnValue({
-        click: jasmine.createSpy('click'),
+      vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-url');
+      vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+      const linkSpy = vi.spyOn(document, 'createElement').mockReturnValue({
+        click: vi.fn(),
         href: '',
         download: '',
       } as any);
@@ -213,11 +233,15 @@ describe('RagEstimationResultComponent', () => {
 
   describe('Clipboard Copy', () => {
     it('should copy source ID to clipboard', async () => {
-      spyOn(navigator.clipboard, 'writeText').and.returnValue(Promise.resolve());
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { writeText },
+        configurable: true,
+      });
 
       await component.copySourceIdToClipboard('src-123');
 
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith('src-123');
+      expect(writeText).toHaveBeenCalledWith('src-123');
     });
   });
 });

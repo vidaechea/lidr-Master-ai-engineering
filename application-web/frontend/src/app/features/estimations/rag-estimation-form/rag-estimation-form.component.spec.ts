@@ -2,7 +2,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
+import { vi } from 'vitest';
 
 import { RagEstimationFormComponent } from './rag-estimation-form.component';
 import { RagEstimationService } from '../rag-estimation.service';
@@ -10,12 +11,16 @@ import { RagEstimationService } from '../rag-estimation.service';
 describe('RagEstimationFormComponent', () => {
   let component: RagEstimationFormComponent;
   let fixture: ComponentFixture<RagEstimationFormComponent>;
-  let ragService: jasmine.SpyObj<RagEstimationService>;
-  let router: jasmine.SpyObj<Router>;
+  let ragService: { createEstimation: ReturnType<typeof vi.fn> };
+  let router: { navigate: ReturnType<typeof vi.fn> };
 
   beforeEach(async () => {
-    const ragServiceSpy = jasmine.createSpyObj('RagEstimationService', ['createEstimation']);
-    const routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    const ragServiceSpy = {
+      createEstimation: vi.fn(),
+    };
+    const routerSpy = {
+      navigate: vi.fn().mockResolvedValue(true),
+    };
 
     await TestBed.configureTestingModule({
       imports: [
@@ -29,8 +34,12 @@ describe('RagEstimationFormComponent', () => {
       ],
     }).compileComponents();
 
-    ragService = TestBed.inject(RagEstimationService) as jasmine.SpyObj<RagEstimationService>;
-    router = TestBed.inject(Router) as jasmine.SpyObj<Router>;
+    ragService = TestBed.inject(RagEstimationService) as unknown as {
+      createEstimation: ReturnType<typeof vi.fn>;
+    };
+    router = TestBed.inject(Router) as unknown as {
+      navigate: ReturnType<typeof vi.fn>;
+    };
 
     fixture = TestBed.createComponent(RagEstimationFormComponent);
     component = fixture.componentInstance;
@@ -60,14 +69,11 @@ describe('RagEstimationFormComponent', () => {
       expect(control?.hasError('maxlength')).toBe(true);
     });
 
-    it('should track character count', (done) => {
+    it('should track character count', () => {
       const control = component.form.get('transcript');
       control?.setValue('Hello World');
 
-      setTimeout(() => {
-        expect(component.characterCount()).toBe(11);
-        done();
-      }, 100);
+      expect(component.characterCount()).toBe(11);
     });
   });
 
@@ -125,7 +131,7 @@ describe('RagEstimationFormComponent', () => {
         idempotency_hit: false,
       };
 
-      ragService.createEstimation.and.returnValue(of(mockResponse));
+      ragService.createEstimation.mockReturnValue(of(mockResponse));
 
       component.form.patchValue({
         transcript: 'a'.repeat(50),
@@ -145,7 +151,7 @@ describe('RagEstimationFormComponent', () => {
 
       expect(router.navigate).toHaveBeenCalledWith(
         ['/estimations/rag-results'],
-        jasmine.objectContaining({ state: { result: mockResponse } })
+        expect.objectContaining({ state: { result: mockResponse } })
       );
     });
 
@@ -159,7 +165,7 @@ describe('RagEstimationFormComponent', () => {
 
     it('should handle API errors', async () => {
       const errorResponse = { error: { detail: 'API error' } };
-      ragService.createEstimation.and.returnValue(
+      ragService.createEstimation.mockReturnValue(
         throwError(() => errorResponse)
       );
 
@@ -183,17 +189,17 @@ describe('RagEstimationFormComponent', () => {
         idempotency_hit: false,
       };
 
-      ragService.createEstimation.and.returnValue(of(mockResponse));
+      ragService.createEstimation.mockReturnValue(of(mockResponse));
 
       component.form.patchValue({
-        transcript: '  test transcript  ',
+        transcript: '  test transcript with enough length  ',
       });
 
       await component.onSubmit();
 
       expect(ragService.createEstimation).toHaveBeenCalledWith(
-        jasmine.objectContaining({
-          transcript: 'test transcript',
+        expect.objectContaining({
+          transcript: 'test transcript with enough length',
         })
       );
     });
@@ -218,7 +224,3 @@ describe('RagEstimationFormComponent', () => {
   });
 });
 
-// Helper function for error throwing
-function throwError<T>(errorFactory: () => any) {
-  return new Promise<T>((_, reject) => reject(errorFactory()));
-}
