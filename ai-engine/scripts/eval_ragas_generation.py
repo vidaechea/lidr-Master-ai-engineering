@@ -1,16 +1,11 @@
 #!/usr/bin/env python3
-"""Evaluate RAG estimate generation quality with the four RAGAS metrics.
+"""Evaluate RAG estimate generation quality with native RAGAS metrics.
 
-The runner calls the full RAG estimation endpoint over HTTP, extracts the
-generated estimate and retrieved contexts, and computes:
+Per query this runner builds the required RAGAS payload:
+    question, answer, contexts, ground_truth
 
-- answer relevancy
-- faithfulness
-- contextual precision
-- contextual recall
-
-It also reports citation integrity counters derived from line-level source
-references so dangling citations become visible in the same report.
+Then computes:
+    faithfulness, answer_relevancy, context_precision, context_recall
 """
 
 from __future__ import annotations
@@ -18,11 +13,13 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import sys
+import types
 from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -32,12 +29,14 @@ if str(ROOT) not in sys.path:
 
 from app.config import settings  # noqa: E402
 
+_RAGAS_VERTEXAI_SHIM_PATH = "langchain_community.chat_models.vertexai"
+
 
 @dataclass(frozen=True)
 class GoldenCase:
     case_id: str
-    transcript: str
-    reference_answer: str
+    question: str
+    ground_truth: str
 
 
 @dataclass(frozen=True)
@@ -72,7 +71,7 @@ class CaseResult:
 
 def _require_eval_dependencies() -> None:
     missing: list[str] = []
-    for module_name in ("ragas", "datasets"):
+    for module_name in ("ragas", "datasets", "langchain_openai", "langchain_community"):
         if importlib.util.find_spec(module_name) is None:
             missing.append(module_name)
     if missing:
@@ -80,8 +79,40 @@ def _require_eval_dependencies() -> None:
         raise SystemExit(
             "Missing evaluation dependencies: "
             f"{missing_csv}. Install them with `uv sync --extra evals` or "
-            "`uv add --dev ragas datasets`."
+            "`uv add --dev ragas datasets langchain-openai langchain-community`."
         )
+
+
+def _require_openai_api_key() -> None:
+    if os.getenv("OPENAI_API_KEY"):
+        return
+    if settings.openai_api_key:
+        os.environ["OPENAI_API_KEY"] = settings.openai_api_key
+        return
+    raise SystemExit(
+        "OPENAI_API_KEY is required for RAGAS evaluation (judge + embeddings)."
+    )
+
+
+def _ensure_ragas_import_compat() -> None:
+    """Provide a minimal shim for ragas on environments missing legacy VertexAI path."""
+    if _RAGAS_VERTEXAI_SHIM_PATH in sys.modules:
+        return
+    try:
+        if importlib.util.find_spec(_RAGAS_VERTEXAI_SHIM_PATH) is not None:
+            return
+    except ValueError:
+        # A partially initialized module can raise when __spec__ is missing.
+        if _RAGAS_VERTEXAI_SHIM_PATH in sys.modules:
+            return
+
+    shim = types.ModuleType(_RAGAS_VERTEXAI_SHIM_PATH)
+
+    class ChatVertexAI:  # pragma: no cover - compatibility shim only
+        pass
+
+    shim.ChatVertexAI = ChatVertexAI
+    sys.modules[_RAGAS_VERTEXAI_SHIM_PATH] = shim
 
 
 def _load_golden_set(path: Path) -> list[GoldenCase]:
@@ -95,8 +126,8 @@ def _load_golden_set(path: Path) -> list[GoldenCase]:
         cases.append(
             GoldenCase(
                 case_id=str(row["id"]),
-                transcript=str(row["transcript"]),
-                reference_answer=str(row["reference_answer"]),
+                question=str(row["text"]),
+                ground_truth=str(row["ground_truth"]),
             )
         )
     return cases
@@ -152,50 +183,54 @@ def _compute_citation_stats(payload: dict[str, Any]) -> CitationStats:
     )
 
 
-def _build_test_case(*, transcript: str, reference_answer: str, payload: dict[str, Any]):
-    from deepeval.test_case import LLMTestCase
+def _build_ragas_metrics() -> list[Any]:
+    _ensure_ragas_import_compat()
+    from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
 
-    return LLMTestCase(
-        input=transcript,
-        actual_output=_extract_answer(payload),
-        expected_output=reference_answer,
-        retrieval_context=_extract_contexts(payload),
+    return [faithfulness, answer_relevancy, context_precision, context_recall]
+
+
+def _score_case(
+    *,
+    case_id: str,
+    question: str,
+    ground_truth: str,
+    payload: dict[str, Any],
+    judge_model: str,
+    embedding_model: str,
+) -> CaseResult:
+    _ensure_ragas_import_compat()
+    from datasets import Dataset
+    from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+    from ragas import evaluate
+
+    dataset = Dataset.from_dict(
+        {
+            "question": [question],
+            "answer": [_extract_answer(payload)],
+            "contexts": [_extract_contexts(payload)],
+            "ground_truth": [ground_truth],
+        }
     )
-
-
-def _build_metrics(eval_model: str):
-    from deepeval.metrics.ragas import (
-        RAGASAnswerRelevancyMetric,
-        RAGASContextualPrecisionMetric,
-        RAGASContextualRecallMetric,
-        RAGASFaithfulnessMetric,
-    )
-
-    return {
-        "answer_relevancy": RAGASAnswerRelevancyMetric(threshold=0.0, model=eval_model),
-        "faithfulness": RAGASFaithfulnessMetric(threshold=0.0, model=eval_model),
-        "context_precision": RAGASContextualPrecisionMetric(threshold=0.0, model=eval_model),
-        "context_recall": RAGASContextualRecallMetric(threshold=0.0, model=eval_model),
-    }
-
-
-def _score_case(*, transcript: str, reference_answer: str, payload: dict[str, Any], eval_model: str) -> CaseResult:
-    test_case = _build_test_case(
-        transcript=transcript,
-        reference_answer=reference_answer,
-        payload=payload,
-    )
-    metrics = _build_metrics(eval_model)
+    llm = ChatOpenAI(model=judge_model, temperature=0)
+    embeddings = OpenAIEmbeddings(model=embedding_model)
+    metrics = _build_ragas_metrics()
     citation_stats = _compute_citation_stats(payload)
 
-    scores = {name: metric.measure(test_case) for name, metric in metrics.items()}
+    scores_df = evaluate(
+        dataset=dataset,
+        metrics=metrics,
+        llm=llm,
+        embeddings=embeddings,
+    ).to_pandas()
+    score_row = cast(dict[str, Any], scores_df.iloc[0].to_dict())
 
     return CaseResult(
-        case_id="",
-        answer_relevancy=float(scores["answer_relevancy"]),
-        faithfulness=float(scores["faithfulness"]),
-        context_precision=float(scores["context_precision"]),
-        context_recall=float(scores["context_recall"]),
+        case_id=case_id,
+        answer_relevancy=float(score_row["answer_relevancy"]),
+        faithfulness=float(score_row["faithfulness"]),
+        context_precision=float(score_row["context_precision"]),
+        context_recall=float(score_row["context_recall"]),
         grounded_line_items=citation_stats.grounded_line_items,
         ungrounded_line_items=citation_stats.ungrounded_line_items,
         dangling_source_refs=citation_stats.dangling_source_refs,
@@ -243,25 +278,17 @@ def _render_case_table(results: list[CaseResult]) -> str:
         )
         for result in results
     ]
-    return "\n".join([header, divider, *rows])
-
-
-def _render_summary_table(results: list[CaseResult]) -> str:
-    def _avg(selector: str) -> float:
-        return mean(getattr(result, selector) for result in results)
-
-    return "\n".join(
-        [
-            "| Metric | Mean |",
-            "|---|---:|",
-            f"| Answer Relevancy | {_avg('answer_relevancy'):.4f} |",
-            f"| Faithfulness | {_avg('faithfulness'):.4f} |",
-            f"| Context Precision | {_avg('context_precision'):.4f} |",
-            f"| Context Recall | {_avg('context_recall'):.4f} |",
-            f"| RAGAS Mean | {mean(result.ragas_mean for result in results):.4f} |",
-            f"| Dangling Source Refs / Case | {_avg('dangling_source_refs'):.4f} |",
-        ]
+    average_row = (
+        f"| average | {mean(result.answer_relevancy for result in results):.4f} | "
+        f"{mean(result.faithfulness for result in results):.4f} | "
+        f"{mean(result.context_precision for result in results):.4f} | "
+        f"{mean(result.context_recall for result in results):.4f} | "
+        f"{mean(result.ragas_mean for result in results):.4f} | "
+        f"{mean(result.grounded_line_items for result in results):.2f} | "
+        f"{mean(result.ungrounded_line_items for result in results):.2f} | "
+        f"{mean(result.dangling_source_refs for result in results):.2f} |"
     )
+    return "\n".join([header, divider, *rows, average_row])
 
 
 def main() -> int:
@@ -269,7 +296,7 @@ def main() -> int:
     parser.add_argument("--base-url", default="http://localhost:8001", help="Base URL for ai-engine API")
     parser.add_argument(
         "--golden-set",
-        default="tests/evals/ragas_generation_golden_set.json",
+        default="tests/evals/hybrid_rerank_golden_set.json",
         help="Path to the RAGAS golden set JSON relative to ai-engine root",
     )
     parser.add_argument("--top-k", type=int, default=5, help="Top-k retrieved chunks to request")
@@ -281,14 +308,20 @@ def main() -> int:
     )
     parser.add_argument("--rerank", action="store_true", help="Enable reranking during retrieval")
     parser.add_argument(
-        "--eval-model",
+        "--judge-model",
         default="gpt-4o-mini",
-        help="Evaluation model used internally by the RAGAS wrappers",
+        help="OpenAI chat model used as RAGAS judge",
+    )
+    parser.add_argument(
+        "--embedding-model",
+        default="text-embedding-3-small",
+        help="OpenAI embedding model for RAGAS metrics requiring embeddings",
     )
     parser.add_argument("--timeout-seconds", type=float, default=180.0, help="HTTP timeout in seconds")
     args = parser.parse_args()
 
     _require_eval_dependencies()
+    _require_openai_api_key()
 
     golden_path = (ROOT / args.golden_set).resolve()
     if not golden_path.exists():
@@ -302,35 +335,21 @@ def main() -> int:
             payload = _request_estimate(
                 client=client,
                 base_url=args.base_url,
-                transcript=case.transcript,
+                transcript=case.question,
                 top_k=args.top_k,
                 mode=args.mode,
                 rerank=args.rerank,
             )
-            scored = _score_case(
-                transcript=case.transcript,
-                reference_answer=case.reference_answer,
+            results.append(_score_case(
+                case_id=case.case_id,
+                question=case.question,
+                ground_truth=case.ground_truth,
                 payload=payload,
-                eval_model=args.eval_model,
-            )
-            results.append(
-                CaseResult(
-                    case_id=case.case_id,
-                    answer_relevancy=scored.answer_relevancy,
-                    faithfulness=scored.faithfulness,
-                    context_precision=scored.context_precision,
-                    context_recall=scored.context_recall,
-                    grounded_line_items=scored.grounded_line_items,
-                    ungrounded_line_items=scored.ungrounded_line_items,
-                    dangling_source_refs=scored.dangling_source_refs,
-                )
-            )
+                judge_model=args.judge_model,
+                embedding_model=args.embedding_model,
+            ))
 
-    print("# RAGAS Summary")
-    print()
-    print(_render_summary_table(results))
-    print()
-    print("# Per-Case Results")
+    print("# RAGAS Baseline")
     print()
     print(_render_case_table(results))
     return 0

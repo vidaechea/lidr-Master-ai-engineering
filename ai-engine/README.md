@@ -307,6 +307,8 @@ The script calls the full `/api/v1/rag/estimate` pipeline and reports:
 - Grounded vs. ungrounded line items
 - Dangling line-level citation references detected after validation
 
+The baseline input set is `tests/evals/hybrid_rerank_golden_set.json`, extended with `ground_truth` for each of the 5 queries.
+
 ---
 
 ## Text Similarity Tool

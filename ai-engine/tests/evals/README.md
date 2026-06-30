@@ -61,7 +61,7 @@ uv sync --extra evals
 uv run python scripts/eval_ragas_generation.py --base-url http://localhost:8001 --rerank
 ```
 
-The RAGAS runner uses the golden set in `tests/evals/ragas_generation_golden_set.json` and reports:
+The RAGAS runner uses the enriched 5-query golden set in `tests/evals/hybrid_rerank_golden_set.json` and reports:
 
 - answer relevancy
 - faithfulness

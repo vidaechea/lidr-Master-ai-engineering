@@ -20,8 +20,8 @@ def test_load_golden_set_reads_reference_answers(tmp_path):
                 "queries": [
                     {
                         "id": "case-1",
-                        "transcript": "Transcript",
-                        "reference_answer": "Reference answer",
+                        "text": "Question text",
+                        "ground_truth": "Reference answer",
                     }
                 ]
             }
@@ -33,7 +33,8 @@ def test_load_golden_set_reads_reference_answers(tmp_path):
 
     assert len(cases) == 1
     assert cases[0].case_id == "case-1"
-    assert cases[0].reference_answer == "Reference answer"
+    assert cases[0].question == "Question text"
+    assert cases[0].ground_truth == "Reference answer"
 
 
 def test_extract_answer_prefers_markdown_over_summary():
