@@ -10,8 +10,9 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from sqlalchemy import Row, desc, func, literal_column, select
+from sqlalchemy import Row, desc, func, literal, literal_column, select
 from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.generation.rag.schemas import EmbeddedChunk
@@ -312,3 +313,26 @@ class ChunkStore:
             key=lambda item_id: (-fused_scores[item_id], best_rank[item_id], item_id),
         )
         return [row_by_id[item_id] for item_id in ranked_ids[:k]]
+
+    async def corpus_stats(self) -> list[tuple[str, int, int, bool]]:
+        """Return per-collection corpus counts and coarse index availability."""
+        from app.foundation.persistence.database import AsyncSessionLocal
+
+        async with AsyncSessionLocal() as session:
+            return await self._corpus_stats_with_session(session)
+
+    async def _corpus_stats_with_session(self, session: AsyncSession) -> list[tuple[str, int, int, bool]]:
+        docs_stmt = select(func.count(DocumentRow.id))
+        chunks_stmt = select(func.count(ChunkRow.id))
+        documents = int((await session.execute(docs_stmt)).scalar_one() or 0)
+        chunks = int((await session.execute(chunks_stmt)).scalar_one() or 0)
+
+        indexed = False
+        bind = session.get_bind()
+        if bind is not None and bind.dialect.name == "postgresql":
+            index_stmt = select(func.count()).select_from(literal_column("pg_indexes")).where(
+                literal_column("tablename") == literal("chunks")
+            ).where(literal_column("indexname").ilike("%hnsw%"))
+            indexed = bool((await session.execute(index_stmt)).scalar_one() or 0)
+
+        return [("budget", documents, chunks, indexed)]

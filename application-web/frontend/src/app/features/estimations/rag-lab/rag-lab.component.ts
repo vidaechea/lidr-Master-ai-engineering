@@ -1,5 +1,6 @@
-import { Component, signal } from '@angular/core';
+﻿import { Component, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 
@@ -30,9 +31,14 @@ interface StrategyOption {
   template: `
     <div class="page-header">
       <h1>RAG Lab</h1>
-      <button mat-raised-button color="primary" type="button" (click)="run()" [disabled]="loading()">
-        Run comparison
-      </button>
+      <div class="header-actions">
+        <button mat-stroked-button color="primary" type="button" (click)="goToRagIndex()">
+          Go to RAG Index
+        </button>
+        <button mat-raised-button color="primary" type="button" (click)="run()" [disabled]="loading()">
+          Run comparison
+        </button>
+      </div>
     </div>
 
     <mat-card class="form-card">
@@ -105,6 +111,7 @@ interface StrategyOption {
   `,
   styles: [`
     .page-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:24px; }
+    .header-actions { display:flex; gap:12px; align-items:center; }
     .form-card { margin-bottom: 16px; }
     .field-label { display:block; margin: 12px 0 6px; font-size: 13px; }
     .queries-input { width:100%; min-height:120px; padding:8px; box-sizing:border-box; }
@@ -136,7 +143,14 @@ export class RagLabComponent {
   queriesText = 'oauth backend';
   topK = 3;
 
-  constructor(private readonly estimationService: EstimationService) {}
+  constructor(
+    private readonly estimationService: EstimationService,
+    private readonly router: Router,
+  ) {}
+
+  goToRagIndex() {
+    this.router.navigate(['/estimations/rag-index']);
+  }
 
   statsEntries() {
     return Object.entries(this.result()?.stats_per_strategy ?? {}).map(([key, value]) => ({ key, value }));

@@ -14,6 +14,9 @@ import { EstimationService, SessionListItem } from '../estimation.service';
     <div class="page-header">
       <h1>Estimation Sessions</h1>
       <div class="header-actions">
+        <button mat-stroked-button color="primary" (click)="goToRagIndex()">
+          <mat-icon>hub</mat-icon> RAG Index
+        </button>
         <button mat-stroked-button color="primary" (click)="goToRagForm()">
           <mat-icon>psychology</mat-icon> RAG Form
         </button>
@@ -94,6 +97,10 @@ export class SessionsListComponent implements OnInit {
 
   goToRagForm() {
     this.router.navigate(['/estimations/rag-form']);
+  }
+
+  goToRagIndex() {
+    this.router.navigate(['/estimations/rag-index']);
   }
 
   openSession(sessionId: string) {

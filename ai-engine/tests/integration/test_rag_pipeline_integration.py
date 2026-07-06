@@ -11,6 +11,7 @@ from app.generation.rag.schemas import (
     EstimationQuery,
     FullEstimateRequest,
     GenerateStageResponse,
+    HallucinationReport,
     RagPipelineEstimate,
     ReformulateStageResponse,
     ReformulateStageRequest,
@@ -19,6 +20,11 @@ from app.generation.rag.schemas import (
     RetrieveStageRequest,
     AssembleStageRequest,
     GenerateStageRequest,
+    SourceReference,
+    TaskHoursModuleInput,
+    TaskHoursRequest,
+    TaskHoursTaskInput,
+    VerifyStageRequest,
 )
 
 
@@ -548,3 +554,101 @@ class TestRagPipelineIntegration:
         assert captured["event"] == "estimate_citation_verification"
         assert captured["kwargs"]["request_id"] == "req-123"
         assert captured["kwargs"]["dangling_lines"] == 1
+
+    @pytest.mark.asyncio
+    async def test_verify_stage_flags_numeric_hallucination(self):
+        from app.api import rag_pipeline
+        from app.generation.rag.schemas import EstimateLineItem, RetrievedChunk
+
+        estimate = RagPipelineEstimate(
+            summary="Test",
+            low_confidence=False,
+            line_items=[
+                EstimateLineItem(
+                    component="Payments",
+                    hours=12.0,
+                    rationale="Supported by evidence.",
+                    grounded=True,
+                    sources=[
+                        SourceReference(
+                            chunk_id="1",
+                            document_id="9",
+                            evidence="Estimated hours: 8",
+                        )
+                    ],
+                )
+            ],
+        )
+        kept_chunks = [
+            RetrievedChunk(
+                source_id="src-1",
+                chunk_id=1,
+                document_id=9,
+                chunk_type="budget_component",
+                content="Estimated hours: 8",
+                distance=0.1,
+                metadata={"estimated_hours": 8},
+            )
+        ]
+
+        report = await rag_pipeline.verify_stage(
+            payload=VerifyStageRequest(estimate=estimate, kept_chunks=kept_chunks, use_judge=True),
+            _="ok",
+        )
+
+        assert isinstance(report, HallucinationReport)
+        assert report.degraded_lines == 1
+        assert report.lines[0].anchored_hours == [8.0]
+
+    @pytest.mark.asyncio
+    async def test_task_hours_stage_estimates_from_retrieved_metadata(self):
+        from app.api import rag_pipeline
+        from app.generation.rag.schemas import RetrievedChunk
+
+        retriever = AsyncMock(spec=SemanticRetriever)
+        retriever.search_with_query = AsyncMock(
+            return_value=RetrievalResult(
+                query="Module: Billing\nTask: Implement checkout",
+                top_k=5,
+                candidates_evaluated=2,
+                low_confidence=False,
+                chunks=[
+                    RetrievedChunk(
+                        source_id="src-1",
+                        chunk_id=1,
+                        document_id=1,
+                        chunk_type="budget_component",
+                        content="Estimated hours: 8",
+                        distance=0.1,
+                        metadata={"estimated_hours": 8, "budget_id": "B1"},
+                    ),
+                    RetrievedChunk(
+                        source_id="src-2",
+                        chunk_id=2,
+                        document_id=1,
+                        chunk_type="budget_component",
+                        content="Estimated hours: 10",
+                        distance=0.2,
+                        metadata={"estimated_hours": 10, "budget_id": "B2"},
+                    ),
+                ],
+            )
+        )
+
+        response = await rag_pipeline.estimate_task_hours(
+            payload=TaskHoursRequest(
+                modules=[
+                    TaskHoursModuleInput(
+                        name="Billing",
+                        tasks=[TaskHoursTaskInput(name="Implement checkout")],
+                    )
+                ]
+            ),
+            retriever=retriever,
+            _="ok",
+        )
+
+        assert len(response.tasks) == 1
+        assert response.tasks[0].has_match is True
+        assert response.tasks[0].estimated_hours == 9
+        assert response.tasks[0].neighbors[0].budget_id == "B1"

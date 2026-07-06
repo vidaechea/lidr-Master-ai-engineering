@@ -20,6 +20,7 @@ from app.foundation.persistence.database import AsyncSessionLocal
 from app.generation.rag.chunking.structural import JSONStructuralChunker
 from app.generation.rag.embedding.embedder import OpenAIEmbedder
 from app.generation.rag.ingest_service import RagIngestService
+from app.generation.rag.index_service import CorpusIndexService
 from app.generation.rag.reranker import CrossEncoderReranker
 from app.generation.rag.retriever_service import SemanticRetriever
 from app.generation.rag.store.repository import ChunkStore
@@ -234,6 +235,16 @@ def get_rag_ingest_service() -> RagIngestService:
         session_factory=get_session_factory(),
         store=get_chunk_store(),
     )
+
+
+def get_corpus_index_service() -> CorpusIndexService | None:
+    """Batch corpus expansion service for session 11 index runs."""
+    try:
+        ingest_service = get_rag_ingest_service()
+    except Exception as exc:
+        log.warning("corpus_index_service_unavailable", error=str(exc)[:400])
+        return None
+    return CorpusIndexService(ingest=ingest_service)
 
 
 def get_semantic_retriever() -> SemanticRetriever:

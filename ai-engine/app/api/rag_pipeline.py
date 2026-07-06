@@ -18,6 +18,7 @@ from app.domain.estimation_service import EstimationService
 from app.domain.schemas.estimation import EstimationRequest
 from app.generation.rag.citation_validator_service import CitationValidatorService
 from app.generation.rag.coherence_repair_service import CoherenceRepairService
+from app.generation.rag.quality.hallucination import gate_estimate
 from app.generation.rag.reformulation_service import QueryReformulationService
 from app.generation.rag.retriever_service import SemanticRetriever
 from app.generation.rag.schemas import (
@@ -32,6 +33,7 @@ from app.generation.rag.schemas import (
     FullEstimateResponse,
     GenerateStageRequest,
     GenerateStageResponse,
+    HallucinationReport,
     ReformulateStageRequest,
     ReformulateStageResponse,
     RagPipelineEstimate,
@@ -39,13 +41,18 @@ from app.generation.rag.schemas import (
     RetrieveStageRequest,
     RetrieveStageResponse,
     SourceReference,
+    TaskHoursRequest,
+    TaskHoursResult,
+    VerifyStageRequest,
 )
+from app.generation.rag.task_hours import estimate_all
 
 log = structlog.get_logger(__name__)
 
 retrieval_router = APIRouter(prefix="/rag/retrieval", tags=["rag-retrieval"])
 pipeline_router = APIRouter(prefix="/rag/estimate", tags=["rag-estimate"])
 stages_router = APIRouter(prefix="/rag/stages", tags=["rag-stages"])
+tasks_router = APIRouter(prefix="/rag/tasks", tags=["rag-tasks"])
 
 
 class _IdempotencyStore:
@@ -479,6 +486,36 @@ async def generate_stage(
 ) -> GenerateStageResponse:
     """Stateless stage 4: grounded generation."""
     return await _generate(payload=payload, tier=tier, low_confidence=False)
+
+
+@stages_router.post("/verify")
+async def verify_stage(
+    payload: VerifyStageRequest,
+    _: Annotated[str, Depends(enforce_rag_pipeline_estimate_security)],
+) -> HallucinationReport:
+    """Stateless stage 5: semantic verification of grounded line-item hours."""
+    return gate_estimate(
+        payload.estimate,
+        payload.kept_chunks,
+        tolerance=settings.rag_pipeline_hallucination_numeric_tolerance,
+        use_judge=payload.use_judge,
+    )
+
+
+@tasks_router.post("/hours")
+async def estimate_task_hours(
+    payload: TaskHoursRequest,
+    retriever: Annotated[SemanticRetriever, Depends(get_semantic_retriever)],
+    _: Annotated[str, Depends(enforce_rag_pipeline_estimate_security)],
+) -> TaskHoursResult:
+    """Estimate per-task hours from similar historical budget components."""
+    return await estimate_all(
+        modules=payload.modules,
+        retriever=retriever,
+        top_k=settings.rag_pipeline_task_hours_top_k,
+        distance_threshold=settings.rag_pipeline_task_hours_distance_threshold,
+        contradiction_threshold=settings.rag_pipeline_task_hours_contradiction_threshold,
+    )
 
 
 @pipeline_router.post("")

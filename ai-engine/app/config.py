@@ -134,6 +134,10 @@ class Settings(BaseSettings):
     rag_pipeline_reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rag_pipeline_max_context_tokens: int = 6_000
     rag_pipeline_idempotency_ttl_seconds: int = 900
+    rag_pipeline_hallucination_numeric_tolerance: float = 0.15
+    rag_pipeline_task_hours_top_k: int = 5
+    rag_pipeline_task_hours_distance_threshold: float = 0.35
+    rag_pipeline_task_hours_contradiction_threshold: float = 0.35
     rag_pipeline_retrieval_api_key: str | None = None
     rag_pipeline_estimate_api_key: str | None = None
     rag_pipeline_rate_limit_per_minute: int = 60

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 from typing import Literal
 
@@ -244,6 +245,49 @@ class IngestPersistResponse(BaseModel):
     ingestion_time_ms: int = Field(ge=0, description="Total ingestion latency in milliseconds")
 
 
+class IndexRunRequest(BaseModel):
+    """Payload to expand the persistent RAG corpus with new budgets."""
+
+    documents: list[Budget] = Field(min_length=1)
+    document_type: str = Field(default="historical_budget", min_length=1, max_length=50)
+    chunk_type: str = Field(default="budget_component", min_length=1, max_length=50)
+
+
+class IndexRunResponse(BaseModel):
+    """Async corpus expansion job creation response."""
+
+    job_id: uuid.UUID
+    documents_total: int = Field(ge=0)
+    status: Literal["pending", "running", "completed", "failed"]
+
+
+class IndexJobView(BaseModel):
+    """Status view for one corpus expansion job."""
+
+    job_id: uuid.UUID
+    status: Literal["pending", "running", "completed", "failed"]
+    documents_processed: int = Field(ge=0)
+    error_message: str | None = None
+    started_at: Any
+    finished_at: Any | None = None
+
+
+class CollectionStats(BaseModel):
+    """Corpus statistics for one logical collection."""
+
+    collection: str
+    documents: int = Field(ge=0)
+    chunks: int = Field(ge=0)
+    hnsw_indexed: bool
+
+
+class CorpusStats(BaseModel):
+    """Aggregate corpus size and index availability."""
+
+    collections: list[CollectionStats] = Field(default_factory=list)
+    total_chunks: int = Field(ge=0)
+
+
 class RetrievalHit(BaseModel):
     """A retrieved chunk with similarity score for downstream generation."""
 
@@ -448,6 +492,83 @@ class CitationReport(BaseModel):
     lines: list[CitationLineReport] = Field(default_factory=list)
 
 
+class HallucinationLineReport(BaseModel):
+    """Semantic verification status for one estimate line item."""
+
+    component: str
+    status: Literal["grounded", "degraded", "insufficient_context"]
+    estimated_hours: float | None = Field(default=None, ge=0.0)
+    anchored_hours: list[float] = Field(default_factory=list)
+    cited_chunk_ids: list[str] = Field(default_factory=list)
+    reason: str = Field(min_length=1)
+
+
+class HallucinationReport(BaseModel):
+    """Aggregate semantic verification report for an estimate."""
+
+    total_lines: int = Field(ge=0)
+    grounded_lines: int = Field(ge=0)
+    degraded_lines: int = Field(ge=0)
+    insufficient_lines: int = Field(ge=0)
+    lines: list[HallucinationLineReport] = Field(default_factory=list)
+
+
+class HourRange(BaseModel):
+    """Suggested review range when neighbors disagree materially."""
+
+    min_hours: int = Field(ge=0)
+    max_hours: int = Field(ge=0)
+    reason: str = Field(min_length=1)
+
+
+class TaskNeighbor(BaseModel):
+    """One retrieved historical component used as a task-hours neighbor."""
+
+    source_id: str = Field(min_length=1)
+    budget_id: str | None = None
+    estimated_hours: int = Field(ge=0)
+    distance: float = Field(ge=0.0)
+
+
+class TaskHoursEstimate(BaseModel):
+    """Hours estimate for one task derived from similar historical work."""
+
+    module: str = Field(min_length=1)
+    task: str = Field(min_length=1)
+    estimated_hours: int | None = Field(default=None, ge=0)
+    reliability: float | None = Field(default=None, ge=0.0, le=1.0)
+    has_match: bool
+    dispersion: float | None = Field(default=None, ge=0.0)
+    neighbors: list[TaskNeighbor] = Field(default_factory=list)
+    hours_range: HourRange | None = None
+
+
+class TaskHoursTaskInput(BaseModel):
+    """One task that needs historical-hours estimation."""
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+
+
+class TaskHoursModuleInput(BaseModel):
+    """One module and its tasks for task-hours estimation."""
+
+    name: str = Field(min_length=1)
+    tasks: list[TaskHoursTaskInput] = Field(default_factory=list)
+
+
+class TaskHoursRequest(BaseModel):
+    """Payload for task-hours estimation over structured modules/tasks."""
+
+    modules: list[TaskHoursModuleInput] = Field(min_length=1)
+
+
+class TaskHoursResult(BaseModel):
+    """Per-task hours estimates in submitted order."""
+
+    tasks: list[TaskHoursEstimate] = Field(default_factory=list)
+
+
 class ReformulateStageRequest(BaseModel):
     transcript: str = Field(min_length=20)
 
@@ -499,6 +620,12 @@ class GenerateStageResponse(BaseModel):
     estimate: RagPipelineEstimate
 
 
+class VerifyStageRequest(BaseModel):
+    estimate: RagPipelineEstimate
+    kept_chunks: list[RetrievedChunk] = Field(default_factory=list)
+    use_judge: bool = True
+
+
 class FullEstimateRequest(BaseModel):
     transcript: str = Field(min_length=20)
     idempotency_key: str | None = None
@@ -537,11 +664,16 @@ __all__ = [
     "EmbedRequest",
     "EmbedResponse",
     "EmbeddingItem",
+    "CollectionStats",
+    "CorpusStats",
     "IngestRequest",
     "IngestPersistRequest",
     "IngestPersistResponse",
     "IngestResponse",
     "IngestStats",
+    "IndexJobView",
+    "IndexRunRequest",
+    "IndexRunResponse",
     "RetrievalHit",
     "CompareHit",
     "CompareQueryResult",
@@ -561,6 +693,9 @@ __all__ = [
     "FullEstimateResponse",
     "GenerateStageRequest",
     "GenerateStageResponse",
+    "HallucinationLineReport",
+    "HallucinationReport",
+    "HourRange",
     "ReformulateStageRequest",
     "ReformulateStageResponse",
     "RetrievedChunk",
@@ -569,4 +704,11 @@ __all__ = [
     "RetrieveStageResponse",
     "RagPipelineEstimate",
     "SourceReference",
+    "TaskHoursEstimate",
+    "TaskHoursModuleInput",
+    "TaskHoursRequest",
+    "TaskHoursResult",
+    "TaskHoursTaskInput",
+    "TaskNeighbor",
+    "VerifyStageRequest",
 ]
