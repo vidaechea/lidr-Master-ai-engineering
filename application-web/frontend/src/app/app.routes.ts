@@ -85,6 +85,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'rag-index',
+        loadComponent: () =>
+          import('./features/estimations/rag-index/rag-index.component').then(
+            m => m.RagIndexComponent,
+          ),
+      },
+      {
         path: 'rag-ingestion',
         loadComponent: () =>
           import('./features/estimations/rag-ingestion/rag-ingestion.component').then(

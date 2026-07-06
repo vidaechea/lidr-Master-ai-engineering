@@ -291,6 +291,24 @@ The script evaluates these configurations over the 5-query golden set:
 
 The output is a markdown table with Precision@5 and mean latency in milliseconds for each configuration.
 
+6. Run the generation-quality evaluation with RAGAS over the golden set:
+
+```bash
+uv sync --extra evals
+python scripts/eval_ragas_generation.py --base-url http://ai-engine:8001 --rerank
+```
+
+The script calls the full `/api/v1/rag/estimate` pipeline and reports:
+
+- Answer Relevancy
+- Faithfulness
+- Context Precision
+- Context Recall
+- Grounded vs. ungrounded line items
+- Dangling line-level citation references detected after validation
+
+The baseline input set is `tests/evals/hybrid_rerank_golden_set.json`, extended with `ground_truth` for each of the 5 queries.
+
 ---
 
 ## Text Similarity Tool

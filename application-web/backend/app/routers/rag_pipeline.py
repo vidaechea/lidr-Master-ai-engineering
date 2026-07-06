@@ -10,8 +10,16 @@ from fastapi import APIRouter, HTTPException, Query, status
 from app.dependencies import CurrentUser, DbDep
 from app.schemas.rag_estimation import (
     FullRagEstimationOut,
+    HallucinationReportOut,
+    RagIndexJobOut,
+    RagIndexRunRequest,
+    RagIndexRunResponse,
+    RagIndexStatsOut,
     RagEstimationListItem,
     RagEstimationRequest,
+    RagTaskHoursRequest,
+    RagVerifyRequest,
+    TaskHoursResultOut,
 )
 from app.services.rag_estimation_service import RagEstimationService
 
@@ -122,3 +130,102 @@ async def get_rag_estimation(
         )
 
     return estimation.pipeline_result
+
+
+@router.post("/stages/verify", response_model=HallucinationReportOut, status_code=status.HTTP_200_OK)
+async def verify_rag_estimation_stage(
+    payload: RagVerifyRequest,
+    current_user: CurrentUser,
+) -> dict:
+    """Proxy session 11 semantic verification for grounded RAG line items."""
+    _ = current_user
+    try:
+        return await _rag_service.verify_stage(
+            estimate=payload.estimate.model_dump(),
+            kept_chunks=[chunk.model_dump() for chunk in payload.kept_chunks],
+            use_judge=payload.use_judge,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"RAG verification failed: {str(e)}",
+        ) from e
+
+
+@router.post("/tasks/hours", response_model=TaskHoursResultOut, status_code=status.HTTP_200_OK)
+async def estimate_rag_task_hours(
+    payload: RagTaskHoursRequest,
+    current_user: CurrentUser,
+) -> dict:
+    """Proxy session 11 task-hours estimation from historical matches."""
+    _ = current_user
+    try:
+        return await _rag_service.estimate_task_hours(
+            modules=[module.model_dump() for module in payload.modules],
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Task hours estimation failed: {str(e)}",
+        ) from e
+
+
+@router.post("/index/runs", response_model=RagIndexRunResponse, status_code=status.HTTP_202_ACCEPTED)
+async def create_rag_index_run(
+    payload: RagIndexRunRequest,
+    current_user: CurrentUser,
+) -> dict:
+    """Proxy session 11 corpus expansion run creation."""
+    _ = current_user
+    try:
+        return await _rag_service.create_index_run(
+            documents=payload.documents,
+            document_type=payload.document_type,
+            chunk_type=payload.chunk_type,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Index run creation failed: {str(e)}",
+        ) from e
+
+
+@router.get("/index/jobs/{job_id}", response_model=RagIndexJobOut, status_code=status.HTTP_200_OK)
+async def get_rag_index_job(
+    job_id: str,
+    current_user: CurrentUser,
+) -> dict:
+    """Proxy corpus index job polling endpoint."""
+    _ = current_user
+    try:
+        return await _rag_service.get_index_job(job_id=job_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Index job retrieval failed: {str(e)}",
+        ) from e
+
+
+@router.get("/index/stats", response_model=RagIndexStatsOut, status_code=status.HTTP_200_OK)
+async def get_rag_index_stats(
+    current_user: CurrentUser,
+) -> dict:
+    """Proxy corpus index aggregate stats."""
+    _ = current_user
+    try:
+        return await _rag_service.get_index_stats()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Index stats retrieval failed: {str(e)}",
+        ) from e

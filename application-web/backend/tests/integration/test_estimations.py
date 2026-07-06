@@ -88,6 +88,96 @@ def _patch_ai_session_estimate():
     )
 
 
+def _patch_ai_rag_verify():
+    return patch(
+        "app.services.ai_client.rag_verify_stage",
+        AsyncMock(
+            return_value={
+                "total_lines": 1,
+                "grounded_lines": 1,
+                "degraded_lines": 0,
+                "insufficient_lines": 0,
+                "lines": [
+                    {
+                        "component": "Payments",
+                        "status": "grounded",
+                        "estimated_hours": 8.0,
+                        "anchored_hours": [8.0],
+                        "cited_chunk_ids": ["1"],
+                        "reason": "Estimated hours stay within the configured evidence tolerance.",
+                    }
+                ],
+            }
+        ),
+    )
+
+
+def _patch_ai_rag_task_hours():
+    return patch(
+        "app.services.ai_client.rag_task_hours",
+        AsyncMock(
+            return_value={
+                "tasks": [
+                    {
+                        "module": "Billing",
+                        "task": "Implement checkout",
+                        "estimated_hours": 9,
+                        "reliability": 0.84,
+                        "has_match": True,
+                        "dispersion": 0.111,
+                        "neighbors": [
+                            {
+                                "source_id": "src-1",
+                                "budget_id": "B1",
+                                "estimated_hours": 8,
+                                "distance": 0.1,
+                            }
+                        ],
+                        "hours_range": None,
+                    }
+                ]
+            }
+        ),
+    )
+
+
+def _patch_ai_rag_index_run():
+    return patch(
+        "app.services.ai_client.rag_create_index_run",
+        AsyncMock(return_value={"job_id": "job-123", "documents_total": 1, "status": "pending"}),
+    )
+
+
+def _patch_ai_rag_index_job():
+    return patch(
+        "app.services.ai_client.rag_get_index_job",
+        AsyncMock(
+            return_value={
+                "job_id": "job-123",
+                "status": "running",
+                "documents_processed": 1,
+                "error_message": None,
+                "started_at": "2026-07-06T11:00:00Z",
+                "finished_at": None,
+            }
+        ),
+    )
+
+
+def _patch_ai_rag_index_stats():
+    return patch(
+        "app.services.ai_client.rag_get_index_stats",
+        AsyncMock(
+            return_value={
+                "collections": [
+                    {"collection": "budget", "documents": 3, "chunks": 9, "hnsw_indexed": False}
+                ],
+                "total_chunks": 9,
+            }
+        ),
+    )
+
+
 class TestListEstimations:
     async def test_returns_empty_list_for_new_user(self, client, auth_headers):
         resp = await client.get("/v1/estimations", headers=auth_headers)
@@ -313,6 +403,116 @@ class TestGetEstimationStatus:
             f"/v1/estimations/{uuid.uuid4()}/status", headers=auth_headers
         )
         assert resp.status_code == 404
+
+
+class TestRagStageProxies:
+    async def test_verify_stage_returns_semantic_report(self, client, auth_headers):
+        with _patch_ai_rag_verify():
+            resp = await client.post(
+                "/v1/rag/stages/verify",
+                json={
+                    "estimate": {
+                        "summary": "Estimate",
+                        "estimate_markdown": None,
+                        "low_confidence": False,
+                        "modules": [],
+                        "line_items": [
+                            {
+                                "component": "Payments",
+                                "hours": 8,
+                                "rationale": "Supported by evidence.",
+                                "grounded": True,
+                                "sources": [
+                                    {"chunk_id": "1", "document_id": "9", "evidence": "Estimated hours: 8"}
+                                ],
+                            }
+                        ],
+                        "assumptions": [],
+                        "sources": ["src-1"],
+                    },
+                    "kept_chunks": [
+                        {
+                            "source_id": "src-1",
+                            "chunk_id": 1,
+                            "document_id": 9,
+                            "chunk_type": "budget_component",
+                            "content": "Estimated hours: 8",
+                            "distance": 0.1,
+                            "metadata": {"estimated_hours": 8},
+                        }
+                    ],
+                    "use_judge": True,
+                },
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["grounded_lines"] == 1
+
+    async def test_task_hours_returns_estimates(self, client, auth_headers):
+        with _patch_ai_rag_task_hours():
+            resp = await client.post(
+                "/v1/rag/tasks/hours",
+                json={
+                    "modules": [
+                        {
+                            "name": "Billing",
+                            "tasks": [{"name": "Implement checkout"}],
+                        }
+                    ]
+                },
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert len(body["tasks"]) == 1
+        assert body["tasks"][0]["estimated_hours"] == 9
+
+    async def test_index_run_returns_accepted_job(self, client, auth_headers):
+        with _patch_ai_rag_index_run():
+            resp = await client.post(
+                "/v1/rag/index/runs",
+                json={
+                    "documents": [
+                        {
+                            "budget_id": "B1",
+                            "project_summary": "Portal",
+                            "client_metadata": {"name": "Acme", "sector": "saas", "country": "ES"},
+                            "main_technology": "python",
+                            "year": 2024,
+                            "total_estimated_hours": 40,
+                            "components": [],
+                        }
+                    ],
+                    "document_type": "historical_budget",
+                    "chunk_type": "budget_component",
+                },
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 202
+        assert resp.json()["job_id"] == "job-123"
+
+    async def test_index_job_returns_status(self, client, auth_headers):
+        with _patch_ai_rag_index_job():
+            resp = await client.get(
+                "/v1/rag/index/jobs/job-123",
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "running"
+
+    async def test_index_stats_returns_collections(self, client, auth_headers):
+        with _patch_ai_rag_index_stats():
+            resp = await client.get(
+                "/v1/rag/index/stats",
+                headers=auth_headers,
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["total_chunks"] == 9
 
 
 class TestListEstimationsFilter:

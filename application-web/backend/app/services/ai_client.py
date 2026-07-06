@@ -391,3 +391,59 @@ async def rag_stage_generate(request_payload: dict[str, Any]) -> dict[str, Any]:
         json_body=request_payload,
         http_error_event="ai_engine_rag_stage_generate_error",
     )
+
+
+async def rag_verify_stage(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/stages/verify`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/stages/verify",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_stage_verify_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_task_hours(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/tasks/hours`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/tasks/hours",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_task_hours_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_create_index_run(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/embeddings/index/runs`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/embeddings/index/runs",
+        request_timeout=30.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_index_run_error",
+    )
+
+
+async def rag_get_index_job(job_id: str) -> dict[str, Any]:
+    """Call ``GET /api/v1/embeddings/index/jobs/{job_id}`` on the AI Engine."""
+    return await _request_ai_engine(
+        "GET",
+        f"/api/v1/embeddings/index/jobs/{job_id}",
+        request_timeout=30.0,
+        http_error_event="ai_engine_rag_index_job_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_get_index_stats() -> dict[str, Any]:
+    """Call ``GET /api/v1/embeddings/index/stats`` on the AI Engine."""
+    return await _request_ai_engine(
+        "GET",
+        "/api/v1/embeddings/index/stats",
+        request_timeout=30.0,
+        http_error_event="ai_engine_rag_index_stats_error",
+    )

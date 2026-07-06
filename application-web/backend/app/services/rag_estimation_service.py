@@ -167,3 +167,51 @@ class RagEstimationService:
             .offset(offset)
         )
         return result.scalars().all()
+
+    async def verify_stage(
+        self,
+        *,
+        estimate: dict[str, Any],
+        kept_chunks: list[dict[str, Any]],
+        use_judge: bool,
+    ) -> dict[str, Any]:
+        """Proxy semantic verification for a staged RAG estimate."""
+        return await ai_client.rag_verify_stage(
+            {
+                "estimate": estimate,
+                "kept_chunks": kept_chunks,
+                "use_judge": use_judge,
+            }
+        )
+
+    async def estimate_task_hours(
+        self,
+        *,
+        modules: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Proxy per-task historical hours estimation."""
+        return await ai_client.rag_task_hours({"modules": modules})
+
+    async def create_index_run(
+        self,
+        *,
+        documents: list[dict[str, Any]],
+        document_type: str,
+        chunk_type: str,
+    ) -> dict[str, Any]:
+        """Proxy session 11 corpus expansion run creation."""
+        return await ai_client.rag_create_index_run(
+            {
+                "documents": documents,
+                "document_type": document_type,
+                "chunk_type": chunk_type,
+            }
+        )
+
+    async def get_index_job(self, *, job_id: str) -> dict[str, Any]:
+        """Proxy corpus index job status."""
+        return await ai_client.rag_get_index_job(job_id)
+
+    async def get_index_stats(self) -> dict[str, Any]:
+        """Proxy corpus index corpus stats."""
+        return await ai_client.rag_get_index_stats()

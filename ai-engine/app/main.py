@@ -9,7 +9,7 @@ from app.config import settings
 from app.dependencies import get_runtime_config
 from app.foundation.llm.litellm_service import create_litellm_router_service
 from app.logging import configure_logging
-from app.api import cache_metrics, config, estimations, ingestion, internal, rag_pipeline, sessions
+from app.api import cache_metrics, config, corpus_index, estimations, ingestion, internal, rag_pipeline, sessions
 from app.api.embeddings import ingest_router
 from app.api import search
 
@@ -70,6 +70,8 @@ app.include_router(search.router, prefix=API_PREFIX)
 app.include_router(rag_pipeline.retrieval_router, prefix=API_PREFIX)
 app.include_router(rag_pipeline.pipeline_router, prefix=API_PREFIX)
 app.include_router(rag_pipeline.stages_router, prefix=API_PREFIX)
+app.include_router(rag_pipeline.tasks_router, prefix=API_PREFIX)
+app.include_router(corpus_index.router, prefix=API_PREFIX)
 
 
 @app.on_event("startup")

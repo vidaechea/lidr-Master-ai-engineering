@@ -161,3 +161,103 @@ class TestAiClientErrorMapping:
 
         assert exc_info.value.status_code == 502
         assert exc_info.value.detail == "AI Engine returned 500"
+
+    async def test_rag_verify_stage_posts_to_verify_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(
+                method,
+                path,
+                200,
+                {
+                    "total_lines": 1,
+                    "grounded_lines": 1,
+                    "degraded_lines": 0,
+                    "insufficient_lines": 0,
+                    "lines": [],
+                },
+            )
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_verify_stage(
+            {"estimate": {"summary": "ok"}, "kept_chunks": [], "use_judge": True}
+        )
+
+        assert captured == {"method": "POST", "path": "/api/v1/rag/stages/verify"}
+        assert payload["grounded_lines"] == 1
+
+    async def test_rag_task_hours_posts_to_hours_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 200, {"tasks": []})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_task_hours({"modules": []})
+
+        assert captured == {"method": "POST", "path": "/api/v1/rag/tasks/hours"}
+        assert payload == {"tasks": []}
+
+    async def test_rag_create_index_run_posts_to_index_runs(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 202, {"job_id": "j1", "documents_total": 1, "status": "pending"})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_create_index_run({"documents": [{"budget_id": "B1"}]})
+
+        assert captured == {"method": "POST", "path": "/api/v1/embeddings/index/runs"}
+        assert payload["status"] == "pending"
+
+    async def test_rag_get_index_job_gets_job_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(
+                method,
+                path,
+                200,
+                {
+                    "job_id": "j1",
+                    "status": "running",
+                    "documents_processed": 2,
+                    "error_message": None,
+                    "started_at": "2026-07-06T11:00:00Z",
+                    "finished_at": None,
+                },
+            )
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_get_index_job("j1")
+
+        assert captured == {"method": "GET", "path": "/api/v1/embeddings/index/jobs/j1"}
+        assert payload["documents_processed"] == 2
+
+    async def test_rag_get_index_stats_gets_stats_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 200, {"collections": [], "total_chunks": 0})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_get_index_stats()
+
+        assert captured == {"method": "GET", "path": "/api/v1/embeddings/index/stats"}
+        assert payload["total_chunks"] == 0
