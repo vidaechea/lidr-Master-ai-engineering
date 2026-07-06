@@ -53,6 +53,83 @@ describe('RagEstimationService', () => {
     });
   });
 
+  describe('verifyStage', () => {
+    it('should POST to /v1/rag/stages/verify', () => {
+      const request = {
+        estimate: {
+          summary: 'Estimate',
+          estimate_markdown: null,
+          low_confidence: false,
+          modules: [],
+          line_items: [],
+          assumptions: [],
+          sources: [],
+        },
+        kept_chunks: [],
+        use_judge: true,
+      };
+
+      service.verifyStage(request).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/stages/verify`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+    });
+  });
+
+  describe('estimateTaskHours', () => {
+    it('should POST to /v1/rag/tasks/hours', () => {
+      const request = {
+        modules: [
+          {
+            name: 'Billing',
+            tasks: [{ name: 'Implement checkout' }],
+          },
+        ],
+      };
+
+      service.estimateTaskHours(request).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/tasks/hours`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+    });
+  });
+
+  describe('createIndexRun', () => {
+    it('should POST to /v1/rag/index/runs', () => {
+      const request = {
+        documents: [{ budget_id: 'B1' }],
+        document_type: 'historical_budget',
+        chunk_type: 'budget_component',
+      };
+
+      service.createIndexRun(request).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/index/runs`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+    });
+  });
+
+  describe('getIndexJob', () => {
+    it('should GET /v1/rag/index/jobs/{id}', () => {
+      service.getIndexJob('job-1').subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/index/jobs/job-1`);
+      expect(req.request.method).toBe('GET');
+    });
+  });
+
+  describe('getIndexStats', () => {
+    it('should GET /v1/rag/index/stats', () => {
+      service.getIndexStats().subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/index/stats`);
+      expect(req.request.method).toBe('GET');
+    });
+  });
+
   describe('listEstimations', () => {
     it('should GET /v1/rag/estimates with filters', () => {
       const params = {

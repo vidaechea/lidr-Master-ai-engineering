@@ -18,13 +18,73 @@ export interface RagEstimateModule {
   tasks: RagEstimateTask[];
 }
 
+export interface RagSourceReference {
+  chunk_id: string;
+  document_id: string;
+  evidence: string;
+}
+
+export interface RagEstimateLineItem {
+  component: string;
+  hours: number;
+  rationale: string;
+  grounded: boolean;
+  sources: RagSourceReference[];
+}
+
 export interface RagPipelineEstimate {
   summary: string;
   estimate_markdown?: string | null;
   low_confidence: boolean;
   modules: RagEstimateModule[];
+  line_items: RagEstimateLineItem[];
   assumptions: string[];
   sources: string[];
+}
+
+export interface HallucinationLineReport {
+  component: string;
+  status: 'grounded' | 'degraded' | 'insufficient_context';
+  estimated_hours?: number | null;
+  anchored_hours: number[];
+  cited_chunk_ids: string[];
+  reason: string;
+}
+
+export interface HallucinationReport {
+  total_lines: number;
+  grounded_lines: number;
+  degraded_lines: number;
+  insufficient_lines: number;
+  lines: HallucinationLineReport[];
+}
+
+export interface TaskNeighbor {
+  source_id: string;
+  budget_id?: string | null;
+  estimated_hours: number;
+  distance: number;
+}
+
+export interface HourRange {
+  min_hours: number;
+  max_hours: number;
+  reason: string;
+}
+
+export interface TaskHoursEstimate {
+  module: string;
+  task: string;
+  estimated_hours?: number | null;
+  reliability?: number | null;
+  has_match: boolean;
+  dispersion?: number | null;
+  neighbors: TaskNeighbor[];
+  hours_range?: HourRange | null;
+}
+
+export interface TaskHoursResult {
+  tasks: TaskHoursEstimate[];
 }
 
 export interface RetrievedChunk {
@@ -89,6 +149,59 @@ export interface RagEstimationListItem {
   status: 'completed' | 'failed' | 'pending';
 }
 
+export interface RagVerifyRequest {
+  estimate: RagPipelineEstimate;
+  kept_chunks: RetrievedChunk[];
+  use_judge?: boolean;
+}
+
+export interface TaskHoursTaskInput {
+  name: string;
+  description?: string;
+}
+
+export interface TaskHoursModuleInput {
+  name: string;
+  tasks: TaskHoursTaskInput[];
+}
+
+export interface RagTaskHoursRequest {
+  modules: TaskHoursModuleInput[];
+}
+
+export interface RagIndexRunRequest {
+  documents: Record<string, any>[];
+  document_type?: string;
+  chunk_type?: string;
+}
+
+export interface RagIndexRunResponse {
+  job_id: string;
+  documents_total: number;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+}
+
+export interface RagIndexJob {
+  job_id: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  documents_processed: number;
+  error_message?: string | null;
+  started_at: string;
+  finished_at?: string | null;
+}
+
+export interface RagCollectionStats {
+  collection: string;
+  documents: number;
+  chunks: number;
+  hnsw_indexed: boolean;
+}
+
+export interface RagIndexStats {
+  collections: RagCollectionStats[];
+  total_chunks: number;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -112,6 +225,41 @@ export class RagEstimationService {
     return this.http.get<FullRagEstimationResponse>(
       `${this.baseUrl}/estimates/${estimationId}`
     );
+  }
+
+  /**
+   * Verify grounded line items against cited chunk evidence
+   */
+  verifyStage(request: RagVerifyRequest): Observable<HallucinationReport> {
+    return this.http.post<HallucinationReport>(`${this.baseUrl}/stages/verify`, request);
+  }
+
+  /**
+   * Estimate per-task hours from historical RAG matches
+   */
+  estimateTaskHours(request: RagTaskHoursRequest): Observable<TaskHoursResult> {
+    return this.http.post<TaskHoursResult>(`${this.baseUrl}/tasks/hours`, request);
+  }
+
+  /**
+   * Start a corpus index expansion run
+   */
+  createIndexRun(request: RagIndexRunRequest): Observable<RagIndexRunResponse> {
+    return this.http.post<RagIndexRunResponse>(`${this.baseUrl}/index/runs`, request);
+  }
+
+  /**
+   * Poll corpus index job status
+   */
+  getIndexJob(jobId: string): Observable<RagIndexJob> {
+    return this.http.get<RagIndexJob>(`${this.baseUrl}/index/jobs/${jobId}`);
+  }
+
+  /**
+   * Read corpus index aggregate stats
+   */
+  getIndexStats(): Observable<RagIndexStats> {
+    return this.http.get<RagIndexStats>(`${this.baseUrl}/index/stats`);
   }
 
   /**

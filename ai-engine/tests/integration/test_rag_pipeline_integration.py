@@ -11,6 +11,7 @@ from app.generation.rag.schemas import (
     EstimationQuery,
     FullEstimateRequest,
     GenerateStageResponse,
+    HallucinationReport,
     RagPipelineEstimate,
     ReformulateStageResponse,
     ReformulateStageRequest,
@@ -19,6 +20,11 @@ from app.generation.rag.schemas import (
     RetrieveStageRequest,
     AssembleStageRequest,
     GenerateStageRequest,
+    SourceReference,
+    TaskHoursModuleInput,
+    TaskHoursRequest,
+    TaskHoursTaskInput,
+    VerifyStageRequest,
 )
 
 
@@ -137,6 +143,42 @@ class TestRagPipelineIntegration:
         assert len(selected_source_ids) > 0
         # Should not include all chunks
         assert len(selected_source_ids) < len(chunks)
+
+    def test_assembly_formats_chunk_metadata_for_generation_prompt(self):
+        from app.api import rag_pipeline
+        from app.generation.rag.schemas import RetrievedChunk, RetrievalResult
+
+        retrieval = RetrievalResult(
+            query="test",
+            top_k=1,
+            candidates_evaluated=1,
+            low_confidence=False,
+            chunks=[
+                RetrievedChunk(
+                    source_id="src-1",
+                    chunk_id=7,
+                    document_id=42,
+                    chunk_type="budget_component",
+                    content="Quoted budget evidence",
+                    distance=0.1,
+                    metadata={"year": "2024"},
+                )
+            ],
+        )
+
+        response = rag_pipeline._assemble(
+            AssembleStageRequest(
+                transcript="Need estimate for admin portal migration scope",
+                query=EstimationQuery(search_text="test", chunk_types=["budget_component"], keywords=[]),
+                retrieval=retrieval,
+                max_context_tokens=512,
+            )
+        )
+
+        assert "chunk_id=7" in response.context_block
+        assert "document_id=42" in response.context_block
+        assert "source_id=src-1" in response.context_block
+        assert "Quoted budget evidence" in response.context_block
 
     def test_estimate_end_to_end_flow(self):
         """Test end-to-end estimate flow structure."""
@@ -361,7 +403,15 @@ class TestRagPipelineIntegration:
 
         captured: dict[str, object] = {}
 
-        async def _fake_generate(*, payload, tier, low_confidence, retrieved_chunks=None, max_retries=2):
+        async def _fake_generate(
+            *,
+            payload,
+            tier,
+            low_confidence,
+            retrieved_chunks=None,
+            max_retries=2,
+            request_id=None,
+        ):
             await asyncio.sleep(0)
             captured["context_block"] = payload.context_block
             captured["low_confidence"] = low_confidence
@@ -397,3 +447,208 @@ class TestRagPipelineIntegration:
         assert captured["context_block"] == "No retrieved context available."
         assert captured["low_confidence"] is True
         assert response.generation.estimate.low_confidence is True
+
+    @pytest.mark.asyncio
+    async def test_generation_prompt_requires_chunk_level_grounding_and_insufficient_context(self):
+        from app.api import rag_pipeline
+
+        payload = GenerateStageRequest(
+            transcript="Estimate an admin portal with payments",
+            context_block=(
+                "[chunk_id=7 document_id=42 source_id=src-1]\n"
+                "Payments module historical estimate: 40 hours"
+            ),
+            source_ids=["src-1"],
+        )
+
+        prompt = rag_pipeline._build_generation_transcription(payload)
+        assert "attribute it only to one or more chunk_id values" in prompt
+        assert "copy the exact fragment, number, or figure from the source as verbatim evidence" in prompt
+        assert "mark it as grounded=False" in prompt
+        assert "instead of guessing hours" in prompt
+        assert "chunk_id=7" in prompt
+
+    def test_verify_citations_classifies_grounded_dangling_and_insufficient(self):
+        from app.api import rag_pipeline
+        from app.generation.rag.schemas import EstimateLineItem, RagPipelineEstimate, SourceReference
+
+        estimate = RagPipelineEstimate(
+            summary="Test",
+            low_confidence=False,
+            line_items=[
+                EstimateLineItem(
+                    component="Auth",
+                    hours=8.0,
+                    rationale="Supported by retrieved chunk",
+                    grounded=True,
+                    sources=[
+                        SourceReference(
+                            chunk_id="1",
+                            document_id="10",
+                            evidence="Authentication implementation: 8 hours",
+                        )
+                    ],
+                ),
+                EstimateLineItem(
+                    component="Payments",
+                    hours=12.0,
+                    rationale="Supported by historical payment budget",
+                    grounded=True,
+                    sources=[
+                        SourceReference(
+                            chunk_id="999",
+                            document_id="10",
+                            evidence="Payments implementation: 12 hours",
+                        )
+                    ],
+                ),
+                EstimateLineItem(
+                    component="BI",
+                    hours=0.0,
+                    rationale="Insufficient context to estimate BI module effort.",
+                    grounded=False,
+                    sources=[],
+                ),
+            ],
+        )
+
+        report = rag_pipeline.verify_citations(estimate, {"1", "2"})
+
+        assert report.grounded_lines == 1
+        assert report.dangling_lines == 1
+        assert report.insufficient_context_lines == 1
+        assert any(line.status == "dangling" for line in report.lines)
+        assert any(
+            line.status == "dangling" and line.dangling_chunk_ids == ["999"]
+            for line in report.lines
+        )
+
+    def test_log_citation_report_warns_with_request_id_when_dangling(self, monkeypatch):
+        from app.api import rag_pipeline
+        from app.generation.rag.schemas import CitationLineReport, CitationReport
+
+        captured: dict[str, object] = {}
+
+        def _fake_warning(event, **kwargs):
+            captured["event"] = event
+            captured["kwargs"] = kwargs
+
+        monkeypatch.setattr(rag_pipeline.log, "warning", _fake_warning)
+
+        report = CitationReport(
+            grounded_lines=0,
+            dangling_lines=1,
+            insufficient_context_lines=0,
+            lines=[
+                CitationLineReport(
+                    component="Payments",
+                    status="dangling",
+                    cited_chunk_ids=["404"],
+                    dangling_chunk_ids=["404"],
+                )
+            ],
+        )
+
+        rag_pipeline._log_citation_report(report, request_id="req-123")
+
+        assert captured["event"] == "estimate_citation_verification"
+        assert captured["kwargs"]["request_id"] == "req-123"
+        assert captured["kwargs"]["dangling_lines"] == 1
+
+    @pytest.mark.asyncio
+    async def test_verify_stage_flags_numeric_hallucination(self):
+        from app.api import rag_pipeline
+        from app.generation.rag.schemas import EstimateLineItem, RetrievedChunk
+
+        estimate = RagPipelineEstimate(
+            summary="Test",
+            low_confidence=False,
+            line_items=[
+                EstimateLineItem(
+                    component="Payments",
+                    hours=12.0,
+                    rationale="Supported by evidence.",
+                    grounded=True,
+                    sources=[
+                        SourceReference(
+                            chunk_id="1",
+                            document_id="9",
+                            evidence="Estimated hours: 8",
+                        )
+                    ],
+                )
+            ],
+        )
+        kept_chunks = [
+            RetrievedChunk(
+                source_id="src-1",
+                chunk_id=1,
+                document_id=9,
+                chunk_type="budget_component",
+                content="Estimated hours: 8",
+                distance=0.1,
+                metadata={"estimated_hours": 8},
+            )
+        ]
+
+        report = await rag_pipeline.verify_stage(
+            payload=VerifyStageRequest(estimate=estimate, kept_chunks=kept_chunks, use_judge=True),
+            _="ok",
+        )
+
+        assert isinstance(report, HallucinationReport)
+        assert report.degraded_lines == 1
+        assert report.lines[0].anchored_hours == [8.0]
+
+    @pytest.mark.asyncio
+    async def test_task_hours_stage_estimates_from_retrieved_metadata(self):
+        from app.api import rag_pipeline
+        from app.generation.rag.schemas import RetrievedChunk
+
+        retriever = AsyncMock(spec=SemanticRetriever)
+        retriever.search_with_query = AsyncMock(
+            return_value=RetrievalResult(
+                query="Module: Billing\nTask: Implement checkout",
+                top_k=5,
+                candidates_evaluated=2,
+                low_confidence=False,
+                chunks=[
+                    RetrievedChunk(
+                        source_id="src-1",
+                        chunk_id=1,
+                        document_id=1,
+                        chunk_type="budget_component",
+                        content="Estimated hours: 8",
+                        distance=0.1,
+                        metadata={"estimated_hours": 8, "budget_id": "B1"},
+                    ),
+                    RetrievedChunk(
+                        source_id="src-2",
+                        chunk_id=2,
+                        document_id=1,
+                        chunk_type="budget_component",
+                        content="Estimated hours: 10",
+                        distance=0.2,
+                        metadata={"estimated_hours": 10, "budget_id": "B2"},
+                    ),
+                ],
+            )
+        )
+
+        response = await rag_pipeline.estimate_task_hours(
+            payload=TaskHoursRequest(
+                modules=[
+                    TaskHoursModuleInput(
+                        name="Billing",
+                        tasks=[TaskHoursTaskInput(name="Implement checkout")],
+                    )
+                ]
+            ),
+            retriever=retriever,
+            _="ok",
+        )
+
+        assert len(response.tasks) == 1
+        assert response.tasks[0].has_match is True
+        assert response.tasks[0].estimated_hours == 9
+        assert response.tasks[0].neighbors[0].budget_id == "B1"
