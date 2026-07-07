@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
-from sqlalchemy import Row, desc, func, literal, literal_column, select
+from sqlalchemy import Integer, Row, desc, func, literal, literal_column, select
 from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -215,7 +215,7 @@ class ChunkStore:
         if sector is not None:
             filters.append(ChunkRow.metadata_["client_sector"].astext == sector)
         if year_from is not None or year_to is not None:
-            year_str = ChunkRow.metadata_["year"].astext.cast(int)
+            year_str = ChunkRow.metadata_["year"].astext.cast(Integer)
             if year_from is not None:
                 filters.append(year_str >= year_from)
             if year_to is not None:

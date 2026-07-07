@@ -7,6 +7,7 @@ from app.config import settings
 from app.dependencies import TierDep
 from app.foundation.guardrails.input import InputGuardrailViolation
 from app.foundation.prompts.loader import get_examples
+from app.agents.service import AgenticEstimationService
 from app.domain.schemas.estimation import (
     ActorCriticBossRequest,
     ActorCriticBossResponse,
@@ -15,6 +16,7 @@ from app.domain.schemas.estimation import (
     ExampleItem,
 )
 from app.generation.agentic.acb_service import ActorCriticBossService
+from app.agents.schemas import AgenticEstimationResponse
 from app.generation.cag.cache_service import CachedEstimationService
 from app.domain.estimation_service import EstimationService
 from app.foundation.llm.error_mapper import LLMServiceError
@@ -56,6 +58,10 @@ _LLM_ERROR_RESPONSES = {
 
 def get_acb_service() -> ActorCriticBossService:
     return ActorCriticBossService()
+
+
+def get_agentic_estimation_service() -> AgenticEstimationService:
+    return AgenticEstimationService()
 
 
 @router.post("/estimate/acb", responses=_LLM_ERROR_RESPONSES)
@@ -121,6 +127,24 @@ async def create_estimation(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     except Exception as exc:
         log.error("estimation_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
+
+
+@router.post("/estimate/agentic", responses=_LLM_ERROR_RESPONSES)
+async def create_agentic_estimation(
+    request: EstimationRequest,
+    service: Annotated[AgenticEstimationService, Depends(get_agentic_estimation_service)],
+    prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
+) -> AgenticEstimationResponse:
+    try:
+        return await service.estimate(request, prompt_version=prompt_version)
+    except InputGuardrailViolation as exc:
+        raise HTTPException(
+            status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+            detail={"message": exc.message, "reason": exc.reason},
+        )
+    except Exception as exc:
+        log.error("agentic_estimation_failed", error=str(exc))
         raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 

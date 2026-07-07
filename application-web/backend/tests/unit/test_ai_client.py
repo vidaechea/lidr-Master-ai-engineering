@@ -162,6 +162,39 @@ class TestAiClientErrorMapping:
         assert exc_info.value.status_code == 502
         assert exc_info.value.detail == "AI Engine returned 500"
 
+    async def test_estimate_agentic_maps_request_error_to_503_unreachable(self, monkeypatch: pytest.MonkeyPatch):
+        _patch_async_client(
+            monkeypatch,
+            error_factory=lambda method, path: RequestError(
+                "network down",
+                request=Request(method, f"http://testserver{path}"),
+            ),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await ai_client.estimate_agentic(
+                request_payload={"transcription": "sample"},
+                prompt_version="v1",
+            )
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == "AI Engine unreachable"
+
+    async def test_estimate_agentic_maps_http_status_to_502(self, monkeypatch: pytest.MonkeyPatch):
+        _patch_async_client(
+            monkeypatch,
+            response_factory=lambda method, path: _text_response(method, path, 500, "boom"),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await ai_client.estimate_agentic(
+                request_payload={"transcription": "sample"},
+                prompt_version="v1",
+            )
+
+        assert exc_info.value.status_code == 502
+        assert exc_info.value.detail == "AI Engine returned 500"
+
     async def test_rag_verify_stage_posts_to_verify_endpoint(self, monkeypatch: pytest.MonkeyPatch):
         captured: dict[str, str] = {}
 
