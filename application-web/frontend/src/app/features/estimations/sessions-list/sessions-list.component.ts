@@ -20,6 +20,9 @@ import { EstimationService, SessionListItem } from '../estimation.service';
         <button mat-stroked-button color="primary" (click)="goToRagForm()">
           <mat-icon>psychology</mat-icon> RAG Form
         </button>
+        <button mat-stroked-button color="primary" (click)="goToAgentProfiles()">
+          <mat-icon>tune</mat-icon> Agent Profiles
+        </button>
         <button mat-raised-button color="primary" (click)="createNewSession()">
           <mat-icon>add</mat-icon> New Estimation
         </button>
@@ -101,6 +104,10 @@ export class SessionsListComponent implements OnInit {
 
   goToRagIndex() {
     this.router.navigate(['/estimations/rag-index']);
+  }
+
+  goToAgentProfiles() {
+    this.router.navigate(['/estimations/agent-profiles']);
   }
 
   openSession(sessionId: string) {

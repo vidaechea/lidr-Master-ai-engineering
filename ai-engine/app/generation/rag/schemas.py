@@ -5,6 +5,7 @@ from typing import Any
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from app.domain.schemas.agent_trace import AgentTrace
 
 RETRIEVAL_MODE_OVERRIDE_DESC = "Optional retrieval mode override. None = runtime/.env default."
 RERANK_OVERRIDE_DESC = "Optional reranking override. None = runtime/.env default."
@@ -563,10 +564,35 @@ class TaskHoursRequest(BaseModel):
     modules: list[TaskHoursModuleInput] = Field(min_length=1)
 
 
+AgentReasoningEffort = Literal["minimal", "low", "medium", "high"]
+
+
+class AgentStructureRequest(BaseModel):
+    """Payload for agent-driven structure proposal (phase 1)."""
+
+    query: EstimationQuery
+    model: str | None = Field(default=None)
+    reasoning_effort: AgentReasoningEffort | None = Field(default=None)
+    persona: str | None = Field(default=None, max_length=2000)
+
+
+class AgentHoursRequest(BaseModel):
+    """Payload for agent-driven task-hours phase (phase 2)."""
+
+    modules: list[TaskHoursModuleInput] = Field(min_length=1)
+    model: str | None = Field(default=None)
+    reasoning_effort: AgentReasoningEffort | None = Field(default=None)
+    max_iterations: int | None = Field(default=None, ge=1, le=20)
+    search_top_k: int | None = Field(default=None, ge=1, le=30)
+    search_distance_threshold: float | None = Field(default=None, ge=0.0, le=2.0)
+    persona: str | None = Field(default=None, max_length=2000)
+
+
 class TaskHoursResult(BaseModel):
     """Per-task hours estimates in submitted order."""
 
     tasks: list[TaskHoursEstimate] = Field(default_factory=list)
+    agent_trace: AgentTrace | None = None
 
 
 class ReformulateStageRequest(BaseModel):
@@ -618,6 +644,7 @@ class GenerateStageRequest(BaseModel):
 
 class GenerateStageResponse(BaseModel):
     estimate: RagPipelineEstimate
+    agent_trace: AgentTrace | None = None
 
 
 class VerifyStageRequest(BaseModel):
@@ -685,6 +712,9 @@ __all__ = [
     "StrategyStats",
     "AssembleStageRequest",
     "AssembleStageResponse",
+    "AgentHoursRequest",
+    "AgentStructureRequest",
+    "AgentReasoningEffort",
     "EstimationQuery",
     "EstimateLineItem",
     "EstimateModule",

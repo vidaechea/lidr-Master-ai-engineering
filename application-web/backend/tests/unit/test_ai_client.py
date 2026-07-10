@@ -162,6 +162,39 @@ class TestAiClientErrorMapping:
         assert exc_info.value.status_code == 502
         assert exc_info.value.detail == "AI Engine returned 500"
 
+    async def test_estimate_agentic_maps_request_error_to_503_unreachable(self, monkeypatch: pytest.MonkeyPatch):
+        _patch_async_client(
+            monkeypatch,
+            error_factory=lambda method, path: RequestError(
+                "network down",
+                request=Request(method, f"http://testserver{path}"),
+            ),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await ai_client.estimate_agentic(
+                request_payload={"transcription": "sample"},
+                prompt_version="v1",
+            )
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail == "AI Engine unreachable"
+
+    async def test_estimate_agentic_maps_http_status_to_502(self, monkeypatch: pytest.MonkeyPatch):
+        _patch_async_client(
+            monkeypatch,
+            response_factory=lambda method, path: _text_response(method, path, 500, "boom"),
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await ai_client.estimate_agentic(
+                request_payload={"transcription": "sample"},
+                prompt_version="v1",
+            )
+
+        assert exc_info.value.status_code == 502
+        assert exc_info.value.detail == "AI Engine returned 500"
+
     async def test_rag_verify_stage_posts_to_verify_endpoint(self, monkeypatch: pytest.MonkeyPatch):
         captured: dict[str, str] = {}
 
@@ -204,6 +237,36 @@ class TestAiClientErrorMapping:
 
         assert captured == {"method": "POST", "path": "/api/v1/rag/tasks/hours"}
         assert payload == {"tasks": []}
+
+    async def test_rag_agent_structure_posts_to_structure_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 200, {"estimate": {}, "agent_trace": {"steps": []}})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_agent_structure({"query": {"search_text": "x", "chunk_types": [], "keywords": []}})
+
+        assert captured == {"method": "POST", "path": "/api/v1/rag/agent/structure"}
+        assert "estimate" in payload
+
+    async def test_rag_agent_hours_posts_to_hours_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 200, {"tasks": [], "agent_trace": {"steps": []}})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_agent_hours({"modules": []})
+
+        assert captured == {"method": "POST", "path": "/api/v1/rag/agent/hours"}
+        assert payload["tasks"] == []
 
     async def test_rag_create_index_run_posts_to_index_runs(self, monkeypatch: pytest.MonkeyPatch):
         captured: dict[str, str] = {}

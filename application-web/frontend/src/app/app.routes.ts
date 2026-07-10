@@ -92,6 +92,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'agent-profiles',
+        loadComponent: () =>
+          import('./features/estimations/agent-profiles/agent-profiles.component').then(
+            m => m.AgentProfilesComponent,
+          ),
+      },
+      {
         path: 'rag-ingestion',
         loadComponent: () =>
           import('./features/estimations/rag-ingestion/rag-ingestion.component').then(
