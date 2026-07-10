@@ -191,6 +191,19 @@ async def estimate_acb(request_payload: dict, prompt_version: str) -> dict:
     )
 
 
+async def estimate_agentic(request_payload: dict, prompt_version: str) -> dict:
+    """Call ``POST /api/v1/estimate/agentic`` on the AI Engine and return the JSON response."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/estimate/agentic",
+        request_timeout=300.0,
+        params={"prompt_version": prompt_version},
+        json_body=request_payload,
+        http_error_event="ai_engine_agentic_http_error",
+        connection_error_event="ai_engine_agentic_connection_error",
+    )
+
+
 async def enqueue_async(request_payload: dict, callback_url: str, prompt_version: str) -> str:
     """Call ``POST /api/v1/internal/estimate/async`` — returns job_id."""
     response_payload = await _request_ai_engine(
@@ -413,6 +426,30 @@ async def rag_task_hours(request_payload: dict[str, Any]) -> dict[str, Any]:
         request_timeout=60.0,
         json_body=request_payload,
         http_error_event="ai_engine_rag_task_hours_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_agent_structure(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/agent/structure`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/agent/structure",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_agent_structure_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_agent_hours(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/agent/hours`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/agent/hours",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_agent_hours_error",
         http_error_strategy=_session_estimate_http_error_strategy,
     )
 

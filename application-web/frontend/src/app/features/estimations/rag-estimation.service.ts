@@ -85,6 +85,68 @@ export interface TaskHoursEstimate {
 
 export interface TaskHoursResult {
   tasks: TaskHoursEstimate[];
+  agent_trace?: AgentTrace | null;
+}
+
+export interface AgentTraceStep {
+  step: number;
+  reasoning_summary?: string | null;
+  tool: string;
+  tool_args: Record<string, any>;
+  observation: string;
+}
+
+export interface AgentTrace {
+  steps: AgentTraceStep[];
+}
+
+export type AgentReasoningEffort = 'minimal' | 'low' | 'medium' | 'high';
+
+export interface AgentProfileConfig {
+  model?: string | null;
+  reasoning_effort?: AgentReasoningEffort | null;
+  max_iterations?: number | null;
+  search_top_k?: number | null;
+  search_distance_threshold?: number | null;
+}
+
+export interface AgentProfile {
+  id: string;
+  name: string;
+  persona?: string | null;
+  config: AgentProfileConfig;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentProfileCreate {
+  name: string;
+  persona?: string | null;
+  config: AgentProfileConfig;
+  is_default: boolean;
+}
+
+export interface AgentStructureRequest {
+  query: {
+    search_text: string;
+    sector?: string | null;
+    year_from?: number | null;
+    year_to?: number | null;
+    chunk_types: string[];
+    keywords: string[];
+  };
+  profile_id?: string;
+}
+
+export interface AgentStructureResponse {
+  estimate: RagPipelineEstimate;
+  agent_trace?: AgentTrace | null;
+}
+
+export interface AgentHoursRequest {
+  modules: TaskHoursModuleInput[];
+  profile_id?: string;
 }
 
 export interface RetrievedChunk {
@@ -239,6 +301,30 @@ export class RagEstimationService {
    */
   estimateTaskHours(request: RagTaskHoursRequest): Observable<TaskHoursResult> {
     return this.http.post<TaskHoursResult>(`${this.baseUrl}/tasks/hours`, request);
+  }
+
+  proposeAgentStructure(request: AgentStructureRequest): Observable<AgentStructureResponse> {
+    return this.http.post<AgentStructureResponse>(`${this.baseUrl}/agent/structure`, request);
+  }
+
+  estimateAgentHours(request: AgentHoursRequest): Observable<TaskHoursResult> {
+    return this.http.post<TaskHoursResult>(`${this.baseUrl}/agent/hours`, request);
+  }
+
+  listAgentProfiles(): Observable<AgentProfile[]> {
+    return this.http.get<AgentProfile[]>(`${this.baseUrl}/agent/profiles`);
+  }
+
+  createAgentProfile(request: AgentProfileCreate): Observable<AgentProfile> {
+    return this.http.post<AgentProfile>(`${this.baseUrl}/agent/profiles`, request);
+  }
+
+  updateAgentProfile(profileId: string, request: Partial<AgentProfileCreate>): Observable<AgentProfile> {
+    return this.http.patch<AgentProfile>(`${this.baseUrl}/agent/profiles/${profileId}`, request);
+  }
+
+  deleteAgentProfile(profileId: string): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/agent/profiles/${profileId}`);
   }
 
   /**

@@ -8,6 +8,15 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 
 from app.dependencies import CurrentUser, DbDep
+from app.schemas.agent_profile import (
+    AgentHoursRequest,
+    AgentHoursResponse,
+    AgentProfileCreate,
+    AgentProfileOut,
+    AgentProfileUpdate,
+    AgentStructureRequest,
+    AgentStructureResponse,
+)
 from app.schemas.rag_estimation import (
     FullRagEstimationOut,
     HallucinationReportOut,
@@ -21,10 +30,139 @@ from app.schemas.rag_estimation import (
     RagVerifyRequest,
     TaskHoursResultOut,
 )
+from app.services import agent_profile_service
 from app.services.rag_estimation_service import RagEstimationService
 
 router = APIRouter(prefix="/rag", tags=["rag-estimations"])
 _rag_service = RagEstimationService()
+_INVALID_PROFILE_ID_DETAIL = "Invalid profile_id"
+_PROFILE_NOT_FOUND_DETAIL = "Agent profile not found"
+
+
+def _profile_to_out(profile) -> AgentProfileOut:
+    from app.schemas.agent_profile import AgentProfileConfig
+
+    return AgentProfileOut(
+        id=str(profile.id),
+        name=profile.name,
+        persona=profile.persona,
+        config=AgentProfileConfig.model_validate(profile.config or {}),
+        is_default=profile.is_default,
+        created_at=profile.created_at.isoformat(),
+        updated_at=profile.updated_at.isoformat(),
+    )
+
+
+async def _resolve_profile_or_default(db: DbDep, current_user: CurrentUser, profile_id: str | None):
+    if profile_id:
+        try:
+            profile_uuid = uuid.UUID(profile_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_PROFILE_ID_DETAIL) from exc
+        profile = await agent_profile_service.get_profile(db, current_user.id, profile_uuid)
+        if profile is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_PROFILE_NOT_FOUND_DETAIL)
+        return profile
+    return await agent_profile_service.get_default_profile(db, current_user.id)
+
+
+@router.get("/agent/profiles")
+async def list_agent_profiles(current_user: CurrentUser, db: DbDep) -> list[AgentProfileOut]:
+    profiles = await agent_profile_service.list_profiles(db, current_user.id)
+    return [_profile_to_out(profile) for profile in profiles]
+
+
+@router.post("/agent/profiles", status_code=status.HTTP_201_CREATED)
+async def create_agent_profile(
+    payload: AgentProfileCreate,
+    current_user: CurrentUser,
+    db: DbDep,
+) -> AgentProfileOut:
+    profile = await agent_profile_service.create_profile(db, current_user.id, payload)
+    await db.commit()
+    return _profile_to_out(profile)
+
+
+@router.patch("/agent/profiles/{profile_id}")
+async def update_agent_profile(
+    profile_id: str,
+    payload: AgentProfileUpdate,
+    current_user: CurrentUser,
+    db: DbDep,
+) -> AgentProfileOut:
+    try:
+        profile_uuid = uuid.UUID(profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_PROFILE_ID_DETAIL) from exc
+
+    profile = await agent_profile_service.get_profile(db, current_user.id, profile_uuid)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_PROFILE_NOT_FOUND_DETAIL)
+
+    updated = await agent_profile_service.update_profile(db, profile, payload)
+    await db.commit()
+    return _profile_to_out(updated)
+
+
+@router.delete("/agent/profiles/{profile_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent_profile(profile_id: str, current_user: CurrentUser, db: DbDep) -> None:
+    try:
+        profile_uuid = uuid.UUID(profile_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=_INVALID_PROFILE_ID_DETAIL) from exc
+
+    profile = await agent_profile_service.get_profile(db, current_user.id, profile_uuid)
+    if profile is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_PROFILE_NOT_FOUND_DETAIL)
+
+    await agent_profile_service.delete_profile(db, profile)
+    await db.commit()
+
+
+@router.post("/agent/structure", response_model=AgentStructureResponse, status_code=status.HTTP_200_OK)
+async def propose_agent_structure(
+    payload: AgentStructureRequest,
+    current_user: CurrentUser,
+    db: DbDep,
+) -> dict:
+    _ = current_user
+    profile = await _resolve_profile_or_default(db, current_user, payload.profile_id)
+    overrides = agent_profile_service.profile_overrides(profile)
+    try:
+        return await _rag_service.estimate_agent_structure(
+            query=payload.query.model_dump(),
+            overrides=overrides,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Agent structure failed: {str(e)}",
+        ) from e
+
+
+@router.post("/agent/hours", response_model=AgentHoursResponse, status_code=status.HTTP_200_OK)
+async def estimate_agent_hours(
+    payload: AgentHoursRequest,
+    current_user: CurrentUser,
+    db: DbDep,
+) -> dict:
+    _ = current_user
+    profile = await _resolve_profile_or_default(db, current_user, payload.profile_id)
+    overrides = agent_profile_service.profile_overrides(profile)
+    try:
+        return await _rag_service.estimate_agent_hours(
+            modules=[module.model_dump() for module in payload.modules],
+            overrides=overrides,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Agent hours failed: {str(e)}",
+        ) from e
 
 
 @router.post("/estimate", response_model=FullRagEstimationOut, status_code=status.HTTP_200_OK)

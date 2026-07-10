@@ -42,6 +42,11 @@ def _consensus(neighbors: list[tuple[int, float]]) -> tuple[int, float, float]:
     return round(weighted_hours), round(reliability, 3), round(dispersion, 3)
 
 
+# Reused by the agentic recovery path so both deterministic and recovery
+# estimates share the same arithmetic.
+distance_weighted_consensus = _consensus
+
+
 def _build_hours_range(neighbors: list[TaskNeighbor], *, threshold: float) -> HourRange | None:
     if len(neighbors) < 2:
         return None

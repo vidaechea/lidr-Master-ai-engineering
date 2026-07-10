@@ -1,4 +1,4 @@
-"""Integration tests for the ACB estimation path through POST /v1/estimations.
+"""Integration tests for mode-based estimation dispatch through POST /v1/estimations.
 
 Verifies that when ``estimation_mode='acb'`` is sent in the request body,
 the backend routes to ``ai_client.estimate_acb`` and persists the result.
@@ -118,10 +118,12 @@ class TestAcbEstimationIntegration:
     async def test_standard_mode_routes_to_estimate_sync(self, client, auth_headers):
         mock_acb = AsyncMock(return_value=ACB_AI_RESPONSE)
         mock_sync = AsyncMock(return_value=STANDARD_AI_RESPONSE)
+        mock_agentic = AsyncMock(return_value=ACB_AI_RESPONSE)
 
         with (
             patch("app.services.ai_client.estimate_acb", mock_acb),
             patch("app.services.ai_client.estimate_sync", mock_sync),
+            patch("app.services.ai_client.estimate_agentic", mock_agentic),
         ):
             await client.post(
                 "/v1/estimations",
@@ -130,6 +132,30 @@ class TestAcbEstimationIntegration:
             )
 
         mock_sync.assert_awaited_once()
+        mock_acb.assert_not_awaited()
+        mock_agentic.assert_not_awaited()
+
+    async def test_agentic_mode_routes_to_estimate_agentic_not_others(self, client, auth_headers):
+        mock_acb = AsyncMock(return_value=ACB_AI_RESPONSE)
+        mock_sync = AsyncMock(return_value=STANDARD_AI_RESPONSE)
+        mock_agentic = AsyncMock(return_value=ACB_AI_RESPONSE)
+
+        with (
+            patch("app.services.ai_client.estimate_acb", mock_acb),
+            patch("app.services.ai_client.estimate_sync", mock_sync),
+            patch("app.services.ai_client.estimate_agentic", mock_agentic),
+        ):
+            await client.post(
+                "/v1/estimations",
+                headers=auth_headers,
+                json={
+                    "transcription": VALID_TRANSCRIPTION,
+                    "estimation_mode": "agentic",
+                },
+            )
+
+        mock_agentic.assert_awaited_once()
+        mock_sync.assert_not_awaited()
         mock_acb.assert_not_awaited()
 
     async def test_acb_max_iterations_above_limit_returns_422(self, client, auth_headers):

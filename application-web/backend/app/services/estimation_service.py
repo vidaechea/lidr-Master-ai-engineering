@@ -82,6 +82,11 @@ async def create_and_run_sync(
                 acb_payload,
                 prompt_version=data.prompt_version,
             )
+        elif data.estimation_mode == "agentic":
+            ai_response = await ai_client.estimate_agentic(
+                ai_payload,
+                prompt_version=data.prompt_version,
+            )
         else:
             ai_response = await ai_client.estimate_sync(
                 ai_payload,

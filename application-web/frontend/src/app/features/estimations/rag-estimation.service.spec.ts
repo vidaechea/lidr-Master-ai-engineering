@@ -96,6 +96,89 @@ describe('RagEstimationService', () => {
     });
   });
 
+  describe('proposeAgentStructure', () => {
+    it('should POST to /v1/rag/agent/structure', () => {
+      const request = {
+        query: {
+          search_text: 'Need a backend and mobile budget',
+          chunk_types: ['budget_component'],
+          keywords: ['backend'],
+        },
+        profile_id: '11111111-1111-1111-1111-111111111111',
+      };
+
+      service.proposeAgentStructure(request).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/agent/structure`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+    });
+  });
+
+  describe('estimateAgentHours', () => {
+    it('should POST to /v1/rag/agent/hours', () => {
+      const request = {
+        modules: [
+          {
+            name: 'Authentication',
+            tasks: [{ name: 'Implement OAuth backend' }],
+          },
+        ],
+        profile_id: '11111111-1111-1111-1111-111111111111',
+      };
+
+      service.estimateAgentHours(request).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/agent/hours`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+    });
+  });
+
+  describe('agent profile CRUD', () => {
+    it('should GET /v1/rag/agent/profiles', () => {
+      service.listAgentProfiles().subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/agent/profiles`);
+      expect(req.request.method).toBe('GET');
+    });
+
+    it('should POST /v1/rag/agent/profiles', () => {
+      const request = {
+        name: 'Conservative',
+        persona: 'Prefer lower-risk estimates',
+        config: { reasoning_effort: 'low' as const },
+        is_default: true,
+      };
+
+      service.createAgentProfile(request).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/agent/profiles`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual(request);
+    });
+
+    it('should PATCH /v1/rag/agent/profiles/{id}', () => {
+      const profileId = '22222222-2222-2222-2222-222222222222';
+      const request = { name: 'Updated' };
+
+      service.updateAgentProfile(profileId, request).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/agent/profiles/${profileId}`);
+      expect(req.request.method).toBe('PATCH');
+      expect(req.request.body).toEqual(request);
+    });
+
+    it('should DELETE /v1/rag/agent/profiles/{id}', () => {
+      const profileId = '33333333-3333-3333-3333-333333333333';
+
+      service.deleteAgentProfile(profileId).subscribe();
+
+      const req = httpMock.expectOne(`${environment.apiUrl}/v1/rag/agent/profiles/${profileId}`);
+      expect(req.request.method).toBe('DELETE');
+    });
+  });
+
   describe('createIndexRun', () => {
     it('should POST to /v1/rag/index/runs', () => {
       const request = {
