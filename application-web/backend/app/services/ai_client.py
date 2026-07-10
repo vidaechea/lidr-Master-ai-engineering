@@ -430,6 +430,30 @@ async def rag_task_hours(request_payload: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+async def rag_agent_structure(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/agent/structure`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/agent/structure",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_agent_structure_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_agent_hours(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/agent/hours`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/agent/hours",
+        request_timeout=60.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_agent_hours_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
 async def rag_create_index_run(request_payload: dict[str, Any]) -> dict[str, Any]:
     """Call ``POST /api/v1/embeddings/index/runs`` on the AI Engine."""
     return await _request_ai_engine(

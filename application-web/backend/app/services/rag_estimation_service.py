@@ -192,6 +192,30 @@ class RagEstimationService:
         """Proxy per-task historical hours estimation."""
         return await ai_client.rag_task_hours({"modules": modules})
 
+    async def estimate_agent_structure(
+        self,
+        *,
+        query: dict[str, Any],
+        overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy Session 12 structure proposal endpoint."""
+        payload = {"query": query}
+        if overrides:
+            payload.update(overrides)
+        return await ai_client.rag_agent_structure(payload)
+
+    async def estimate_agent_hours(
+        self,
+        *,
+        modules: list[dict[str, Any]],
+        overrides: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Proxy Session 12 hybrid task-hours endpoint."""
+        payload = {"modules": modules}
+        if overrides:
+            payload.update(overrides)
+        return await ai_client.rag_agent_hours(payload)
+
     async def create_index_run(
         self,
         *,
