@@ -19,6 +19,11 @@ from app.schemas.agent_profile import (
 )
 from app.schemas.rag_estimation import (
     FullRagEstimationOut,
+    GraphEstimateRequest,
+    GraphProgressOut,
+    GraphProposalOut,
+    GraphResumeRequest,
+    GraphRunStateOut,
     HallucinationReportOut,
     RagIndexJobOut,
     RagIndexRunRequest,
@@ -162,6 +167,103 @@ async def estimate_agent_hours(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Agent hours failed: {str(e)}",
+        ) from e
+
+
+@router.post("/graph/stream", response_model=GraphProgressOut, status_code=status.HTTP_202_ACCEPTED)
+async def start_graph_stream(
+    payload: GraphEstimateRequest,
+    current_user: CurrentUser,
+) -> dict:
+    """Start graph-driven estimation in background."""
+    _ = current_user
+    try:
+        return await _rag_service.graph_start_stream(
+            transcript=payload.transcript,
+            estimation_id=payload.estimation_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Graph start failed: {str(e)}",
+        ) from e
+
+
+@router.post("/graph/{estimation_id}/resume-stream", response_model=GraphProgressOut, status_code=status.HTTP_202_ACCEPTED)
+async def resume_graph_stream(
+    estimation_id: str,
+    payload: GraphResumeRequest,
+    current_user: CurrentUser,
+) -> dict:
+    """Resume a graph run from its pending human gate."""
+    _ = current_user
+    try:
+        return await _rag_service.graph_resume_stream(
+            estimation_id=estimation_id,
+            decision=payload.decision,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Graph resume failed: {str(e)}",
+        ) from e
+
+
+@router.get("/graph/{estimation_id}/state", response_model=GraphRunStateOut, status_code=status.HTTP_200_OK)
+async def graph_state(
+    estimation_id: str,
+    current_user: CurrentUser,
+) -> dict:
+    """Get current graph run state snapshot."""
+    _ = current_user
+    try:
+        return await _rag_service.graph_state(estimation_id=estimation_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Graph state failed: {str(e)}",
+        ) from e
+
+
+@router.get("/graph/{estimation_id}/progress", response_model=GraphProgressOut, status_code=status.HTTP_200_OK)
+async def graph_progress(
+    estimation_id: str,
+    current_user: CurrentUser,
+) -> dict:
+    """Get graph live progress and per-agent activity feed."""
+    _ = current_user
+    try:
+        return await _rag_service.graph_progress(estimation_id=estimation_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Graph progress failed: {str(e)}",
+        ) from e
+
+
+@router.post("/graph/{estimation_id}/proposal", response_model=GraphProposalOut, status_code=status.HTTP_200_OK)
+async def graph_proposal(
+    estimation_id: str,
+    current_user: CurrentUser,
+) -> dict:
+    """Generate or fetch commercial proposal for a graph run."""
+    _ = current_user
+    try:
+        return await _rag_service.graph_proposal(estimation_id=estimation_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Graph proposal failed: {str(e)}",
         ) from e
 
 

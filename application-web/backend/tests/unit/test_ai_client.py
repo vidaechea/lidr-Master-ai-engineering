@@ -324,3 +324,78 @@ class TestAiClientErrorMapping:
 
         assert captured == {"method": "GET", "path": "/api/v1/embeddings/index/stats"}
         assert payload["total_chunks"] == 0
+
+    async def test_rag_graph_start_stream_posts_to_graph_stream(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 202, {"estimation_id": "run-1", "state": "running", "activity": []})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_graph_start_stream({"transcript": "x" * 40})
+
+        assert captured == {"method": "POST", "path": "/api/v1/rag/graph/stream"}
+        assert payload["state"] == "running"
+
+    async def test_rag_graph_resume_stream_posts_to_resume_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 202, {"estimation_id": "run-1", "state": "running", "activity": []})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_graph_resume_stream("run-1", {"decision": {"approved": True}})
+
+        assert captured == {"method": "POST", "path": "/api/v1/rag/graph/run-1/resume-stream"}
+        assert payload["estimation_id"] == "run-1"
+
+    async def test_rag_graph_progress_gets_progress_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 200, {"estimation_id": "run-2", "state": "paused", "activity": []})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_graph_progress("run-2")
+
+        assert captured == {"method": "GET", "path": "/api/v1/rag/graph/run-2/progress"}
+        assert payload["state"] == "paused"
+
+    async def test_rag_graph_state_gets_state_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 200, {"estimation_id": "run-2", "state": "completed"})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_graph_state("run-2")
+
+        assert captured == {"method": "GET", "path": "/api/v1/rag/graph/run-2/state"}
+        assert payload["state"] == "completed"
+
+    async def test_rag_graph_proposal_posts_to_proposal_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(method, path, 200, {"estimation_id": "run-3", "title": "Propuesta comercial", "body_markdown": "## Propuesta"})
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.rag_graph_proposal("run-3")
+
+        assert captured == {"method": "POST", "path": "/api/v1/rag/graph/run-3/proposal"}
+        assert payload["title"] == "Propuesta comercial"

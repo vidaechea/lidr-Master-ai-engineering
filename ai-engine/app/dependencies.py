@@ -23,6 +23,7 @@ from app.generation.rag.ingest_service import RagIngestService
 from app.generation.rag.index_service import CorpusIndexService
 from app.generation.rag.reranker import CrossEncoderReranker
 from app.generation.rag.retriever_service import SemanticRetriever
+from app.generation.rag.graph_runtime import GraphActivityLog, GraphRunService
 from app.generation.rag.store.repository import ChunkStore
 from app.foundation.llm.runtime_config import RuntimeModelConfig, RuntimeRetrievalConfig
 
@@ -254,4 +255,19 @@ def get_semantic_retriever() -> SemanticRetriever:
         session_factory=get_session_factory(),
         store=get_chunk_store(),
         reranker=get_reranker(),
+    )
+
+
+@lru_cache
+def get_graph_activity() -> GraphActivityLog:
+    """Singleton in-memory activity feed for graph runs."""
+    return GraphActivityLog()
+
+
+@lru_cache
+def get_graph_run_service() -> GraphRunService:
+    """Singleton graph orchestration service."""
+    return GraphRunService(
+        retriever=get_semantic_retriever(),
+        activity=get_graph_activity(),
     )
