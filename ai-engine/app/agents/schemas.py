@@ -51,6 +51,7 @@ class AgenticEstimate(BaseModel):
     unit: str = "hours"
     method: str
     assumptions: list[str] = Field(default_factory=list)
+    status: Literal["validated", "needs_review"] = "needs_review"
 
 
 class AgentTraceStep(BaseModel):

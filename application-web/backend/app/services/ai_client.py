@@ -484,3 +484,59 @@ async def rag_get_index_stats() -> dict[str, Any]:
         request_timeout=30.0,
         http_error_event="ai_engine_rag_index_stats_error",
     )
+
+
+async def rag_graph_start_stream(request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/graph/stream`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        "/api/v1/rag/graph/stream",
+        request_timeout=30.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_graph_start_error",
+    )
+
+
+async def rag_graph_resume_stream(estimation_id: str, request_payload: dict[str, Any]) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/graph/{estimation_id}/resume-stream`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        f"/api/v1/rag/graph/{estimation_id}/resume-stream",
+        request_timeout=120.0,
+        json_body=request_payload,
+        http_error_event="ai_engine_rag_graph_resume_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_graph_progress(estimation_id: str) -> dict[str, Any]:
+    """Call ``GET /api/v1/rag/graph/{estimation_id}/progress`` on the AI Engine."""
+    return await _request_ai_engine(
+        "GET",
+        f"/api/v1/rag/graph/{estimation_id}/progress",
+        request_timeout=30.0,
+        http_error_event="ai_engine_rag_graph_progress_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_graph_state(estimation_id: str) -> dict[str, Any]:
+    """Call ``GET /api/v1/rag/graph/{estimation_id}/state`` on the AI Engine."""
+    return await _request_ai_engine(
+        "GET",
+        f"/api/v1/rag/graph/{estimation_id}/state",
+        request_timeout=30.0,
+        http_error_event="ai_engine_rag_graph_state_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
+async def rag_graph_proposal(estimation_id: str) -> dict[str, Any]:
+    """Call ``POST /api/v1/rag/graph/{estimation_id}/proposal`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        f"/api/v1/rag/graph/{estimation_id}/proposal",
+        request_timeout=60.0,
+        http_error_event="ai_engine_rag_graph_proposal_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )

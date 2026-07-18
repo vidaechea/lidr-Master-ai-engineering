@@ -1,0 +1,13 @@
+Kickoff notes for a medium-complexity digital project:
+
+- Build a customer-facing web portal with secure login and role-based access.
+- Expose backend APIs for account management, reporting, and notifications.
+- Integrate with an existing ERP for order synchronization and invoice status.
+- Deliver a companion mobile app with push notifications and offline-safe drafts.
+- Include QA automation, regression tests, and UAT support before go-live.
+- Add CI/CD deployment pipelines and basic observability dashboards.
+
+Constraints and context:
+- First release target in 14 weeks.
+- Team available: 1 tech lead, 2 backend devs, 1 frontend dev, 1 mobile dev, 1 QA.
+- Need estimate in hours using historical references from prior budgets.

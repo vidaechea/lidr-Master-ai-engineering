@@ -264,6 +264,53 @@ export interface RagIndexStats {
   total_chunks: number;
 }
 
+export interface GraphEstimateRequest {
+  transcript: string;
+  estimation_id?: string;
+}
+
+export interface GraphResumeRequest {
+  decision: Record<string, any>;
+}
+
+export interface GraphPendingGate {
+  gate: 'structure_review' | 'final_review' | string;
+  estimation_id: string;
+  payload: Record<string, any>;
+}
+
+export interface GraphActivityItem {
+  seq: number;
+  node: string;
+  label: string;
+  message: string;
+  ts: string;
+}
+
+export interface GraphRunState {
+  estimation_id: string;
+  state: 'running' | 'paused' | 'completed';
+  pending_gate?: GraphPendingGate | null;
+  complexity?: string | null;
+  structure?: Record<string, any> | null;
+  task_hours?: Record<string, any>[];
+  estimate?: Record<string, any> | null;
+  analysis_report?: Record<string, any> | null;
+  proposal?: string | null;
+  status?: 'validated' | 'needs_review' | null;
+  errors?: string[];
+}
+
+export interface GraphProgress extends GraphRunState {
+  activity: GraphActivityItem[];
+}
+
+export interface GraphProposal {
+  estimation_id: string;
+  title: string;
+  body_markdown: string;
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -346,6 +393,29 @@ export class RagEstimationService {
    */
   getIndexStats(): Observable<RagIndexStats> {
     return this.http.get<RagIndexStats>(`${this.baseUrl}/index/stats`);
+  }
+
+  startGraphStream(request: GraphEstimateRequest): Observable<GraphProgress> {
+    return this.http.post<GraphProgress>(`${this.baseUrl}/graph/stream`, request);
+  }
+
+  resumeGraphStream(estimationId: string, request: GraphResumeRequest): Observable<GraphProgress> {
+    return this.http.post<GraphProgress>(
+      `${this.baseUrl}/graph/${estimationId}/resume-stream`,
+      request,
+    );
+  }
+
+  getGraphState(estimationId: string): Observable<GraphRunState> {
+    return this.http.get<GraphRunState>(`${this.baseUrl}/graph/${estimationId}/state`);
+  }
+
+  getGraphProgress(estimationId: string): Observable<GraphProgress> {
+    return this.http.get<GraphProgress>(`${this.baseUrl}/graph/${estimationId}/progress`);
+  }
+
+  generateGraphProposal(estimationId: string): Observable<GraphProposal> {
+    return this.http.post<GraphProposal>(`${this.baseUrl}/graph/${estimationId}/proposal`, {});
   }
 
   /**
