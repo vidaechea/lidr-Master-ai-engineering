@@ -239,3 +239,39 @@ class RagEstimationService:
     async def get_index_stats(self) -> dict[str, Any]:
         """Proxy corpus index corpus stats."""
         return await ai_client.rag_get_index_stats()
+
+    async def graph_start_stream(
+        self,
+        *,
+        transcript: str,
+        estimation_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Start graph-based orchestration run in background."""
+        payload: dict[str, Any] = {"transcript": transcript}
+        if estimation_id:
+            payload["estimation_id"] = estimation_id
+        return await ai_client.rag_graph_start_stream(payload)
+
+    async def graph_resume_stream(
+        self,
+        *,
+        estimation_id: str,
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Resume a paused graph run at the current human gate."""
+        return await ai_client.rag_graph_resume_stream(
+            estimation_id,
+            {"decision": decision},
+        )
+
+    async def graph_progress(self, *, estimation_id: str) -> dict[str, Any]:
+        """Fetch live graph progress with activity feed."""
+        return await ai_client.rag_graph_progress(estimation_id)
+
+    async def graph_state(self, *, estimation_id: str) -> dict[str, Any]:
+        """Fetch latest graph run snapshot."""
+        return await ai_client.rag_graph_state(estimation_id)
+
+    async def graph_proposal(self, *, estimation_id: str) -> dict[str, Any]:
+        """Generate or retrieve proposal markdown for a graph run."""
+        return await ai_client.rag_graph_proposal(estimation_id)

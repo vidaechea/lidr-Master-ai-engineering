@@ -23,6 +23,12 @@ import { EstimationService, SessionListItem } from '../estimation.service';
         <button mat-stroked-button color="primary" (click)="goToAgentProfiles()">
           <mat-icon>tune</mat-icon> Agent Profiles
         </button>
+        <button mat-stroked-button color="primary" (click)="goToGraphFlow()">
+          <mat-icon>schema</mat-icon> Graph Flow
+        </button>
+        <button mat-stroked-button color="primary" (click)="goToGraphRun()">
+          <mat-icon>play_arrow</mat-icon> Graph Run
+        </button>
         <button mat-raised-button color="primary" (click)="createNewSession()">
           <mat-icon>add</mat-icon> New Estimation
         </button>
@@ -108,6 +114,14 @@ export class SessionsListComponent implements OnInit {
 
   goToAgentProfiles() {
     this.router.navigate(['/estimations/agent-profiles']);
+  }
+
+  goToGraphFlow() {
+    this.router.navigate(['/estimations/graph-flow']);
+  }
+
+  goToGraphRun() {
+    this.router.navigate(['/estimations/graph-run']);
   }
 
   openSession(sessionId: string) {

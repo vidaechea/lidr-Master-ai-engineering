@@ -272,3 +272,64 @@ class RagEstimationListItem(BaseModel):
     modules_count: int
     created_at: str
     status: str  # "completed" | "failed"
+
+
+class GraphEstimateRequest(BaseModel):
+    """Request to start a graph-driven estimation run."""
+
+    transcript: str = Field(..., min_length=20, max_length=50_000)
+    estimation_id: Optional[str] = Field(default=None, max_length=128)
+
+
+class GraphResumeRequest(BaseModel):
+    """Request to resume a pending human gate."""
+
+    decision: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphPendingGateOut(BaseModel):
+    """Pending gate payload for UI review."""
+
+    gate: str
+    estimation_id: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class GraphActivityOut(BaseModel):
+    """One live activity line from a graph agent."""
+
+    seq: int
+    node: str
+    label: str
+    message: str
+    ts: str
+
+
+class GraphRunStateOut(BaseModel):
+    """Current snapshot of one graph run."""
+
+    estimation_id: str
+    state: str
+    pending_gate: GraphPendingGateOut | None = None
+    complexity: str | None = None
+    structure: dict[str, Any] | None = None
+    task_hours: list[dict[str, Any]] = Field(default_factory=list)
+    estimate: dict[str, Any] | None = None
+    analysis_report: dict[str, Any] | None = None
+    proposal: str | None = None
+    status: str | None = None
+    errors: list[str] = Field(default_factory=list)
+
+
+class GraphProgressOut(GraphRunStateOut):
+    """Graph run state plus live per-agent activity feed."""
+
+    activity: list[GraphActivityOut] = Field(default_factory=list)
+
+
+class GraphProposalOut(BaseModel):
+    """Commercial proposal generated from graph output."""
+
+    estimation_id: str
+    title: str
+    body_markdown: str

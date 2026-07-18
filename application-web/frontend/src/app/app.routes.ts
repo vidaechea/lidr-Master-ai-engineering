@@ -99,6 +99,20 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'graph-flow',
+        loadComponent: () =>
+          import('./features/estimations/graph-flow/graph-flow.component').then(
+            m => m.GraphFlowComponent,
+          ),
+      },
+      {
+        path: 'graph-run',
+        loadComponent: () =>
+          import('./features/estimations/graph-run/graph-run.component').then(
+            m => m.GraphRunComponent,
+          ),
+      },
+      {
         path: 'rag-ingestion',
         loadComponent: () =>
           import('./features/estimations/rag-ingestion/rag-ingestion.component').then(
