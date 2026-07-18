@@ -27,7 +27,7 @@ async def propose_structure(
     _: Annotated[str, Depends(enforce_rag_pipeline_estimate_security)],
 ) -> GenerateStageResponse:
     """Session 12 phase 1: propose module/task structure for human review."""
-    return agent_propose_structure(
+    return await agent_propose_structure(
         payload.query,
         model=payload.model,
         reasoning_effort=payload.reasoning_effort,

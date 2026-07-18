@@ -136,7 +136,7 @@ class Settings(BaseSettings):
     rag_pipeline_idempotency_ttl_seconds: int = 900
     rag_pipeline_hallucination_numeric_tolerance: float = 0.15
     rag_pipeline_task_hours_top_k: int = 5
-    rag_pipeline_task_hours_distance_threshold: float = 0.35
+    rag_pipeline_task_hours_distance_threshold: float = 0.65
     rag_pipeline_task_hours_contradiction_threshold: float = 0.35
     rag_pipeline_retrieval_api_key: str | None = None
     rag_pipeline_estimate_api_key: str | None = None

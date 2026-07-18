@@ -130,14 +130,14 @@ async def graph_proposal(
     return GraphProposalResponse(**proposal)
 
 
-def _safe_start(
+async def _safe_start(
     service: GraphRunService,
     estimation_id: str,
     transcript: str,
     request_id: str,
 ) -> None:
     try:
-        service.start(estimation_id=estimation_id, transcript=transcript)
+        await service.start(estimation_id=estimation_id, transcript=transcript)
     except Exception as exc:  # noqa: BLE001
         message = f"Graph start failed: {type(exc).__name__}"
         log.error("rag_graph_start_failed", request_id=request_id, estimation_id=estimation_id, error=str(exc)[:300])

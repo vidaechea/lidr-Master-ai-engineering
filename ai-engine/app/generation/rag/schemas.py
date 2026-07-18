@@ -420,6 +420,7 @@ class EstimateTask(BaseModel):
 
     name: str
     engineer_days: float = Field(ge=0.0)
+    description: str | None = None
 
 
 class EstimateModule(BaseModel):

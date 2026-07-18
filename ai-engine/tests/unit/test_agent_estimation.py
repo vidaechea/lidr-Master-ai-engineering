@@ -7,6 +7,7 @@ import pytest
 
 import app.domain.agent_estimation as agent_estimation
 from app.generation.rag.schemas import (
+    EstimationQuery,
     RetrievalResult,
     RetrievedChunk,
     TaskHoursEstimate,
@@ -23,6 +24,47 @@ def _modules() -> list[TaskHoursModuleInput]:
             tasks=[TaskHoursTaskInput(name="OAuth backend")],
         )
     ]
+
+
+@pytest.mark.asyncio
+async def test_agent_structure_fallback_decomposes_transcript_into_focused_modules():
+    query = EstimationQuery(
+        search_text=(
+            "Discovery call for a finance platform. We need a backend API, "
+            "ERP integration, mobile app, frontend web dashboard, QA testing, "
+            "authentication, and deployment automation."
+        ),
+        sector=None,
+        year_from=None,
+        year_to=None,
+        chunk_types=["budget_component"],
+        keywords=[],
+    )
+    llm_service = SimpleNamespace(
+        complete_structured=AsyncMock(side_effect=RuntimeError("provider unavailable"))
+    )
+
+    result = await agent_estimation.agent_propose_structure(
+        query,
+        model="gpt-5",
+        reasoning_effort="medium",
+        persona=None,
+        llm_service=llm_service,
+    )
+
+    module_names = [module.name for module in result.estimate.modules]
+
+    assert "Backend API" in module_names
+    assert "Frontend Web" in module_names
+    assert "Mobile App" in module_names
+    assert "ERP Integration" in module_names
+    assert "Authentication and Security" in module_names
+    assert "QA and Testing" in module_names
+    assert "Data Pipeline" not in module_names
+    assert all(not module.name.startswith("Discovery call for a finance platform") for module in result.estimate.modules)
+    assert all(module.tasks[0].name != "Task 1" for module in result.estimate.modules)
+    assert result.agent_trace is not None
+    assert result.agent_trace.steps[0].tool_args["source"] == "fallback"
 
 
 @pytest.mark.asyncio

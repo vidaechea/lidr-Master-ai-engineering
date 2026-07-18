@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.metadata as importlib_metadata
+import os
 import sys
 import urllib.request
 from pathlib import Path
@@ -60,7 +61,8 @@ def check_seed() -> str:
 
 
 def check_health_endpoint() -> str:
-    with urllib.request.urlopen("http://localhost:8000/health", timeout=2) as r:
+    health_url = os.getenv("HEALTH_URL") or f"http://localhost:{os.getenv('UVICORN_PORT', '8000')}/health"
+    with urllib.request.urlopen(health_url, timeout=2) as r:
         return f"{r.status} OK"
 
 

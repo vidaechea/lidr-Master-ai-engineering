@@ -48,7 +48,7 @@ class GraphRunService:
         self._runs: dict[str, GraphRunState] = {}
         self._transcripts: dict[str, str] = {}
 
-    def start(self, *, estimation_id: str, transcript: str) -> GraphRunState:
+    async def start(self, *, estimation_id: str, transcript: str) -> GraphRunState:
         self._activity.reset(estimation_id)
         self._transcripts[estimation_id] = transcript
         self._runs[estimation_id] = GraphRunState(estimation_id=estimation_id, state="running")
@@ -67,7 +67,7 @@ class GraphRunService:
             chunk_types=["budget_component"],
             keywords=[],
         )
-        structure = agent_propose_structure(
+        structure = await agent_propose_structure(
             query,
             model=settings.llm_model,
             reasoning_effort=settings.rag_pipeline_generation_reasoning_effort,
@@ -146,14 +146,7 @@ class GraphRunService:
                 "body_markdown": state.proposal,
             }
 
-        total_hours = int(state.estimate.get("total_hours") or 0)
-        total_days = round(total_hours / 8, 1) if total_hours else 0.0
-        proposal = (
-            "## Propuesta comercial\n\n"
-            f"- Estimación validada: **{total_hours} horas** (~{total_days} días).\n"
-            "- Entrega propuesta en fases incrementales con hitos semanales.\n"
-            "- Recomendación: comenzar con sprint de descubrimiento y backlog priorizado.\n"
-        )
+        proposal = self._render_proposal_markdown(state)
         completed = state.model_copy(update={"proposal": proposal})
         self._runs[estimation_id] = completed
         return {
@@ -161,6 +154,64 @@ class GraphRunService:
             "title": "Propuesta comercial",
             "body_markdown": proposal,
         }
+
+    @staticmethod
+    def _render_proposal_markdown(state: GraphRunState) -> str:
+        estimate = state.estimate or {}
+        analysis = state.analysis_report or {}
+        modules = estimate.get("modules") or []
+        total_hours = float(estimate.get("total_hours") or 0)
+        total_days = float(estimate.get("total_days") or round(total_hours / 8, 2) if total_hours else 0)
+        grounded_ratio = float(analysis.get("grounded_ratio") or 0)
+        avg_reliability = float(analysis.get("avg_reliability") or 0)
+
+        lines = [
+            "## Propuesta comercial",
+            "",
+            "### Resumen ejecutivo",
+            f"- Esfuerzo estimado: **{total_hours:.0f} horas** (~{total_days:.1f} días).",
+            f"- Cobertura con referencias históricas: **{grounded_ratio:.0%}** de las tareas.",
+            f"- Fiabilidad media de analogías: **{avg_reliability:.2f}**.",
+            "- Enfoque recomendado: entrega incremental con revisión de alcance antes de cerrar precio final.",
+            "",
+            "### Desglose estimado",
+        ]
+
+        for module in modules:
+            module_name = str(module.get("name") or "Módulo sin nombre")
+            tasks = module.get("tasks") or []
+            module_hours = sum(GraphRunService._safe_hours(task.get("estimated_hours")) for task in tasks)
+            lines.append(f"- **{module_name}**: {module_hours:.0f} h")
+            for task in tasks:
+                task_name = str(task.get("name") or "Tarea sin nombre")
+                task_hours = GraphRunService._safe_hours(task.get("estimated_hours"))
+                reliability = task.get("reliability")
+                match_label = "referenciado" if task.get("has_match") else "sin referencia suficiente"
+                if isinstance(reliability, int | float):
+                    lines.append(f"  - {task_name}: {task_hours:.0f} h, {match_label}, fiabilidad {float(reliability):.2f}.")
+                else:
+                    lines.append(f"  - {task_name}: {task_hours:.0f} h, {match_label}.")
+
+        lines.extend([
+            "",
+            "### Riesgos y condiciones",
+        ])
+        if avg_reliability < 0.45:
+            lines.append("- La fiabilidad media es baja: conviene ampliar corpus o validar manualmente analogías antes de comprometer presupuesto.")
+        if grounded_ratio < 1.0:
+            lines.append("- Hay tareas sin precedente histórico suficiente; deben revisarse con discovery técnico.")
+        lines.extend([
+            "- Las horas se calculan por analogía con componentes históricos y no sustituyen una planificación cerrada de sprint.",
+            "- Cambios de alcance, integraciones externas no documentadas o restricciones de acceso pueden modificar el esfuerzo.",
+        ])
+        return "\n".join(lines)
+
+    @staticmethod
+    def _safe_hours(value: Any) -> float:
+        try:
+            return float(value or 0)
+        except (TypeError, ValueError):
+            return 0.0
 
     async def _resume_structure_gate(
         self,
