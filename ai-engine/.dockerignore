@@ -11,5 +11,4 @@ build/
 .env
 .git/
 tests/
-scripts/
 notebooks/
