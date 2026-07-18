@@ -52,6 +52,10 @@ class EstimationCreate(BaseModel):
     )
 
 
+class EstimationResumeRequest(BaseModel):
+    decision: dict[str, Any] = Field(default_factory=dict)
+
+
 # ── Response ──────────────────────────────────────────────────────────────────
 
 

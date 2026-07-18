@@ -15,6 +15,7 @@ from app.schemas.estimation import (
     EstimationCreate,
     EstimationListItem,
     EstimationOut,
+    EstimationResumeRequest,
     OutputFormat,
     RagDocumentIngestIn,
     RagDocumentIngestOut,
@@ -184,6 +185,27 @@ async def create_estimation_async(
     body: EstimationCreate, current_user: CurrentUser, db: DbDep, request: Request
 ):
     """Async estimation via Redis queue — returns immediately with a job_id."""
+
+@router.post("/{estimation_id}/resume", response_model=EstimationOut)
+async def resume_estimation(
+    estimation_id: uuid.UUID,
+    body: EstimationResumeRequest,
+    current_user: CurrentUser,
+    db: DbDep,
+):
+    try:
+        return await estimation_service.resume_agentic_review(
+            db,
+            estimation_id,
+            current_user.id,
+            body.decision,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if detail == "Estimation not found" else status.HTTP_409_CONFLICT
+        raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
     base_url = str(request.base_url).rstrip("/")
     estimation, job_id = await estimation_service.create_async(
         db, current_user.id, body, base_url

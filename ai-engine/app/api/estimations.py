@@ -8,6 +8,7 @@ from app.dependencies import TierDep
 from app.foundation.guardrails.input import InputGuardrailViolation
 from app.foundation.prompts.loader import get_examples
 from app.agents.service import AgenticEstimationService
+from app.agents.schemas import AgenticResumeRequest
 from app.domain.schemas.estimation import (
     ActorCriticBossRequest,
     ActorCriticBossResponse,
@@ -145,6 +146,24 @@ async def create_agentic_estimation(
         )
     except Exception as exc:
         log.error("agentic_estimation_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
+
+
+@router.post("/estimate/agentic/{estimation_id}/resume", responses=_LLM_ERROR_RESPONSES)
+async def resume_agentic_estimation(
+    estimation_id: str,
+    request: AgenticResumeRequest,
+    service: Annotated[AgenticEstimationService, Depends(get_agentic_estimation_service)],
+    prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
+) -> AgenticEstimationResponse:
+    try:
+        return await service.resume(
+            estimation_id=estimation_id,
+            decision=request.decision,
+            prompt_version=prompt_version,
+        )
+    except Exception as exc:
+        log.error("agentic_estimation_resume_failed", estimation_id=estimation_id, error=str(exc))
         raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 

@@ -204,6 +204,20 @@ async def estimate_agentic(request_payload: dict, prompt_version: str) -> dict:
     )
 
 
+async def resume_agentic_estimation(estimation_id: str, request_payload: dict, prompt_version: str) -> dict:
+    """Call ``POST /api/v1/estimate/agentic/{estimation_id}/resume`` on the AI Engine."""
+    return await _request_ai_engine(
+        "POST",
+        f"/api/v1/estimate/agentic/{estimation_id}/resume",
+        request_timeout=300.0,
+        params={"prompt_version": prompt_version},
+        json_body=request_payload,
+        http_error_event="ai_engine_agentic_resume_http_error",
+        connection_error_event="ai_engine_agentic_resume_connection_error",
+        http_error_strategy=_session_estimate_http_error_strategy,
+    )
+
+
 async def enqueue_async(request_payload: dict, callback_url: str, prompt_version: str) -> str:
     """Call ``POST /api/v1/internal/estimate/async`` — returns job_id."""
     response_payload = await _request_ai_engine(

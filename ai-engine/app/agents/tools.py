@@ -121,6 +121,40 @@ def build_agent_tools() -> list[dict]:
     return [SEARCH_BUDGETS_TOOL, CALCULATE_ESTIMATE_TOOL]
 
 
+def validate_estimate(estimate: AgenticEstimate) -> dict[str, object]:
+    errors: list[str] = []
+    if estimate.total_amount <= 0:
+        errors.append("Estimated total amount is zero or negative.")
+
+    missing_references = [component.name for component in estimate.components if component.reference_count == 0]
+    if missing_references:
+        errors.append("Missing historical references for: " + ", ".join(missing_references))
+
+    outside_historical_range: list[str] = []
+    for component in estimate.components:
+        if not component.reference_amounts:
+            continue
+        lower_bound = min(component.reference_amounts)
+        upper_bound = max(component.reference_amounts)
+        if component.estimated_amount < lower_bound or component.estimated_amount > upper_bound:
+            outside_historical_range.append(component.name)
+
+    if outside_historical_range:
+        errors.append("Estimated components outside historical range: " + ", ".join(outside_historical_range))
+
+    component_count = len(estimate.components)
+    grounded_count = len([component for component in estimate.components if component.reference_count > 0])
+    confidence = round(grounded_count / component_count, 4) if component_count else 0.0
+
+    return {
+        "errors": errors,
+        "confidence": confidence,
+        "no_historical_precedent": component_count > 0 and grounded_count == 0,
+        "outside_historical_range": bool(outside_historical_range),
+        "missing_reference_components": missing_references,
+    }
+
+
 async def search_budgets(
     retriever: SemanticRetriever,
     *,

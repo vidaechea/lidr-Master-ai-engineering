@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
 # Estimation lifecycle states
-EstimationStatus = str  # "pending" | "processing" | "completed" | "failed"
+EstimationStatus = str  # "pending" | "processing" | "completed" | "failed" | "awaiting_human_review"
 
 
 class Estimation(Base):
@@ -38,7 +38,7 @@ class Estimation(Base):
 
     # ── Processing ────────────────────────────────────────────────────────────
     status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="pending", index=True
+        String(32), nullable=False, default="pending", index=True
     )
     model_used: Mapped[str | None] = mapped_column(String(100), nullable=True)
     prompt_version: Mapped[str | None] = mapped_column(String(20), nullable=True)

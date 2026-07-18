@@ -52,6 +52,12 @@ _FAKE_AI_RESPONSE = {
     "prompt_version": "v1",
 }
 
+_AWAITING_AI_RESPONSE = {
+    **_FAKE_AI_RESPONSE,
+    "response_id": "estimate-checkpoint-1",
+    "structured_result": {"status": "awaiting_human_review"},
+}
+
 
 def _make_db_mock():
     db = AsyncMock()
@@ -204,3 +210,16 @@ class TestAcbDispatch:
                     await create_and_run_sync(db, _USER_ID, _AGENTIC_PAYLOAD)
 
         assert mock_agentic.call_args.kwargs["prompt_version"] == _AGENTIC_PAYLOAD.prompt_version
+
+    async def test_agentic_awaiting_human_review_keeps_estimation_open(self):
+        db, _ = _make_db_mock()
+        mock_agentic = AsyncMock(return_value=_AWAITING_AI_RESPONSE)
+
+        with patch("app.services.estimation_service.ai_client.estimate_agentic", mock_agentic):
+            with patch("app.services.estimation_service.ai_client.estimate_acb", AsyncMock()):
+                with patch("app.services.estimation_service.ai_client.estimate_sync", AsyncMock()):
+                    estimation = await create_and_run_sync(db, _USER_ID, _AGENTIC_PAYLOAD)
+
+        assert estimation.status == "awaiting_human_review"
+        assert estimation.completed_at is None
+        assert estimation.request_params["ai_response_id"] == "estimate-checkpoint-1"

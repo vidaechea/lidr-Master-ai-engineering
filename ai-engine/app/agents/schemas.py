@@ -51,7 +51,9 @@ class AgenticEstimate(BaseModel):
     unit: str = "hours"
     method: str
     assumptions: list[str] = Field(default_factory=list)
-    status: Literal["validated", "needs_review"] = "needs_review"
+    status: Literal["validated", "needs_review", "awaiting_human_review"] = "needs_review"
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    validation: dict[str, object] = Field(default_factory=dict)
 
 
 class AgentTraceStep(BaseModel):
@@ -72,3 +74,7 @@ class AgenticEstimationResponse(BaseModel):
     reasoning_tokens: int = 0
     prompt_version: str
     reasoning_effort: Literal["medium"] = "medium"
+
+
+class AgenticResumeRequest(BaseModel):
+    decision: dict[str, object] = Field(default_factory=dict)

@@ -7,6 +7,7 @@ from uuid import uuid4
 import logfire
 import structlog
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.types import Command
 
 from app.agents.langgraph_flow import SequentialEstimationGraph
 from app.agents.schemas import AgentTraceStep, AgenticEstimate, AgenticEstimationResponse
@@ -20,6 +21,7 @@ from app.generation.rag.retriever_service import SemanticRetriever
 log = structlog.get_logger(__name__)
 
 _LOGFIRE_CONFIGURED = False
+
 
 def _configure_logfire_once() -> None:
     global _LOGFIRE_CONFIGURED
@@ -75,6 +77,9 @@ class AgenticEstimationService:
         )
         estimation_id = self._build_estimation_id(request)
         graph_state = await self._run_graph(request=request, estimation_id=estimation_id)
+        graph_state = await self._state_from_interrupt_if_needed(estimation_id=estimation_id, graph_state=graph_state)
+        if graph_state.get("__interrupt__"):
+            graph_state = self._mark_awaiting_human_review(graph_state)
         structured_result = AgenticEstimate.model_validate(graph_state["structured_estimate"])
         final_text = str(graph_state.get("final_text") or self._render_final_text(structured_result))
         trace_payload = graph_state.get("trace", [])
@@ -110,6 +115,40 @@ class AgenticEstimationService:
             reasoning_effort=self._reasoning_effort,  # type: ignore[arg-type]
         )
 
+    async def resume(
+        self,
+        *,
+        estimation_id: str,
+        decision: dict[str, object],
+        prompt_version: str = "v1",
+    ) -> AgenticEstimationResponse:
+        graph_state = await self._resume_graph(estimation_id=estimation_id, decision=decision)
+        structured_result = AgenticEstimate.model_validate(graph_state["structured_estimate"])
+        final_text = str(graph_state.get("final_text") or self._render_final_text(structured_result))
+        trace_payload = graph_state.get("trace", [])
+        trace_steps = [
+            AgentTraceStep(
+                step=idx,
+                reasoning=step.get("reasoning", ""),
+                action=step.get("action", ""),
+                observation=step.get("observation", ""),
+            )
+            for idx, step in enumerate(trace_payload, start=1)
+        ]
+
+        return AgenticEstimationResponse(
+            estimation=final_text,
+            structured_result=structured_result,
+            trace=trace_steps,
+            model=self._model_name,
+            response_id=estimation_id,
+            input_tokens=0,
+            output_tokens=0,
+            reasoning_tokens=0,
+            prompt_version=prompt_version,
+            reasoning_effort=self._reasoning_effort,  # type: ignore[arg-type]
+        )
+
     async def _run_graph(self, *, request: EstimationRequest, estimation_id: str) -> dict[str, object]:
         initial_state: dict[str, object] = {
             "estimation_id": estimation_id,
@@ -131,6 +170,52 @@ class AgenticEstimationService:
         result = await graph.ainvoke(initial_state, config=config)
         return dict(result)
 
+    async def _resume_graph(self, *, estimation_id: str, decision: dict[str, object]) -> dict[str, object]:
+        config = {"configurable": {"thread_id": estimation_id}}
+
+        if self._use_postgres_checkpointer:
+            async with AsyncPostgresSaver.from_conn_string(self._checkpoint_dsn) as saver:
+                await saver.setup()
+                graph = self._graph_flow.build(checkpointer=saver)
+                result = await graph.ainvoke(Command(resume=decision), config=config)
+                return dict(result)
+
+        graph = self._graph_flow.build(checkpointer=None)
+        result = await graph.ainvoke(Command(resume=decision), config=config)
+        return dict(result)
+
+    async def _state_from_interrupt_if_needed(
+        self,
+        *,
+        estimation_id: str,
+        graph_state: dict[str, object],
+    ) -> dict[str, object]:
+        if "__interrupt__" not in graph_state:
+            return graph_state
+        if not self._use_postgres_checkpointer:
+            return graph_state
+
+        config = {"configurable": {"thread_id": estimation_id}}
+        async with AsyncPostgresSaver.from_conn_string(self._checkpoint_dsn) as saver:
+            await saver.setup()
+            graph = self._graph_flow.build(checkpointer=saver)
+            snapshot = await graph.aget_state(config)
+            values = dict(getattr(snapshot, "values", {}) or {})
+            values["__interrupt__"] = graph_state["__interrupt__"]
+            return values
+
+    @staticmethod
+    def _mark_awaiting_human_review(graph_state: dict[str, object]) -> dict[str, object]:
+        estimate_payload = dict(graph_state.get("structured_estimate", {}))
+        if not estimate_payload:
+            return graph_state
+        estimate = AgenticEstimate.model_validate(estimate_payload)
+        awaiting = estimate.model_copy(update={"status": "awaiting_human_review"})
+        graph_state["structured_estimate"] = awaiting.model_dump()
+        graph_state["status"] = "awaiting_human_review"
+        graph_state["final_text"] = AgenticEstimationService._render_final_text(awaiting)
+        return graph_state
+
     @staticmethod
     def _build_estimation_id(request: EstimationRequest) -> str:
         digest = hashlib.sha256(request.transcription.encode("utf-8")).hexdigest()[:16]
@@ -146,5 +231,7 @@ class AgenticEstimationService:
             )
         lines.append("")
         lines.append(f"Total: {result.total_amount} {result.unit}")
+        if result.confidence is not None:
+            lines.append(f"Confidence: {result.confidence:.2f}")
         lines.append(f"Status: {result.status}")
         return "\n".join(lines)

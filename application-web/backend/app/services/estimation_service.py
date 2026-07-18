@@ -93,14 +93,55 @@ async def create_and_run_sync(
                 prompt_version=data.prompt_version,
             )
         _apply_ai_response(estimation, ai_response)
-        estimation.status = "completed"
-        estimation.completed_at = datetime.now(timezone.utc)
+        estimation.request_params = {
+            **(estimation.request_params or {}),
+            "ai_response_id": ai_response.get("response_id"),
+        }
+        if _is_awaiting_human_review(ai_response):
+            estimation.status = "awaiting_human_review"
+            estimation.completed_at = None
+        else:
+            estimation.status = "completed"
+            estimation.completed_at = datetime.now(timezone.utc)
     except Exception as exc:
         estimation.status = "failed"
         estimation.error_detail = str(exc)
         await db.commit()
         raise
 
+    await db.commit()
+    await db.refresh(estimation)
+    return estimation
+
+
+async def resume_agentic_review(
+    db: AsyncSession,
+    estimation_id: uuid.UUID,
+    user_id: uuid.UUID,
+    decision: dict[str, object],
+) -> Estimation:
+    estimation = await get_estimation(db, estimation_id, user_id)
+    if estimation is None:
+        raise ValueError("Estimation not found")
+    if estimation.status != "awaiting_human_review":
+        raise ValueError("Estimation is not awaiting human review")
+
+    ai_response_id = (estimation.request_params or {}).get("ai_response_id")
+    if not ai_response_id:
+        raise ValueError("AI checkpoint id not found for estimation")
+
+    ai_response = await ai_client.resume_agentic_estimation(
+        str(ai_response_id),
+        {"decision": decision},
+        prompt_version=estimation.prompt_version or "v1",
+    )
+    _apply_ai_response(estimation, ai_response)
+    estimation.request_params = {
+        **(estimation.request_params or {}),
+        "human_decision": decision,
+    }
+    estimation.status = "completed"
+    estimation.completed_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(estimation)
     return estimation
@@ -179,3 +220,8 @@ def _apply_ai_response(estimation: Estimation, response: dict) -> None:
     estimation.structured_result = response.get("structured_result")
     if not estimation.prompt_version:
         estimation.prompt_version = response.get("prompt_version")
+
+
+def _is_awaiting_human_review(response: dict) -> bool:
+    structured = response.get("structured_result") or {}
+    return structured.get("status") == "awaiting_human_review"

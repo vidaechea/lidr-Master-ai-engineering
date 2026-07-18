@@ -195,6 +195,30 @@ class TestAiClientErrorMapping:
         assert exc_info.value.status_code == 502
         assert exc_info.value.detail == "AI Engine returned 500"
 
+    async def test_resume_agentic_estimation_posts_to_resume_endpoint(self, monkeypatch: pytest.MonkeyPatch):
+        captured: dict[str, str] = {}
+
+        def _response_factory(method: str, path: str) -> Response:
+            captured["method"] = method
+            captured["path"] = path
+            return _json_response(
+                method,
+                path,
+                200,
+                {"response_id": "estimate-1", "structured_result": {"status": "validated"}},
+            )
+
+        _patch_async_client(monkeypatch, response_factory=_response_factory)
+
+        payload = await ai_client.resume_agentic_estimation(
+            "estimate-1",
+            {"decision": {"action": "approve"}},
+            prompt_version="v1",
+        )
+
+        assert captured == {"method": "POST", "path": "/api/v1/estimate/agentic/estimate-1/resume"}
+        assert payload["response_id"] == "estimate-1"
+
     async def test_rag_verify_stage_posts_to_verify_endpoint(self, monkeypatch: pytest.MonkeyPatch):
         captured: dict[str, str] = {}
 

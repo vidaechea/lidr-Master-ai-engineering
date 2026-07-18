@@ -50,6 +50,36 @@ STANDARD_AI_RESPONSE = {
     "prompt_version": "v1",
 }
 
+AWAITING_AGENTIC_RESPONSE = {
+    **STANDARD_AI_RESPONSE,
+    "response_id": "estimate-checkpoint-1",
+    "structured_result": {
+        "components": [],
+        "total_amount": 0,
+        "unit": "hours",
+        "method": "arithmetic_mean",
+        "assumptions": [],
+        "status": "awaiting_human_review",
+        "confidence": 0.0,
+        "validation": {"no_historical_precedent": True},
+    },
+}
+
+RESUMED_AGENTIC_RESPONSE = {
+    **STANDARD_AI_RESPONSE,
+    "response_id": "estimate-checkpoint-1",
+    "structured_result": {
+        "components": [],
+        "total_amount": 0,
+        "unit": "hours",
+        "method": "arithmetic_mean",
+        "assumptions": [],
+        "status": "validated",
+        "confidence": 0.0,
+        "validation": {"no_historical_precedent": True},
+    },
+}
+
 
 def _patch_ai_acb(payload=None):
     return patch(
@@ -180,3 +210,32 @@ class TestAcbEstimationIntegration:
             },
         )
         assert response.status_code == 422
+
+    async def test_agentic_human_review_resume_completes_estimation(self, client, auth_headers):
+        mock_agentic = AsyncMock(return_value=AWAITING_AGENTIC_RESPONSE)
+        mock_resume = AsyncMock(return_value=RESUMED_AGENTIC_RESPONSE)
+
+        with patch("app.services.ai_client.estimate_agentic", mock_agentic):
+            created = await client.post(
+                "/v1/estimations",
+                headers=auth_headers,
+                json={
+                    "transcription": VALID_TRANSCRIPTION,
+                    "estimation_mode": "agentic",
+                },
+            )
+
+        assert created.status_code == 201
+        created_payload = created.json()
+        assert created_payload["status"] == "awaiting_human_review"
+
+        with patch("app.services.ai_client.resume_agentic_estimation", mock_resume):
+            resumed = await client.post(
+                f"/v1/estimations/{created_payload['id']}/resume",
+                headers=auth_headers,
+                json={"decision": {"action": "approve"}},
+            )
+
+        assert resumed.status_code == 200
+        assert resumed.json()["status"] == "completed"
+        mock_resume.assert_awaited_once()
