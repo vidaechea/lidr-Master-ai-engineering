@@ -1,15 +1,31 @@
 from __future__ import annotations
 
-import operator
+import hashlib
+import json
 import re
-from typing import Annotated, Any, Literal, TypedDict
+from time import perf_counter
+from typing import Any, Literal
 
 import logfire
 import structlog
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
-from app.agents.schemas import AgenticEstimate
+from app.agents.schemas import AgenticEstimate, SupervisorRoutingDecision
+from app.agents.supervisor import (
+    SUPERVISOR_SYSTEM_PROMPT,
+    build_route_audit_update,
+    build_finalize_update_payload,
+    build_human_decision_update,
+    build_human_review_interrupt_payload,
+    fallback_next,
+    is_legal,
+    requires_human_review,
+    route_target_for_finish,
+    summarize_state_for_router,
+    validate_action,
+)
+from app.agents.supervisor.state import ComponentSpec, EstimationGraphState
 from app.agents.tools import calculate_estimate, search_budgets, validate_estimate
 from app.config import settings
 from app.generation.rag.retriever_service import SemanticRetriever
@@ -27,41 +43,6 @@ AgentNode = Literal[
     "human_review_gate",
     "finalize",
 ]
-
-
-class ComponentSpec(TypedDict):
-    name: str
-    category: str
-    query: str
-
-
-class GraphTraceEntry(TypedDict):
-    reasoning: str
-    action: str
-    observation: str
-
-
-class AgentContribution(TypedDict):
-    agent: str
-    summary: str
-
-
-class EstimationGraphState(TypedDict, total=False):
-    estimation_id: str
-    transcription: str
-    requirements: list[str]
-    components: list[ComponentSpec]
-    component_hits: dict[str, list[dict[str, object]]]
-    budget_hits: Annotated[list[dict[str, object]], operator.add]
-    validation_errors: Annotated[list[str], operator.add]
-    trace: Annotated[list[GraphTraceEntry], operator.add]
-    agent_contributions: Annotated[list[AgentContribution], operator.add]
-    structured_estimate: dict[str, object]
-    validation: dict[str, object]
-    confidence: float
-    status: Literal["validated", "needs_review", "awaiting_human_review"]
-    human_decision: dict[str, object]
-    final_text: str
 
 
 class SequentialEstimationGraph:
@@ -88,24 +69,63 @@ class SequentialEstimationGraph:
 
         return graph_builder.compile(checkpointer=checkpointer)
 
-    def supervisor(self, state: EstimationGraphState) -> Command[AgentNode]:
-        if not state.get("requirements") or not state.get("components"):
-            return self._route("requirements_extractor", "Extract requirements and classify components.")
-        if not state.get("component_hits"):
-            return self._route("budget_searcher", "Search historical budgets for each component.")
-        if not state.get("structured_estimate"):
-            return self._route("estimate_generator", "Generate the deterministic estimate.")
-        if not state.get("validation"):
-            return self._route("coherence_validator", "Validate estimate coherence and confidence.")
-        if self._requires_human_review(state) and not state.get("human_decision"):
-            return self._route("human_review_gate", "Pause for human review because confidence is low.")
-        return self._route("finalize", "Finalize the estimate response.")
+    async def supervisor(self, state: EstimationGraphState) -> Command[AgentNode]:
+        step = int(state.get("supervisor_steps") or 0)
+        if step >= settings.agentic_supervisor_max_steps:
+            return self._route_with_audit(
+                goto="finalize",
+                reason=f"Step budget {settings.agentic_supervisor_max_steps} exhausted.",
+                step=step,
+                source="limit",
+                confidence=None,
+            )
+
+        target = fallback_next(state)
+        reason = "Deterministic fallback based on unmet dependencies."
+        source: Literal["llm", "fallback", "limit"] = "fallback"
+        decision_confidence: Literal["low", "medium", "high"] | None = None
+
+        try:
+            decision = await self._route_with_model(state)
+            if is_legal(decision.next_agent, state):
+                target = decision.next_agent
+                reason = decision.reason
+                decision_confidence = decision.confidence
+                source = "llm"
+            else:
+                reason = (
+                    f"Router suggested illegal destination {decision.next_agent!r}. "
+                    f"Using fallback {target!r}."
+                )
+        except Exception as exc:
+            reason = f"Router unavailable ({type(exc).__name__}). Using deterministic fallback."
+            log.warning("supervisor_router_failed", error=str(exc)[:300])
+
+        if target == "finish":
+            goto = route_target_for_finish(state)
+            final_reason = reason if goto == "finalize" else "Ready to finish; routing through human review gate."
+            return self._route_with_audit(
+                goto=goto,
+                reason=final_reason,
+                step=step,
+                source=source,
+                confidence=decision_confidence,
+            )
+
+        return self._route_with_audit(
+            goto=target,
+            reason=reason,
+            step=step,
+            source=source,
+            confidence=decision_confidence,
+        )
 
     def requirements_extractor(self, state: EstimationGraphState) -> dict[str, object]:
         estimation_id = state["estimation_id"]
         transcription = state["transcription"]
 
         with logfire.span("agentic.langgraph.requirements_extractor", estimation_id=estimation_id):
+            started = perf_counter()
             raw_chunks = re.split(r"[\n\r\.\!\?;]+", transcription)
             requirements = [chunk.strip() for chunk in raw_chunks if len(chunk.strip()) >= 15]
             if not requirements:
@@ -117,8 +137,14 @@ class SequentialEstimationGraph:
                 "components": components,
                 "agent_contributions": [
                     {
+                        "step": int(state.get("supervisor_steps") or 1),
                         "agent": "requirements_extractor",
+                        "action": "extract_requirements",
+                        "tool": None,
+                        "outcome": "ok",
                         "summary": f"Extracted {len(requirements)} requirements and {len(components)} components.",
+                        "args_digest": self._digest_payload({"transcript_len": len(transcription)}),
+                        "duration_ms": int((perf_counter() - started) * 1000),
                     }
                 ],
                 "trace": [
@@ -135,7 +161,17 @@ class SequentialEstimationGraph:
         components = state.get("components", [])
 
         with logfire.span("agentic.langgraph.budget_searcher", estimation_id=estimation_id):
-            self._validate_action("budget_searcher", "search_budgets")
+            allowed, denied_contribution = validate_action(
+                agent="budget_searcher",
+                tool="search_budgets",
+                step=int(state.get("supervisor_steps") or 0),
+            )
+            if not allowed:
+                return {
+                    "agent_contributions": [denied_contribution],
+                    "validation_errors": [denied_contribution["summary"]],
+                }
+            started = perf_counter()
             all_hits: list[dict[str, object]] = []
             component_hits: dict[str, list[dict[str, object]]] = {}
 
@@ -158,8 +194,14 @@ class SequentialEstimationGraph:
                 "budget_hits": all_hits,
                 "agent_contributions": [
                     {
+                        "step": int(state.get("supervisor_steps") or 1),
                         "agent": "budget_searcher",
+                        "action": "tool:search_budgets",
+                        "tool": "search_budgets",
+                        "outcome": "ok",
                         "summary": f"Found {len(all_hits)} historical references across {len(components)} components.",
+                        "args_digest": self._digest_payload({"components": [c["name"] for c in components]}),
+                        "duration_ms": int((perf_counter() - started) * 1000),
                     }
                 ],
                 "trace": [
@@ -177,7 +219,17 @@ class SequentialEstimationGraph:
         component_hits = state.get("component_hits", {})
 
         with logfire.span("agentic.langgraph.estimate_generator", estimation_id=estimation_id):
-            self._validate_action("estimate_generator", "calculate_estimate")
+            allowed, denied_contribution = validate_action(
+                agent="estimate_generator",
+                tool="calculate_estimate",
+                step=int(state.get("supervisor_steps") or 0),
+            )
+            if not allowed:
+                return {
+                    "agent_contributions": [denied_contribution],
+                    "validation_errors": [denied_contribution["summary"]],
+                }
+            started = perf_counter()
             estimate_components: list[dict[str, object]] = []
             for component in components:
                 hits = component_hits.get(component["name"], [])
@@ -194,8 +246,14 @@ class SequentialEstimationGraph:
                 "structured_estimate": estimate.model_dump(),
                 "agent_contributions": [
                     {
+                        "step": int(state.get("supervisor_steps") or 1),
                         "agent": "estimate_generator",
+                        "action": "tool:calculate_estimate",
+                        "tool": "calculate_estimate",
+                        "outcome": "ok",
                         "summary": f"Generated {estimate.total_amount} {estimate.unit} across {len(estimate.components)} components.",
+                        "args_digest": self._digest_payload({"component_count": len(estimate_components)}),
+                        "duration_ms": int((perf_counter() - started) * 1000),
                     }
                 ],
                 "trace": [
@@ -212,7 +270,17 @@ class SequentialEstimationGraph:
         estimate_payload = dict(state.get("structured_estimate", {}))
 
         with logfire.span("agentic.langgraph.coherence_validator", estimation_id=estimation_id):
-            self._validate_action("coherence_validator", "validate_estimate")
+            allowed, denied_contribution = validate_action(
+                agent="coherence_validator",
+                tool="validate_estimate",
+                step=int(state.get("supervisor_steps") or 0),
+            )
+            if not allowed:
+                return {
+                    "agent_contributions": [denied_contribution],
+                    "validation_errors": [denied_contribution["summary"]],
+                }
+            started = perf_counter()
             estimate = AgenticEstimate.model_validate(estimate_payload)
             validation = validate_estimate(estimate)
             confidence = float(validation["confidence"])
@@ -227,8 +295,14 @@ class SequentialEstimationGraph:
                 "status": status,
                 "agent_contributions": [
                     {
+                        "step": int(state.get("supervisor_steps") or 1),
                         "agent": "coherence_validator",
+                        "action": "tool:validate_estimate",
+                        "tool": "validate_estimate",
+                        "outcome": "ok",
                         "summary": f"Validated estimate with confidence {confidence:.2f} and {len(validation['errors'])} issue(s).",
+                        "args_digest": self._digest_payload({"component_count": len(estimate.components)}),
+                        "duration_ms": int((perf_counter() - started) * 1000),
                     }
                 ],
                 "trace": [
@@ -241,55 +315,23 @@ class SequentialEstimationGraph:
             }
 
     def human_review_gate(self, state: EstimationGraphState) -> Command[Literal["finalize"]]:
-        if not self._requires_human_review(state):
+        if not requires_human_review(state):
             return Command(goto="finalize")
 
-        decision = interrupt(
-            {
-                "reason": "low_confidence_estimate",
-                "estimate": state.get("structured_estimate"),
-                "confidence": state.get("confidence"),
-                "validation": state.get("validation", {}),
-                "threshold": settings.agentic_estimation_confidence_threshold,
-            }
-        )
+        decision = interrupt(build_human_review_interrupt_payload(state))
         return Command(
             goto="finalize",
-            update={
-                "human_decision": decision,
-                "trace": [
-                    {
-                        "reasoning": "A persisted human decision was received after the low-confidence interrupt.",
-                        "action": "human_review_gate.resume",
-                        "observation": "Human decision folded into graph state.",
-                    }
-                ],
-            },
+            update=build_human_decision_update(
+                state=state,
+                decision=decision,
+                digest_payload=self._digest_payload,
+            ),
         )
 
     def finalize(self, state: EstimationGraphState) -> dict[str, object]:
         estimate = AgenticEstimate.model_validate(dict(state.get("structured_estimate", {})))
-        decision = state.get("human_decision") or {}
-        update_payload: dict[str, object] = {}
-
-        action = str(decision.get("action") or decision.get("decision") or "approve")
-        overrides = decision.get("estimate_overrides")
-        if isinstance(overrides, dict):
-            update_payload.update(overrides)
-
-        if action == "reject":
-            update_payload["status"] = "needs_review"
-        elif decision:
-            update_payload["status"] = "validated"
-        elif self._requires_human_review(state) and not decision:
-            update_payload["status"] = "awaiting_human_review"
-        else:
-            update_payload["status"] = "validated" if not state.get("validation_errors") else "needs_review"
-
-        if state.get("confidence") is not None:
-            update_payload["confidence"] = state["confidence"]
-        if state.get("validation"):
-            update_payload["validation"] = state["validation"]
+        decision = state.get("human_decision") if isinstance(state.get("human_decision"), dict) else {}
+        update_payload = build_finalize_update_payload(state=state, decision=decision)
 
         consolidated = estimate.model_copy(update=update_payload)
         final_text = self._render_final_text(consolidated)
@@ -348,45 +390,44 @@ class SequentialEstimationGraph:
 
         return list(component_map.values())
 
-    @staticmethod
-    def _route(goto: AgentNode, reason: str) -> Command[AgentNode]:
+    def _route_with_audit(
+        self,
+        *,
+        goto: AgentNode,
+        reason: str,
+        step: int,
+        source: Literal["llm", "fallback", "limit"],
+        confidence: Literal["low", "medium", "high"] | None,
+    ) -> Command[AgentNode]:
         return Command(
             goto=goto,
-            update={
-                "trace": [
-                    {
-                        "reasoning": reason,
-                        "action": f"supervisor.route.{goto}",
-                        "observation": f"Supervisor routed to {goto}.",
-                    }
-                ]
-            },
+            update=build_route_audit_update(
+                goto=goto,
+                reason=reason,
+                step=step,
+                source=source,
+                confidence=confidence,
+                digest_payload=self._digest_payload,
+            ),
         )
 
-    @staticmethod
-    def _requires_human_review(state: EstimationGraphState) -> bool:
-        validation = state.get("validation") or {}
-        confidence = state.get("confidence")
-        if confidence is not None and confidence < settings.agentic_estimation_confidence_threshold:
-            return True
-        return bool(
-            validation.get("no_historical_precedent")
-            or validation.get("outside_historical_range")
+    async def _route_with_model(self, state: EstimationGraphState) -> SupervisorRoutingDecision:
+        from app.foundation.llm.litellm_service import litellm_router_service
+
+        decision, _ = await litellm_router_service.complete_structured(
+            messages=[
+                {"role": "system", "content": SUPERVISOR_SYSTEM_PROMPT},
+                {"role": "user", "content": summarize_state_for_router(state)},
+            ],
+            response_model=SupervisorRoutingDecision,
+            max_retries=2,
         )
+        return decision
 
     @staticmethod
-    def _validate_action(agent: str, tool: str) -> None:
-        allowed_tools = {
-            "requirements_extractor": set(),
-            "budget_searcher": {"search_budgets"},
-            "estimate_generator": {"calculate_estimate"},
-            "coherence_validator": {"validate_estimate"},
-            "supervisor": set(),
-        }
-        if tool not in allowed_tools.get(agent, set()):
-            log.warning("agent_tool_rejected", agent=agent, tool=tool)
-            raise PermissionError(f"Agent '{agent}' cannot use tool '{tool}'.")
-        log.info("agent_tool_allowed", agent=agent, tool=tool)
+    def _digest_payload(payload: dict[str, object]) -> str:
+        canonical = json.dumps(payload, sort_keys=True, default=str)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
 
     @staticmethod
     def _render_final_text(result: AgenticEstimate) -> str:

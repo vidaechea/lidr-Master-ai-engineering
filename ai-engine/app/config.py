@@ -142,6 +142,9 @@ class Settings(BaseSettings):
     rag_pipeline_estimate_api_key: str | None = None
     rag_pipeline_rate_limit_per_minute: int = 60
     agentic_estimation_confidence_threshold: float = 0.6
+    agentic_supervisor_max_steps: int = 12
+    agentic_supervisor_min_grounded_ratio: float = 0.5
+    agentic_supervisor_privilege_strict: bool = False
 
 
 settings = Settings()

@@ -1,14 +1,16 @@
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from app.config import settings
 from app.dependencies import TierDep
 from app.foundation.guardrails.input import InputGuardrailViolation
 from app.foundation.prompts.loader import get_examples
 from app.agents.service import AgenticEstimationService
+from app.agents.service import AgenticRunNotFoundError, AgenticRunNotPausedError
 from app.agents.schemas import AgenticResumeRequest
+from app.agents.schemas import SupervisorEstimateRequest, SupervisorResumeRequest
 from app.domain.schemas.estimation import (
     ActorCriticBossRequest,
     ActorCriticBossResponse,
@@ -17,7 +19,7 @@ from app.domain.schemas.estimation import (
     ExampleItem,
 )
 from app.generation.agentic.acb_service import ActorCriticBossService
-from app.agents.schemas import AgenticEstimationResponse
+from app.agents.schemas import AgenticEstimationResponse, AgenticRunState
 from app.generation.cag.cache_service import CachedEstimationService
 from app.domain.estimation_service import EstimationService
 from app.foundation.llm.error_mapper import LLMServiceError
@@ -61,8 +63,13 @@ def get_acb_service() -> ActorCriticBossService:
     return ActorCriticBossService()
 
 
-def get_agentic_estimation_service() -> AgenticEstimationService:
-    return AgenticEstimationService()
+def get_agentic_estimation_service(request: Request) -> AgenticEstimationService:
+    service = getattr(request.app.state, "agentic_estimation_service", None)
+    if isinstance(service, AgenticEstimationService):
+        return service
+    service = AgenticEstimationService()
+    request.app.state.agentic_estimation_service = service
+    return service
 
 
 @router.post("/estimate/acb", responses=_LLM_ERROR_RESPONSES)
@@ -162,8 +169,99 @@ async def resume_agentic_estimation(
             decision=request.decision,
             prompt_version=prompt_version,
         )
+    except AgenticRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except AgenticRunNotPausedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except Exception as exc:
         log.error("agentic_estimation_resume_failed", estimation_id=estimation_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
+
+
+@router.get("/estimate/agentic/{estimation_id}/state", responses=_LLM_ERROR_RESPONSES)
+async def get_agentic_estimation_state(
+    estimation_id: str,
+    service: Annotated[AgenticEstimationService, Depends(get_agentic_estimation_service)],
+) -> AgenticRunState:
+    try:
+        state = await service.get_state(estimation_id=estimation_id)
+        if state.state == "missing":
+            raise HTTPException(status_code=404, detail=f"Unknown estimation_id: {estimation_id}")
+        return state
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("agentic_estimation_state_failed", estimation_id=estimation_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
+
+
+@router.post("/estimate/supervisor", responses=_LLM_ERROR_RESPONSES)
+async def start_supervisor_estimation(
+    payload: SupervisorEstimateRequest,
+    service: Annotated[AgenticEstimationService, Depends(get_agentic_estimation_service)],
+    prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
+) -> AgenticEstimationResponse:
+    try:
+        request = EstimationRequest(transcription=payload.transcript)
+        return await service.estimate(
+            request,
+            prompt_version=prompt_version,
+            estimation_id=payload.estimation_id,
+        )
+    except InputGuardrailViolation as exc:
+        raise HTTPException(
+            status_code=_GUARDRAIL_STATUS.get(exc.reason, 422),
+            detail={"message": exc.message, "reason": exc.reason},
+        )
+    except Exception as exc:
+        log.error("supervisor_estimation_failed", error=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
+
+
+@router.post("/estimate/supervisor/{estimation_id}/resume", responses=_LLM_ERROR_RESPONSES)
+async def resume_supervisor_estimation(
+    estimation_id: str,
+    payload: SupervisorResumeRequest,
+    service: Annotated[AgenticEstimationService, Depends(get_agentic_estimation_service)],
+    prompt_version: Annotated[str, Query(description="Prompt template version to use (e.g. v1, v2)")] = settings.prompt_version,
+) -> AgenticEstimationResponse:
+    decision_payload: dict[str, object] = {
+        "decision": payload.decision,
+    }
+    if payload.estimate_overrides is not None:
+        decision_payload["estimate_overrides"] = payload.estimate_overrides
+    if payload.note is not None:
+        decision_payload["note"] = payload.note
+
+    try:
+        return await service.resume(
+            estimation_id=estimation_id,
+            decision=decision_payload,
+            prompt_version=prompt_version,
+        )
+    except AgenticRunNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except AgenticRunNotPausedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        log.error("supervisor_estimation_resume_failed", estimation_id=estimation_id, error=str(exc))
+        raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
+
+
+@router.get("/estimate/supervisor/{estimation_id}/state", responses=_LLM_ERROR_RESPONSES)
+async def get_supervisor_estimation_state(
+    estimation_id: str,
+    service: Annotated[AgenticEstimationService, Depends(get_agentic_estimation_service)],
+) -> AgenticRunState:
+    try:
+        state = await service.get_state(estimation_id=estimation_id)
+        if state.state == "missing":
+            raise HTTPException(status_code=404, detail=f"Unknown estimation_id: {estimation_id}")
+        return state
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log.error("supervisor_estimation_state_failed", estimation_id=estimation_id, error=str(exc))
         raise HTTPException(status_code=500, detail=_INTERNAL_PROCESSING_ERROR_DETAIL)
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -78,3 +78,49 @@ class AgenticEstimationResponse(BaseModel):
 
 class AgenticResumeRequest(BaseModel):
     decision: dict[str, object] = Field(default_factory=dict)
+
+
+class SupervisorRoutingDecision(BaseModel):
+    next_agent: Literal[
+        "requirements_extractor",
+        "budget_searcher",
+        "estimate_generator",
+        "coherence_validator",
+        "finish",
+    ]
+    reason: str = Field(min_length=8, max_length=500)
+    confidence: Literal["low", "medium", "high"] | None = None
+
+
+class AgenticPendingReview(BaseModel):
+    gate: str = "low_confidence_review"
+    estimation_id: str
+    reasons: list[str] = Field(default_factory=list)
+    confidence: float | None = None
+    threshold: float | None = None
+    estimate: dict[str, Any] | None = None
+    validation: dict[str, Any] | None = None
+
+
+class AgenticRunState(BaseModel):
+    estimation_id: str
+    state: Literal["paused", "completed", "missing"]
+    status: str
+    pending_review: AgenticPendingReview | None = None
+    structured_estimate: AgenticEstimate | None = None
+    confidence: float | None = None
+    validation: dict[str, Any] | None = None
+    human_decision: dict[str, Any] | None = None
+    routing_history: list[dict[str, Any]] = Field(default_factory=list)
+    agent_contributions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SupervisorEstimateRequest(BaseModel):
+    transcript: str = Field(min_length=20, max_length=50_000)
+    estimation_id: str | None = Field(default=None, max_length=128)
+
+
+class SupervisorResumeRequest(BaseModel):
+    decision: Literal["approve", "adjust", "reject"]
+    estimate_overrides: dict[str, Any] | None = None
+    note: str | None = Field(default=None, max_length=2_000)

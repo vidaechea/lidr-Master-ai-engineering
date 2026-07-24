@@ -1,11 +1,13 @@
 import structlog
 from uuid import uuid4
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
 from app.config import settings
+from app.agents.service import AgenticEstimationService
 from app.dependencies import get_runtime_config
 from app.foundation.llm.litellm_service import create_litellm_router_service
 from app.logging import configure_logging
@@ -66,7 +68,14 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
 
 API_PREFIX = "/api/v1"
 
-app = FastAPI(title="Estimator CAG — AI Engine", version="0.1.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await bootstrap_runtime_models(app)
+    yield
+
+
+app = FastAPI(title="Estimator CAG — AI Engine", version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(InternalKeyMiddleware)
 
@@ -87,8 +96,7 @@ app.include_router(rag_graph.router, prefix=API_PREFIX)
 app.include_router(corpus_index.router, prefix=API_PREFIX)
 
 
-@app.on_event("startup")
-async def bootstrap_runtime_models() -> None:
+async def bootstrap_runtime_models(app_instance: FastAPI) -> None:
     """Align the in-memory LiteLLM router with persisted runtime overrides.
 
     Runtime overrides live in Redis and survive process restarts. We reload them
@@ -108,6 +116,13 @@ async def bootstrap_runtime_models() -> None:
         primary_model=primary_model,
         fallback_model=fallback_model,
     )
+
+    agentic_service = AgenticEstimationService()
+    try:
+        await agentic_service.warmup()
+    except Exception as exc:
+        log.warning("agentic_service_warmup_failed", error=str(exc)[:300])
+    app_instance.state.agentic_estimation_service = agentic_service
 
 
 @app.get("/health")
